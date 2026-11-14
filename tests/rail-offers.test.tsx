@@ -170,7 +170,7 @@ describe("Draft the path on the week crown's project row", () => {
 
   it("rides a thin project's row, and not a shaped one's", async () => {
     mountCrown();
-    await waitFor(() => expect(screen.getAllByRole("button", { name: /^Draft the path/ })).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /^Suggest tasks/ })).toHaveLength(2));
     expect(rowOf("Launch pricing page").querySelector(".k-offer")).not.toBeNull();
     expect(rowOf("Garage studio").querySelector(".k-offer")).not.toBeNull();
     expect(rowOf("Quarterly taxes").querySelector(".k-offer")).toBeNull();
@@ -292,7 +292,7 @@ describe("Hold <time> on a today task with no time", () => {
     expect(holdSpan(p)).toBe("2–2:30pm");
     const { m, calls } = stubMutations();
     render(<HoldOffer task={t} placement={p} mutations={m} />);
-    const chip = screen.getByRole("button", { name: /^Hold 2–2:30pm/ });
+    const chip = screen.getByRole("button", { name: /^Schedule 2–2:30pm/ });
     fireEvent.click(chip);
     expect(calls.block).toHaveLength(1);
     const [task, start, mins, opts] = calls.block[0] as [Task, Date, number, { undo: string }];
@@ -338,7 +338,7 @@ describe("Hold falls back to later this week when today is full (D-206)", () => 
     const p: Placement = { task: t, dayISO: "2099-01-05", startMin: 9 * 60, durationMin: 30, reason: "" };
     const { m, calls } = stubMutations();
     render(<HoldOffer task={t} placement={p} mutations={m} />);
-    fireEvent.click(screen.getByRole("button", { name: /^Hold Mon 9–9:30am/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Schedule Mon 9–9:30am/ }));
     const [, start] = calls.block[0] as [Task, Date];
     // `block` writes do_date from the start — the task moves to Monday
     expect(start.getFullYear()).toBe(2099);
@@ -393,8 +393,8 @@ describe("Hold <time> on the phone's Today", () => {
         />
       </QueryClientProvider>,
     );
-    await waitFor(() => expect(screen.getAllByRole("button", { name: /^Hold / }).length).toBeGreaterThan(0));
-    const chips = screen.getAllByRole("button", { name: /^Hold / });
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /^Schedule / }).length).toBeGreaterThan(0));
+    const chips = screen.getAllByRole("button", { name: /^Schedule / });
     expect(chips.length).toBeLessThanOrEqual(PHONE_OFFERS_MAX);
     for (const chip of chips) {
       const row = chip.closest(".task-row");

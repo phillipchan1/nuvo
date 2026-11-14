@@ -18,11 +18,11 @@ export default function ThinDoor({ projectId, onOpen, size = "deck" }: { project
     <div data-card-control className="flex pt-1" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
       {size === "phone" ? (
         <TouchButton compact icon={<Icon name="sparkles" size={14} />} onClick={go}>
-          Draft the path
+          Suggest tasks
         </TouchButton>
       ) : (
         <ChipButton icon={<Icon name="sparkles" size={12} />} onClick={go} title="Nuvo drafts the steps this project is missing. Nothing is added until you keep it.">
-          Draft the path
+          Suggest tasks
         </ChipButton>
       )}
     </div>

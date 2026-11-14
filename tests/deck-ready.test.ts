@@ -23,10 +23,10 @@ describe("the project deck's stack", () => {
     expect(cards.map((c) => c.key)).toEqual(["deck:overdue:late", "deck:thin:thin", "deck:gap:gap-near", "deck:gap:gap-far", "deck:fit:fit"]);
   });
 
-  it("sends no steps to Draft the path and everything else to the record", () => {
+  it("sends no steps to Suggest tasks and everything else to the record", () => {
     const acts = { open: vi.fn(), draftPath: vi.fn() };
     const [steps, outcome] = projectDeckCards([fact({ id: "a", gap: "no steps", weekIdx: 0 }), fact({ id: "b", gap: "no outcome" })], acts);
-    expect(steps.primary.verb).toBe("Draft the path");
+    expect(steps.primary.verb).toBe("Suggest tasks");
     steps.primary.run(null);
     expect(acts.draftPath).toHaveBeenCalledWith("a");
     expect(outcome.primary.verb).toBe("Open");
@@ -42,11 +42,11 @@ describe("the project deck's stack", () => {
 });
 
 describe("the project deck's acts that write (D-207)", () => {
-  it("shows a ✦ outcome draft and writes it only on Set as outcome", () => {
+  it("shows a ✦ outcome draft and writes it only on Use this outcome", () => {
     const acts = { open: vi.fn(), draftPath: vi.fn(), setOutcome: vi.fn() };
     const [card] = projectDeckCards([fact({ id: "n", name: "Newsletter", gap: "no outcome", draft: { state: "ready", text: "The relaunch issue reaches every family" } })], acts);
     expect(card.why).toBe("✦ The relaunch issue reaches every family");
-    expect(card.primary.verb).toBe("Set as outcome");
+    expect(card.primary.verb).toBe("Use this outcome");
     expect(acts.setOutcome).not.toHaveBeenCalled();
     card.primary.run(null);
     expect(acts.setOutcome).toHaveBeenCalledWith("n", "The relaunch issue reaches every family", null);

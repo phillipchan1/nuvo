@@ -64,7 +64,7 @@ export function pathCandidates(rows: readonly { projectId: string; done: boolean
 export function PathOffer({ thin, onOpenProject, phone = false }: { thin: ThinPath; onOpenProject: (projectId: string) => void; phone?: boolean }) {
   return (
     <OfferChip
-      verb="Draft the path"
+      verb="Suggest tasks"
       title={`${thinChip(thin)} · Nuvo drafts the missing steps. Nothing is added until you keep it.`}
       onPress={() => {
         if (phone) haptic("light");
@@ -138,13 +138,13 @@ export function HoldOffer({ task, placement, mutations, phone = false }: { task:
   const later = placement.dayISO !== today;
   return (
     <OfferChip
-      verb="Hold"
+      verb="Schedule"
       name={when}
       whole
       title={
         later
-          ? `Hold ${when} for ${task.title} — today is full; this is the next time that fits this week`
-          : `Hold ${when} today for ${task.title} — the first time that fits`
+          ? `Schedule ${when} for ${task.title} — today is full; this is the next time that fits this week`
+          : `Schedule ${when} today for ${task.title} — the first time that fits`
       }
       onPress={(el) => {
         if (phone) haptic("light");

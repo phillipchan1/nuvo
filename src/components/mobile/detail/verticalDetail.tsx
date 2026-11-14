@@ -527,7 +527,7 @@ export function DetailTaskList({
       {home && (draft.phase === "idle" || draft.phase === "done") && (
         <div className="ph-draft-trigger">
           <Button kind="ghost" icon={<Icon name="sparkles" size={14} />} onClick={() => void draft.start()}>
-            Draft the path
+            Suggest tasks
           </Button>
         </div>
       )}

@@ -997,7 +997,7 @@ export function WeekStep({
                 </div>
                 <div className="pl-5">
                   <TouchButton kind="primary" icon={<Icon name="sparkles" size={14} />} onClick={() => onDraftPath(t.projectId)}>
-                    Draft the path
+                    Suggest tasks
                   </TouchButton>
                 </div>
               </div>

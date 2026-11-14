@@ -288,7 +288,7 @@ function card(key: string): ReadyCard {
     kind: "hold",
     title: `Card ${key}`,
     why: "why",
-    primary: { verb: "Hold", name: "3pm", run: vi.fn() },
+    primary: { verb: "Schedule", name: "3pm", run: vi.fn() },
     secondary: { label: "Not now", run: vi.fn() },
     projectId: null,
   } as unknown as ReadyCard;

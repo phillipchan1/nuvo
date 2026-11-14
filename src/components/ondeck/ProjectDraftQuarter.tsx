@@ -180,7 +180,7 @@ export default function ProjectDraftQuarter({
   };
 
   return (
-    <div ref={rootRef} tabIndex={-1} className="pdq" style={{ ["--n" as string]: N, ["--h" as string]: color }} role="region" aria-label={`Draft the projects for ${initiative.name}`}>
+    <div ref={rootRef} tabIndex={-1} className="pdq" style={{ ["--n" as string]: N, ["--h" as string]: color }} role="region" aria-label={`Suggest projects for ${initiative.name}`}>
       <div className="pdq-grid">
         <div className="pdq-head">
           {weeks.map((w) => {
@@ -282,7 +282,7 @@ export default function ProjectDraftQuarter({
             <p className="text-caption text-muted">
               {draft.message ??
                 (draft.held
-                  ? `Held ${draft.held} project${draft.held === 1 ? "" : "s"}. Each is on the project deck in its weeks, with no steps yet — Draft the path fills one in when it's about to land.`
+                  ? `Held ${draft.held} project${draft.held === 1 ? "" : "s"}. Each is on the project deck in its weeks, with no steps yet — Suggest tasks fills one in when it's about to land.`
                   : "Nothing drafted is left.")}
             </p>
           )}

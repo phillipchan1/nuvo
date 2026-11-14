@@ -288,7 +288,7 @@ html:root .deck-compose input:focus-visible { outline: none; box-shadow: none; }
 
 /* ── The grid ───────────────────────────────────────────────────────────── */
 .dk {
-  position: relative; /* Draft the projects opens over the whole deck (D-196) */
+  position: relative; /* Suggest projects opens over the whole deck (D-196) */
   display: flex;
   height: 100%;
   min-height: 0;

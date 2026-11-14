@@ -199,7 +199,7 @@ describe("repair — a rail mode, not a floating bar (D-204)", () => {
     expect(screen.queryByLabelText("Take it")).toBeNull();
     expect(screen.queryByLabelText("Leave it")).toBeNull();
     expect(screen.getByRole("button", { name: /^Move to \w{3} \d/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /^Leave it where it is/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Keep it there/ })).toBeTruthy();
     // the dial isn't here — it's in Settings → Schedule
     expect(screen.queryByRole("radiogroup", { name: "How much Nuvo moves" })).toBeNull();
     // ↵ moves it; deciding the last one hands the rail back

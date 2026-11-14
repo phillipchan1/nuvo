@@ -66,7 +66,7 @@ const RANK = { risk: 0, crowd: 1, path: 2, shape: 3, fit: 4 } as const;
 
 export function projectDeckCards(facts: readonly ProjectDeckFact[], acts: DeckActs): ReadyCard[] {
   const open = (f: ProjectDeckFact): ReadyAct => ({ verb: "Open", name: f.name, run: () => acts.open(f.id) });
-  const draft = (f: ProjectDeckFact): ReadyAct => ({ verb: "Draft the path", run: () => acts.draftPath(f.id) });
+  const draft = (f: ProjectDeckFact): ReadyAct => ({ verb: "Suggest tasks", run: () => acts.draftPath(f.id) });
   const move = (f: ProjectDeckFact): ReadyAct | null =>
     f.moveTo && acts.move ? { verb: "Move to", name: f.moveTo.label, run: (el) => acts.move!(f.id, el) } : null;
   const ranked: { rank: number; week: number; card: ReadyCard }[] = [];
@@ -92,7 +92,7 @@ export function projectDeckCards(facts: readonly ProjectDeckFact[], acts: DeckAc
         key: `deck:gap:${f.id}`,
         kind: "shape",
         why: `✦ ${text}`,
-        primary: { verb: "Set as outcome", run: (el) => acts.setOutcome!(f.id, text, el) },
+        primary: { verb: "Use this outcome", run: (el) => acts.setOutcome!(f.id, text, el) },
         secondary: { label: "Write my own", run: () => acts.open(f.id) },
       });
     } else if (f.gap) {
@@ -134,7 +134,7 @@ export function initiativeDeckCards(facts: readonly InitiativeDeckFact[], acts: 
   // until you keep a draft, P3).
   const fix = (f: InitiativeDeckFact): ReadyAct =>
     f.canDraft && acts.draftProjects
-      ? { verb: "Draft the projects", run: (el) => acts.draftProjects!(f.id, el) }
+      ? { verb: "Suggest projects", run: (el) => acts.draftProjects!(f.id, el) }
       : open(f);
   for (const f of near)
     if (f.risk || f.overdue)

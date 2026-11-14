@@ -151,7 +151,7 @@ export function composeReadyCards(input: ReadyInput): ReadyCard[] {
       title: r.title,
       why: `${r.why === "missed" ? "Missed" : `${r.event || "A meeting"} landed on it`} · was ${whereSpan(r.from)}`,
       primary: { verb: "Move to", name: whereSpan(r.to), run: (el) => acts.move(r.key, el) },
-      secondary: { label: "Leave it where it is", run: () => acts.leave(r.key) },
+      secondary: { label: "Keep it there", run: () => acts.leave(r.key) },
       projectId: r.projectId,
     });
   }
@@ -177,7 +177,7 @@ export function composeReadyCards(input: ReadyInput): ReadyCard[] {
       kind: "hold",
       title: h.title,
       why: h.at.dayISO === todayISO ? "Today · no time yet" : "Today · no time left today",
-      primary: { verb: "Hold", name: whenLabel(h.at, todayISO), run: (el) => acts.hold(h.taskId, el) },
+      primary: { verb: "Schedule", name: whenLabel(h.at, todayISO), run: (el) => acts.hold(h.taskId, el) },
       secondary: notNow(readyKey.hold(h.taskId)),
       projectId: h.projectId,
     });
@@ -195,7 +195,7 @@ export function composeReadyCards(input: ReadyInput): ReadyCard[] {
       kind: "loose",
       title: l.title,
       why: `${l.projectName} · no time this week`,
-      primary: { verb: "Hold", name: whenLabel(l.at, todayISO), run: (el) => acts.holdLoose(l.taskId, el) },
+      primary: { verb: "Schedule", name: whenLabel(l.at, todayISO), run: (el) => acts.holdLoose(l.taskId, el) },
       secondary: notNow(readyKey.loose(l.taskId)),
       projectId: l.projectId,
     });
@@ -224,7 +224,7 @@ export function composeReadyCards(input: ReadyInput): ReadyCard[] {
       kind: "file",
       title: f.title,
       why: "In the inbox",
-      primary: { verb: "→", name: f.place, run: (el) => acts.file(f.taskId, el) },
+      primary: { verb: "Add to", name: f.place, run: (el) => acts.file(f.taskId, el) },
       secondary: notNow(readyKey.file(f.taskId)),
       projectId: f.projectId,
     });
@@ -238,7 +238,7 @@ export function composeReadyCards(input: ReadyInput): ReadyCard[] {
       kind: "path",
       title: t.name,
       why: t.evidence,
-      primary: { verb: "Draft the path", run: () => acts.draftPath(t.projectId) },
+      primary: { verb: "Suggest tasks", run: () => acts.draftPath(t.projectId) },
       secondary: notNow(readyKey.path(t.projectId)),
       projectId: t.projectId,
     });

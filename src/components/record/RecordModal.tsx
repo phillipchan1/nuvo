@@ -396,7 +396,7 @@ function ProjectRecord({
                     onClick={() => draftRef.current?.start()}
                     title="Nuvo drafts the steps this project is missing, among yours. Nothing is added until you keep it."
                   >
-                    Draft the path
+                    Suggest tasks
                   </Button>
                 ) : null
               }

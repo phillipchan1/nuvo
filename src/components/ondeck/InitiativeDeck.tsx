@@ -774,7 +774,7 @@ function InitiativeCard({
               }}
               title="Nuvo drafts the projects this outcome is missing, across the quarter. Nothing is added until you hold it."
             >
-              Draft the projects
+              Suggest projects
             </ChipButton>
           </div>
         ) : null

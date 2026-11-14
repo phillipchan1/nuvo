@@ -22,7 +22,7 @@ const card = (i: number, run = vi.fn(), notNow = vi.fn()): ReadyCard => ({
   kind: "hold",
   title: `Task ${i}`,
   why: "Today · no time yet",
-  primary: { verb: "Hold", name: `${i}–${i}:30pm`, run },
+  primary: { verb: "Schedule", name: `${i}–${i}:30pm`, run },
   secondary: { label: "Not now", run: notNow },
   projectId: null,
 });
@@ -48,7 +48,7 @@ describe("Get ready — the rail mode", () => {
     expect(titles(container)).toEqual(["Task 1", "Task 2", "Task 3", "Task 4", "Task 5"]);
     expect(container.textContent).not.toMatch(/\b[0-9]+ (more|left)\b/);
     // each act says where it goes
-    expect(screen.getByRole("button", { name: /^Hold 1–1:30pm/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Schedule 1–1:30pm/ })).toBeTruthy();
   });
 
   it("↵ runs the focused card's act, and the next card arrives in its place", () => {

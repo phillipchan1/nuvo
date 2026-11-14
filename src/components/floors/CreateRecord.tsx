@@ -330,7 +330,7 @@ export default function CreateRecord({
                       disabled={drafting || name.trim().length < 4}
                       title={name.trim().length < 4 ? "Name it first" : `Have ${ASSISTANT_NAME} propose the first steps`}
                     >
-                      <span className={drafting ? "doc-pulse" : undefined}>{drafting ? "Drafting…" : "Draft steps"}</span>
+                      <span className={drafting ? "doc-pulse" : undefined}>{drafting ? "Drafting…" : "Suggest tasks"}</span>
                     </Button>
                   }
                 >

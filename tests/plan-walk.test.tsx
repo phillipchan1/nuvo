@@ -217,7 +217,7 @@ describe("Plan the week — a thin path needs you (D-196)", () => {
       render(<PlanRail onOverlay={() => {}} onClose={() => {}} />);
       expect(screen.getByText("Launch site")).toBeTruthy();
       expect(screen.getByText(/is held for it, and its steps come to 20m/)).toBeTruthy();
-      fireEvent.click(screen.getByRole("button", { name: /Draft the path/ }));
+      fireEvent.click(screen.getByRole("button", { name: /Suggest tasks/ }));
       expect(openRecord).toHaveBeenCalledWith("project", "p9");
       expect(takePathDraft("p9")).toBe(true);
     } finally {

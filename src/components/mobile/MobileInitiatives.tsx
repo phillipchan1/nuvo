@@ -348,7 +348,7 @@ function InitiativeCard({
         ) : onDraftProjects && canDraftProjects(d, lane) ? (
           <div data-card-control className="relative mt-2 flex" onClick={(e) => e.stopPropagation()}>
             <TouchButton compact icon={<Icon name="sparkles" size={14} />} onClick={onDraftProjects}>
-              Draft the projects
+              Suggest projects
             </TouchButton>
           </div>
         ) : null

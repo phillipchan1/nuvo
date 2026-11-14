@@ -30,7 +30,7 @@ export const moveLabel = (p: Where) => `Move to ${whereSpan(p)}`;
 export const LET_IT_MOVE = "Let it move";
 export const LOOK_LAST = "Look at it last";
 export const SPLIT_IN_TWO = "Split in two";
-export const LEAVE_IN_PLACE = "Leave it where it is";
+export const LEAVE_IN_PLACE = "Keep it there";
 /** A block with no project (a run of loose work) has no place to go back to —
  *  it simply leaves the week, so its label is the state. */
 export const OUT_OF_WEEK = "Out of the week";

@@ -29,7 +29,7 @@ describe("Get ready — composeReadyCards", () => {
   it("only an inbox: each capture the router is sure of, written as its destination", () => {
     const cards = composeReadyCards(input({ inbox: [{ taskId: "i1", title: "Book the hall", place: "Frontier Church", projectId: null }] }));
     expect(cards).toHaveLength(1);
-    expect(cards[0]).toMatchObject({ kind: "file", title: "Book the hall", why: "In the inbox", primary: { verb: "→", name: "Frontier Church" } });
+    expect(cards[0]).toMatchObject({ kind: "file", title: "Book the hall", why: "In the inbox", primary: { verb: "Add to", name: "Frontier Church" } });
     expect(cards[0].secondary?.label).toBe("Not now");
     // nothing is written until the act is pressed (P3)
     expect(cards[0].primary).not.toHaveProperty("count");
@@ -49,13 +49,13 @@ describe("Get ready — composeReadyCards", () => {
     expect(cards.map((c) => c.kind)).toEqual(["repair", "hold", "loose", "file", "path", "memory"]);
     expect(cards[0].primary.verb).toBe("Move to");
     expect(cards[0].primary.name).toMatch(/^Thu 9/);
-    expect(cards[0].secondary?.label).toBe("Leave it where it is");
+    expect(cards[0].secondary?.label).toBe("Keep it there");
     expect(cards[0].why).toMatch(/^Design sync landed on it · was Wed 10/);
     // today's hold is spelled in the clock vocabulary, no day; the week's names its day
-    expect(cards[1].primary).toMatchObject({ verb: "Hold", name: "2–2:30pm" });
-    expect(cards[2].primary).toMatchObject({ verb: "Hold", name: "Thu 10–11am" });
+    expect(cards[1].primary).toMatchObject({ verb: "Schedule", name: "2–2:30pm" });
+    expect(cards[2].primary).toMatchObject({ verb: "Schedule", name: "Thu 10–11am" });
     expect(cards[2].why).toBe("Pricing · no time this week");
-    expect(cards[4]).toMatchObject({ title: "Launch site", why: "3h held · 20m of work", primary: { verb: "Draft the path" } });
+    expect(cards[4]).toMatchObject({ title: "Launch site", why: "3h held · 20m of work", primary: { verb: "Suggest tasks" } });
     expect(cards[5].primary).toMatchObject({ verb: "Keep:", name: "Fridays end at 4pm" });
   });
 

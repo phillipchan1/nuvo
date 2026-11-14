@@ -124,7 +124,7 @@ export const ORIENTATION_TEACH_STEPS: TeachStep[] = [
     id: "nuvo",
     where: { label: "Nuvo" },
     title: "Nuvo speaks on the row it would change",
-    teach: "A task with no time can carry “Hold 2–2:30pm”; a capture it can place, “File in …”. Nothing is written until you press it.",
+    teach: "A task with no time can carry “Schedule 2–2:30pm”; a capture it can place, “Add to …”. Nothing is written until you press it.",
     target: "nuvo",
   },
   {

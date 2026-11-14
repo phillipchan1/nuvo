@@ -138,9 +138,9 @@ function Column({ theme }: { theme: "light" | "dark" }) {
         <Line label="Offer">
           {/* D-205: Nuvo's offer on a row — quiet, the row's trailing slot. */}
           <div style={{ display: "flex", gap: 16, width: 280, minWidth: 0 }}>
-            <OfferChip verb="Hold" name="2–2:30pm" onPress={() => {}} onDismiss={() => {}} />
+            <OfferChip verb="Schedule" name="2–2:30pm" onPress={() => {}} onDismiss={() => {}} />
             <OfferChip verb="File in" name="Garage studio and the long workbench" onPress={() => {}} onDismiss={() => {}} />
-            <OfferChip verb="Draft the path" onPress={() => {}} />
+            <OfferChip verb="Suggest tasks" onPress={() => {}} />
           </div>
         </Line>
         <Line label="Keycap">
@@ -311,10 +311,10 @@ function Column({ theme }: { theme: "light" | "dark" }) {
         {/* D-206: Get ready's card — the thing, one evidence line, one act that
             names where it goes. Focused · resting · a repair · under a finger. */}
         <div style={{ display: "grid", gap: 8, width: 300, maxWidth: "100%", minWidth: 0 }}>
-          <OfferCard title="Draft board memo" why="Today · no time yet" verb="Hold" name="2–2:30pm" shortcut="↵" focused onPress={() => {}} onNotNow={() => {}} />
+          <OfferCard title="Draft board memo" why="Today · no time yet" verb="Schedule" name="2–2:30pm" shortcut="↵" focused onPress={() => {}} onNotNow={() => {}} />
           <OfferCard title="Call the plumber about the garage sink" why="In the inbox" verb="→" name="Garage studio and the long workbench" onPress={() => {}} onNotNow={() => {}} />
-          <OfferCard title="Pricing review" why="Design sync landed on it · was Tue 10–11am" verb="Move to" name="Wed 9–10am" onPress={() => {}} secondary={{ label: "Leave it where it is", onPress: () => {} }} />
-          <OfferCard title="Launch site" why="3h held · 20m of work" verb="Draft the path" touch onPress={() => {}} onNotNow={() => {}} />
+          <OfferCard title="Pricing review" why="Design sync landed on it · was Tue 10–11am" verb="Move to" name="Wed 9–10am" onPress={() => {}} secondary={{ label: "Keep it there", onPress: () => {} }} />
+          <OfferCard title="Launch site" why="3h held · 20m of work" verb="Suggest tasks" touch onPress={() => {}} onNotNow={() => {}} />
         </div>
       </Block>
 

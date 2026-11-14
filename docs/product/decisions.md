@@ -8236,3 +8236,24 @@ to filter the rail), named in the shortcuts sheet as `F`.
 `LeftRail`): with a row selected, `/` no longer opens the filter and `F` does. **The shell's `/`
 not yet driven in the signed-in app** — no dev env in this checkout — so `/` over an open record
 is typechecked and test-guarded, not walked.*
+
+---
+
+**D-213 · 2026-11-14 · The card acts say what they do: Schedule, Add to, Keep it there, Suggest
+tasks, Suggest projects, Use this outcome.**
+*(Operator, looking at Get ready: "I don't know what 'hold' means. Do you mean schedule?")* A card's
+"Hold 4–4:15pm" gave a task with no time that time — scheduling, by another name — while Plan the
+week's "Hold Tue 2pm" pins a block so the reflow can't move it. One word, two acts (P11), and neither
+reader could guess the card's from the word.
+
+→ **Schedule <time>** on a card and on the rail's today chip; **Hold** now means only the walk's pin.
+→ **Add to <place>** for an inbox capture (was a bare "→"). **Keep it there** declines a repair
+(was "Leave it where it is"); **Move to <time>** stays.
+→ Nuvo's drafts say **Suggest tasks** (was Draft the path / Draft steps), **Suggest projects** (was
+Draft the projects) and **Use this outcome** (was Set as outcome) — the button names what you get,
+not the mechanism. "Draft the path" survives only in code and docs as the feature's name.
+→ Kept: Repair, Keep:, Plan the week, Not now.
+
+Ledger: no row moved. Strains nothing; removes an overlapping name.
+
+*Status: shipped. Tests updated to the new words; checked at `?ready` / `?kit` and on the Schedule.*

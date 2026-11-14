@@ -472,7 +472,7 @@ function PlanRailWeek({
           t.workMins === 0
             ? `${when} is held for it, and it has no steps yet.`
             : `${when} is held for it, and its steps come to ${fmtMins(t.workMins)}.`,
-        yesLabel: "Draft the path",
+        yesLabel: "Suggest tasks",
         yesDrafts: true,
         noLabel: "Keep it as it is",
         yes: () => {
