@@ -120,6 +120,36 @@ export function authCors(origin: string | null | undefined, env: Env): Record<st
   return credentialedCors(echoed);
 }
 
+export const CREDENTIALED_API_ALLOW_HEADERS =
+  "authorization, x-client-info, apikey, content-type, accept, cookie, x-region, x-nuvo-token";
+export const CREDENTIALED_API_ALLOW_METHODS = "GET, POST, PATCH, DELETE, OPTIONS";
+
+/** The auth routes' allowlist, but no fallback echo: an unknown Origin gets null. */
+export function allowedApiOrigin(origin: string | null | undefined, env: Env): string | null {
+  if (!origin) return null;
+  return trustedAuthOrigins(env).some((p) => originMatches(origin, p)) ? origin : null;
+}
+
+/**
+ * Credentialed API routes (entitlement, agent). ACAO + credentials only for an
+ * allowlisted Origin; otherwise no ACAO at all. Never ACAO *.
+ */
+export function credentialedApiCors(origin: string | null | undefined, env: Env): Record<string, string> {
+  const headers: Record<string, string> = {
+    Vary: "Origin",
+    "Access-Control-Allow-Headers": CREDENTIALED_API_ALLOW_HEADERS,
+    "Access-Control-Allow-Methods": CREDENTIALED_API_ALLOW_METHODS,
+    "Access-Control-Max-Age": "600",
+    ...API_SECURITY,
+  };
+  const allowed = allowedApiOrigin(origin, env);
+  if (allowed) {
+    headers["Access-Control-Allow-Origin"] = allowed;
+    headers["Access-Control-Allow-Credentials"] = "true";
+  }
+  return headers;
+}
+
 /** JSON 500 when auth config throws. Echo ACAO+credentials only for loopback Origins. */
 export function authConfigErrorResponse(
   origin: string | null | undefined,

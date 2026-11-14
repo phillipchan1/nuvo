@@ -5,7 +5,7 @@ import { exposeSignedAuthToken, primeAppleClientSecret, SessionLookupError, sess
 import { handleSigninReturn, handleSigninStart } from "./signinDoor.ts";
 import { stayOnSupabase } from "./blocked.ts";
 import { handleCapture } from "./captureHttp.ts";
-import { API_SECURITY, beginAuthCors, json, OPEN_CORS } from "./cors.ts";
+import { API_SECURITY, beginAuthCors, credentialedApiCors, json, OPEN_CORS } from "./cors.ts";
 import {
   consumeCalendarSyncBatch,
   handleCron,
@@ -93,6 +93,45 @@ app.use("*", async (c, next) => {
   if (path.startsWith("/api/") || path.startsWith("/functions/v1/")) {
     c.res = withClonedHeaders(c.res, API_SECURITY);
   }
+});
+
+/**
+ * Credentialed CORS for the routes the shells call with credentials:"include"
+ * + a bearer (entitlement, agent). Same allowlist as /api/auth, no fallback
+ * echo. Preflights stop here; real responses get their CORS headers replaced
+ * with the body passed through untouched, so SSE still streams. Registered
+ * before closeIo so an error thrown while closing I/O (handled by onError
+ * inside this middleware) still leaves with these headers, never ACAO *.
+ */
+const CREDENTIALED_API_PATHS = new Set(["/api/entitlement", "/api/agent", "/functions/v1/agent"]);
+const REPLACED_CORS_HEADERS = [
+  "Access-Control-Allow-Origin",
+  "Access-Control-Allow-Credentials",
+  "Access-Control-Allow-Headers",
+  "Access-Control-Allow-Methods",
+];
+
+app.use("*", async (c, next) => {
+  if (!CREDENTIALED_API_PATHS.has(c.req.path)) return next();
+  const cors = credentialedApiCors(c.req.header("Origin"), c.env);
+  if (c.req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: cors });
+  }
+  await next();
+  const res = c.res;
+  const headers = new Headers(res.headers);
+  for (const name of REPLACED_CORS_HEADERS) headers.delete(name);
+  const { Vary: _vary, ...rest } = cors;
+  for (const [key, value] of Object.entries(rest)) headers.set(key, value);
+  const vary = headers.get("Vary");
+  if (!vary) headers.set("Vary", "Origin");
+  else if (!vary.split(",").some((v) => ["origin", "*"].includes(v.trim().toLowerCase()))) {
+    headers.set("Vary", `${vary}, Origin`);
+  }
+  // Hono's c.res setter copies the previous response's headers onto the new
+  // one (which would put ACAO * back); clear it first so ours are the only CORS.
+  c.res = undefined;
+  c.res = new Response(res.body, { status: res.status, statusText: res.statusText, headers });
 });
 
 /**
@@ -264,7 +303,6 @@ app.onError((err, c) => {
 
 app.options("/api/data/*", () => new Response("ok", { headers: OPEN_CORS }));
 app.options("/api/rpc/*", () => new Response("ok", { headers: OPEN_CORS }));
-app.options("/api/entitlement", () => new Response("ok", { headers: OPEN_CORS }));
 
 /**
  * Billing is read from Supabase until CUTOVER_FLIPPED, then from Neon (where
