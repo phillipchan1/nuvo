@@ -33,7 +33,7 @@ INSERT INTO public.reminders (id, user_id, target_kind, target_id) VALUES
   ('aaaaaaaa-4444-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'task', 'aaaaaaaa-2222-4000-8000-000000000001'),
   ('bbbbbbbb-4444-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'task', 'bbbbbbbb-2222-4000-8000-000000000001');
 
-INSERT INTO public.contacts_directory (id, user_id, email, name) VALUES
+INSERT INTO public.contacts_directory (id, user_id, email, display_name) VALUES
   ('aaaaaaaa-5555-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'friend-a@example.test', 'Friend A'),
   ('bbbbbbbb-5555-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'friend-b@example.test', 'Friend B');
 

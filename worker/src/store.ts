@@ -1203,11 +1203,11 @@ export async function contacts(
   const sql = store.sql;
   const q = `%${search.trim().toLowerCase()}%`;
   return sql`
-    SELECT email, name
+    SELECT email, display_name AS name
     FROM contacts_directory
     WHERE user_id = ${store.userId}
-      AND (lower(email) LIKE ${q} OR lower(coalesce(name, '')) LIKE ${q})
-    ORDER BY name NULLS LAST
+      AND (lower(email) LIKE ${q} OR lower(coalesce(display_name, '')) LIKE ${q})
+    ORDER BY display_name NULLS LAST
     LIMIT 20
   `;
 }

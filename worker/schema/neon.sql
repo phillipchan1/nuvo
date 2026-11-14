@@ -202,8 +202,7 @@ CREATE TABLE IF NOT EXISTS public.event_domain_routing (
 CREATE TABLE IF NOT EXISTS public.contacts_directory (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
-  email TEXT NOT NULL,
-  name TEXT
+  email TEXT NOT NULL
 );
 
 ALTER TABLE public.domains ADD COLUMN IF NOT EXISTS charter TEXT NOT NULL DEFAULT '';
@@ -544,6 +543,8 @@ ALTER TABLE public.calendar_accounts ADD COLUMN IF NOT EXISTS access_token_iv BY
 ALTER TABLE public.contacts_directory ADD COLUMN IF NOT EXISTS account_id UUID REFERENCES public.calendar_accounts (id) ON DELETE CASCADE;
 ALTER TABLE public.contacts_directory ADD COLUMN IF NOT EXISTS source TEXT;
 ALTER TABLE public.contacts_directory ADD COLUMN IF NOT EXISTS display_name TEXT;
+-- Production has display_name only; there is no name column.
+ALTER TABLE public.contacts_directory DROP COLUMN IF EXISTS name;
 CREATE UNIQUE INDEX IF NOT EXISTS contacts_directory_account_email_uidx
   ON public.contacts_directory (account_id, email);
 ALTER TABLE public.activity_sources ADD COLUMN IF NOT EXISTS refresh_token_enc BYTEA;
