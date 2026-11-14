@@ -26,6 +26,7 @@ import {
   MenuSeparator,
   MiniMonth,
   PaceTrack,
+  PageBar,
   Picker,
   Property,
   Readiness,
@@ -339,6 +340,43 @@ function Column({ theme }: { theme: "light" | "dark" }) {
           />
           <Crown eyebrow="Next 4 quarters" done={2} total={2} noun="on track" track={<PaceTrack done={2} total={2} color="var(--accent)" width={160} />} line={null} />
           <CrownLine line={{ tone: "muted", glyph: null, text: "Trading: no hours for 3 weeks", act: "Open Trading", then: null }} onPress={() => {}} />
+        </div>
+      </Block>
+
+      <Block title="PageBar" part="PageBar — sheds by its own width: root crumb → button words → D·W·M·Y → Today">
+        <div style={{ display: "grid", gap: 10 }}>
+          {[860, 620, 440, 360].map((w) => (
+            <div key={w} style={{ width: w, maxWidth: "100%", border: "1px solid var(--line-1)", borderRadius: 8, overflow: "hidden" }}>
+              <PageBar
+                icon={<Icon name="calendar" size={16} />}
+                trail={["Schedule", `November 2026 · ${w}px`]}
+                actions={
+                  <>
+                    <Button>Rhythm</Button>
+                    <Button collapsible icon={<Icon name="calendar" size={14} />}>
+                      Plan the week
+                    </Button>
+                    <IconButton label="Previous" icon={<Icon name="chevron-left" size={14} />} />
+                    <Button shed>Today</Button>
+                    <IconButton label="Next" icon={<Icon name="chevron-right" size={14} />} />
+                    <Segmented
+                      label="Calendar view"
+                      value="week"
+                      onChange={() => {}}
+                      options={[
+                        { value: "spread", label: "Spread", short: "S" },
+                        { value: "day", label: "Day", short: "D" },
+                        { value: "week", label: "Week", short: "W" },
+                        { value: "month", label: "Month", short: "M" },
+                        { value: "year", label: "Year", short: "Y" },
+                      ]}
+                    />
+                    <IconButton label="More" icon={<Icon name="more" size={14} />} />
+                  </>
+                }
+              />
+            </div>
+          ))}
         </div>
       </Block>
 

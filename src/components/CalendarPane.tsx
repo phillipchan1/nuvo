@@ -94,12 +94,12 @@ export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board" 
 
 // The view switch's five faces, in the bar's Segmented (D-190).
 const CAL_VIEWS = [
-  { value: "board", label: "Spread" },
-  { value: "timeGridDay", label: "Day" },
-  { value: "timeGridWeek", label: "Week" },
-  { value: "dayGridMonth", label: "Month" },
-  { value: "year", label: "Year" },
-] as const satisfies readonly { value: CalView; label: string }[];
+  { value: "board", label: "Spread", short: "S" },
+  { value: "timeGridDay", label: "Day", short: "D" },
+  { value: "timeGridWeek", label: "Week", short: "W" },
+  { value: "dayGridMonth", label: "Month", short: "M" },
+  { value: "year", label: "Year", short: "Y" },
+] as const satisfies readonly { value: CalView; label: string; short: string }[];
 
 /** Views that aren't FullCalendar at all — they own their own canvas, so every
  *  `calRef.getApi()` path (paging, today, resize, drag wiring) has to stand
@@ -4926,6 +4926,7 @@ function CalendarPane({
               <Button
                 onClick={onOpenWeekPlan}
                 title={weekButtonTitle ?? weekButtonLabel}
+                collapsible
                 icon={<WeekEmblem spec={weekGlyph} state="forming" size={18} hideAmbient />}
                 style={weekButtonGlow ? { boxShadow: "0 0 0 1px var(--signal), 0 0 0 4px var(--signal-soft)" } : undefined}
               >
@@ -4935,7 +4936,7 @@ function CalendarPane({
             {view !== "board" && (
               <>
                 <IconButton label="Previous" shortcut="⌘←" icon={<Icon name="chevron-left" size={14} />} onClick={() => pageBy(-1)} />
-                <Button onClick={pageToday} title="Go to today (⌘T)">
+                <Button shed onClick={pageToday} title="Go to today (⌘T)">
                   Today
                 </Button>
                 <IconButton label="Next" shortcut="⌘→" icon={<Icon name="chevron-right" size={14} />} onClick={() => pageBy(1)} />

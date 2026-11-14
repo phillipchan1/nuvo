@@ -94,7 +94,16 @@ export function Switch({
   );
 }
 
-export type Choice<T extends string> = { value: T; label: ReactNode; icon?: ReactNode; count?: number; title?: string };
+export type Choice<T extends string> = {
+  value: T;
+  label: ReactNode;
+  icon?: ReactNode;
+  count?: number;
+  title?: string;
+  /** what a Segmented in a tight PageBar says instead — the phone ladder's
+   *  letters ("D", "W"). The bar decides when (styles/kit.css, `k-bar`). */
+  short?: string;
+};
 
 /** ←/→ walk the options and select as they go (radio-group behaviour). */
 function arrowStep<T extends string>(e: KeyboardEvent, options: readonly Choice<T>[], value: T, onChange: (v: T) => void, root: HTMLElement | null) {
@@ -144,11 +153,21 @@ export function Segmented<T extends string>({
             aria-checked={on}
             tabIndex={on ? 0 : -1}
             data-value={o.value}
-            title={o.title}
+            title={o.title ?? (o.short && typeof o.label === "string" ? o.label : undefined)}
+            aria-label={o.short && typeof o.label === "string" ? o.label : undefined}
             onClick={() => onChange(o.value)}
           >
             {o.icon}
-            {o.label}
+            {o.short ? (
+              <>
+                <span className="k-seg-long">{o.label}</span>
+                <span className="k-seg-short" aria-hidden="true">
+                  {o.short}
+                </span>
+              </>
+            ) : (
+              o.label
+            )}
           </button>
         );
       })}

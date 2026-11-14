@@ -23,11 +23,17 @@ type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & {
   /** a toggle that is on (a pressed toolbar button) */
   active?: boolean;
   full?: boolean;
+  /** in a tight PageBar, drop the words and keep the icon (the words become
+   *  the tooltip). Only meaningful with `icon`. */
+  collapsible?: boolean;
+  /** the first act a very tight PageBar lets go of. Only for an act that has
+   *  a shortcut and a neighbour that covers it (Today: ⌘T, beside ‹ ›). */
+  shed?: boolean;
   children?: ReactNode;
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { kind = "secondary", size = "sm", icon, trailing, shortcut, active, full, className, children, type = "button", ...rest },
+  { kind = "secondary", size = "sm", icon, trailing, shortcut, active, full, collapsible, shed, className, children, type = "button", ...rest },
   ref,
 ) {
   return (
@@ -39,10 +45,12 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       data-size={size === "sm" ? undefined : size}
       data-active={active || undefined}
       data-full={full || undefined}
+      data-collapsible={(collapsible && icon) || undefined}
+      data-shed={shed || undefined}
       {...rest}
     >
       {icon}
-      {children}
+      {collapsible && icon ? <span className="k-btn-label">{children}</span> : children}
       {trailing}
       {shortcut != null && <Kbd keys={shortcut} />}
     </button>

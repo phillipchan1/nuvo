@@ -79,6 +79,17 @@ committed projects with pieces landed, from `useWeekCrown` — and Settings · S
 breadcrumb (the last word is the page, or the span on screen) · tabs · drag gap · actions. The
 chat slot sits on the ground beside the panel. Verify the whole frame at `?rail=frame`.
 
+The bar is a size container and **sheds by its own width, never by clipping** — the same page is
+900px with the panels folded and 360px with them open. In order: the breadcrumb ellipsizes; at
+760 the root crumb goes and a Button marked `collapsible` keeps only its icon; at 600 a
+Segmented's options say their `short` (the phone ladder's D · W · M · Y); at 480 the crumb goes
+and a Button marked `shed` (an act with a shortcut and a neighbour, like Today) leaves. Verify
+the four widths at `?kit`.
+
+A single-column `display: grid` declares `grid-template-columns: minmax(0, 1fr)`. Without it the
+implicit column sizes to its longest line, and one long name widens the whole container — the
+record's property panel, the kit card and the statement door all did (`tests/overflow-guard`).
+
 On the Mac the traffic lights rest over the sidebar, on the wordmark's edge. With the sidebar
 railed or hidden they are **hidden** (⌘W / ⌘M still close and minimise), and the rail's mark
 rises onto the page bar's line — no band is kept for buttons that aren't there. Every other

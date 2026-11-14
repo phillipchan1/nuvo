@@ -51,7 +51,7 @@ const dom = (o: Partial<Domain> & { id: string; name: string; color: string }): 
   }) as Domain;
 
 const DOMAINS: Domain[] = [
-  dom({ id: "d1", name: "Work", color: "#4f5fd6", icon: "briefcase", sort: 0 }),
+  dom({ id: "d1", name: "Made for Greatness Labs", color: "#4f5fd6", icon: "briefcase", sort: 0 }),
   dom({ id: "d2", name: "Health", color: "#1e9467", icon: "heart", sort: 1 }),
   dom({ id: "d3", name: "Writing", color: "#c23f72", icon: "pen", sort: 2 }),
 ];
@@ -114,7 +114,8 @@ const TASKS: VTask[] = [
   task("t3", "Ship onboarding flow v2", { status: "done" }),
   task("t4", "Instrument the funnel", { durationMins: 60 }),
   task("t5", "Review with Priya", { durationMins: 30 }),
-  task("t6", "Book the dentist", { projectId: null, initiativeId: null, domainId: "d1" }),
+  task("t7", "Dayspring — cut over the app backend to Cloudflare Workers (site already on CF)", { durationMins: 90 }),
+  task("t6", "Onboarding flow — clarify the empty states and supply responsibilities with design", { projectId: null, initiativeId: null, domainId: "d1" }),
 ];
 
 // The record's list reads the task rows themselves from the ["tasks","all"]

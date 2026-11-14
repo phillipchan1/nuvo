@@ -400,7 +400,7 @@ html:root .k-field > select:focus-visible { outline: none; }
   background: color-mix(in srgb, var(--sunk) 60%, var(--raised));
 }
 .doc-body[data-assess] .doc-props { background: transparent; border-left-color: transparent; }
-.doc-props-inner { position: sticky; top: 0; display: grid; gap: 2px; padding: 14px 12px 24px; }
+.doc-props-inner { position: sticky; top: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 14px 12px 24px; }
 @media (max-width: 900px) {
   .doc-body,
   .doc-body[data-assess] { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; }

@@ -494,6 +494,9 @@ button.k-chip { padding-right: 4px; }
 
 .k-card {
   display: grid;
+  /* one column the card's width, never its longest line's: an implicit column
+     sizes to max-content, and one long intention widened every card beside it */
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   padding: 10px 12px;
   border-radius: var(--r-card);
@@ -773,13 +776,16 @@ html:root [data-sonner-toaster] [data-sonner-toast] [data-button] {
   padding: 0 10px 0 16px;
   border-bottom: 1px solid var(--line-1);
   min-width: 0;
+  /* the bar sheds by its OWN width, not the window's: the same page is 900px
+     wide with the panels folded and 360px with the sidebar and rail open */
+  container: k-bar / inline-size;
 }
 .k-crumb {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  flex: none;
+  flex: 0 1 auto; /* the crumb gives way first — the acts never run off the panel */
   max-width: 50%;
   font: 500 13px/1 var(--font-sans);
   color: var(--muted);
@@ -793,6 +799,9 @@ html:root [data-sonner-toaster] [data-sonner-toast] [data-button] {
 .k-bar-tabs .k-tabs { min-height: 0; }
 .k-bar-fill { flex: 1; align-self: stretch; min-width: 8px; }
 .k-bar-actions { display: flex; align-items: center; gap: 6px; flex: none; min-width: 0; }
+.k-crumb-here { flex: 0 1 auto; min-width: 3ch; }
+.k-crumb-up { flex: 0 4 auto; min-width: 2.5em; } /* never shrinks to nothing and orphans its slash */
+.k-seg-short { display: none; }
 @media (max-width: 767px) {
   .k-bar { padding: 0 8px 0 12px; }
   .k-bar-tabs { margin-left: 8px; }
@@ -871,4 +880,26 @@ html:root [data-sonner-toaster] [data-sonner-toast] [data-button] {
 html:root button.k-crown-line:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
 @media (pointer: coarse) {
   .k-crown-line { min-height: 44px; font-size: 14px; }
+}
+
+/* A tight bar sheds in a fixed order, and never by clipping: the root crumb,
+   then the words on an icon'd button, then the view switch's words for the
+   phone ladder's letters (D · W · M · Y). */
+@container k-bar (max-width: 760px) {
+  .k-crumb-up,
+  .k-crumb-sep { display: none; }
+  .k-crumb { max-width: 40%; }
+  .k-btn[data-collapsible] { width: var(--h-sm); padding: 0; }
+  .k-btn[data-collapsible] > .k-btn-label { display: none; }
+}
+@container k-bar (max-width: 600px) {
+  .k-bar-actions .k-seg button { padding: 0 8px; }
+  .k-bar-actions .k-seg-long { display: none; }
+  .k-bar-actions .k-seg-short { display: inline; }
+}
+@container k-bar (max-width: 480px) {
+  .k-crumb { display: none; }
+  .k-bar-actions { gap: 2px; }
+  .k-bar-actions .k-seg button { padding: 0 6px; }
+  .k-btn[data-shed] { display: none; }
 }

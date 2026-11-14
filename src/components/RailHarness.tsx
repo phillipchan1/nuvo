@@ -241,19 +241,24 @@ function Frame() {
                     trail={["Schedule", "November 2026"]}
                     actions={
                       <>
+                        {/* the real bar's two optional acts, so the frame sheds what the app sheds */}
+                        <Button>Rhythm</Button>
+                        <Button collapsible icon={<Icon name="calendar" size={14} />}>
+                          Plan the week
+                        </Button>
                         <IconButton label="Previous" shortcut="⌘←" icon={<Icon name="chevron-left" size={14} />} />
-                        <Button>Today</Button>
+                        <Button shed>Today</Button>
                         <IconButton label="Next" shortcut="⌘→" icon={<Icon name="chevron-right" size={14} />} />
                         <Segmented
                           label="Calendar view"
                           value={view}
                           onChange={setView}
                           options={[
-                            { value: "board", label: "Spread" },
-                            { value: "timeGridDay", label: "Day" },
-                            { value: "timeGridWeek", label: "Week" },
-                            { value: "dayGridMonth", label: "Month" },
-                            { value: "year", label: "Year" },
+                            { value: "board", label: "Spread", short: "S" },
+                            { value: "timeGridDay", label: "Day", short: "D" },
+                            { value: "timeGridWeek", label: "Week", short: "W" },
+                            { value: "dayGridMonth", label: "Month", short: "M" },
+                            { value: "year", label: "Year", short: "Y" },
                           ]}
                         />
                         <IconButton label="More calendar tools" icon={<Icon name="more" size={14} />} />

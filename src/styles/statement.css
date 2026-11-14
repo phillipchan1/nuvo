@@ -165,6 +165,7 @@ html.tauri-macos .st-brand { padding-left: var(--titlebar-x, 0px); }
 /* ── The door ──────────────────────────────────────────────────────────── */
 .st-door {
   display: grid;
+  grid-template-columns: minmax(0, 1fr); /* an implicit column grows to the copy's unwrapped width */
   grid-template-rows: 1fr auto;
   min-width: 0;
   padding: max(40px, calc(var(--titlebar-h, 0px) + 24px)) clamp(24px, 4vw, 64px) 28px;
@@ -176,6 +177,7 @@ html.tauri-macos .st-brand { padding-left: var(--titlebar-x, 0px); }
   justify-self: center;
   width: min(380px, 100%);
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   animation: st-door-in var(--d-moment) var(--ease-spring) 120ms both;
 }
