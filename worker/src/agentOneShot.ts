@@ -1,19 +1,15 @@
-// The Supabase agent function's one-shot endpoints, ported as-is onto the
-// Worker store. Same prompt and LLM call (supabase/functions/agent/
-// draftOutcomePrompt.ts + llmCore.ts), same ownership rule and the same
-// thrown messages — handleAgent turns a throw into 500 {error}, as the
-// Supabase function's outer catch does.
+// The Supabase agent function's one-shot endpoints on the Worker. The routing
+// (supabase/functions/agent/oneShots.ts), the prompts, the LLM calls and the
+// post-processing are the Supabase agent's own code; only the runtime differs:
+// `db` is agentDb.ts (the session-scoped PostgREST layer) instead of the
+// service-role client, and `env` reads the Worker's bindings instead of Deno.env.
 
-import { completeJSONFrom, type EnvGet } from "../../supabase/functions/agent/llmCore.ts";
-import {
-  draftOutcomePrompt,
-  draftOutcomeResult,
-  draftOutcomeTable,
-  type DraftOutcomeDomain,
-  type DraftOutcomeInput,
-} from "../../supabase/functions/agent/draftOutcomePrompt.ts";
+import type { AgentDeps } from "../../supabase/functions/agent/agentDeps.ts";
+import type { EnvGet } from "../../supabase/functions/agent/llmCore.ts";
+import { runOneShot } from "../../supabase/functions/agent/oneShots.ts";
+import { agentDb } from "./agentDb.ts";
 import type { Env } from "./env.ts";
-import { getOwned, type Store } from "./store.ts";
+import type { Store } from "./store.ts";
 
 /** The Worker's bindings, read the way llm.ts reads Deno.env.get: a string as-is, else unset. */
 export function workerEnvGet(env: Env): EnvGet {
@@ -23,39 +19,11 @@ export function workerEnvGet(env: Env): EnvGet {
   };
 }
 
-/** Tending's "raw → shaped" advance: one outcome line for a project / initiative. */
-export async function draftOutcome(
-  store: Store,
-  env: Env,
-  input: DraftOutcomeInput,
-  fetchImpl: typeof fetch = fetch,
-): Promise<{ outcome: string }> {
-  // Supabase: `.eq("id").eq("user_id").single()` — a foreign, missing or
-  // malformed id all end in `${kind} not found`.
-  let item: Record<string, unknown> | null = null;
-  try {
-    item = await getOwned(store, draftOutcomeTable(input.kind), String(input.id));
-  } catch {
-    item = null;
-  }
-  if (!item) throw new Error(`${input.kind} not found`);
+export function workerAgentDeps(store: Store, env: Env): AgentDeps {
+  return { db: agentDb(store), env: workerEnvGet(env) };
+}
 
-  // One deliberate difference: Supabase read the domain by id with the service
-  // role; here it must also be the caller's. The Worker's FK guard already keeps
-  // a foreign domain_id off owned rows, so for real data the prompt is the same.
-  let domain: DraftOutcomeDomain = null;
-  if (item.domain_id) {
-    try {
-      domain = (await getOwned(store, "domains", String(item.domain_id))) as DraftOutcomeDomain;
-    } catch {
-      domain = null;
-    }
-  }
-
-  const raw = await completeJSONFrom<{ outcome?: unknown }>(
-    workerEnvGet(env),
-    draftOutcomePrompt(input, item, domain),
-    fetchImpl,
-  );
-  return draftOutcomeResult(raw);
+/** The one-shot's JSON, or undefined when the body names none (fall through to chat). */
+export function runWorkerOneShot(store: Store, env: Env, body: Record<string, unknown>): Promise<unknown | undefined> {
+  return runOneShot(workerAgentDeps(store, env), store.userId, body);
 }
