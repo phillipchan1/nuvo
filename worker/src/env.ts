@@ -20,6 +20,8 @@ export interface Env {
   /** wrangler / `.dev.vars` only: `local` allows a localhost auth fallback. `preview` enables OTP log delivery. Never `local` on workers.dev. */
   ENVIRONMENT?: string;
   RESEND_API_KEY?: string;
+  /** Cloudflare Email Sending binding (`send_email` in wrangler.jsonc). Sender: RESEND_FROM. */
+  EMAIL?: SendEmail;
   RESEND_FROM?: string;
   /** Optional. `/api/cron/*` compares the bearer in constant time. Unset → 401. */
   CRON_SECRET?: string;
