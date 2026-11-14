@@ -20,6 +20,7 @@
 
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useApplyTheme, useSettings } from "../hooks/useSettings";
 import { startOfDay } from "date-fns";
 import LeftRail, { type RailTab } from "./LeftRail";
 import RestDeck from "./plan/RestDeck";
@@ -232,6 +233,10 @@ function Desktop({ embedded = false, bar, fx = BASE, withDeck = false }: { embed
 // sidebar on the ground, the inset panel, the one bar — over the calendar's
 // column, beside the rail, as Planner lays it out. The grid is a stand-in.
 function Frame() {
+  // The real theme path: the Spine's light/dark row writes the setting, this
+  // paints it — the same `useApplyTheme` the app mounts.
+  const { settings } = useSettings();
+  useApplyTheme(settings?.theme);
   const [rung, setRung] = useState<"day" | "project" | "initiative" | "domain">("day");
   const [view, setView] = useState<"board" | "timeGridDay" | "timeGridWeek" | "dayGridMonth" | "year">("timeGridWeek");
   const [face, setFace] = useState<"ondeck" | "groom" | "all" | "shipped">("groom");
@@ -241,7 +246,7 @@ function Frame() {
       <div className="app-shell flex h-full">
         <div className="app-canvas flex min-w-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1">
-            <Spine rung={rung} setRung={setRung} openSettings={() => {}} openShortcuts={() => {}} openSearch={() => {}} />
+            <Spine rung={rung} setRung={setRung} openSettings={() => {}} openSearch={() => {}} />
             <div className="app-panel flex min-w-0 flex-1 flex-col">
               {/* The one bar, across the whole panel on every page; its crumb
                   holds the rail's width, so the tabs stand still (D-208). */}
@@ -398,7 +403,12 @@ export default function RailHarness() {
   const busy = mode === "offers" || mode === "offers-phone";
   const fx = busy ? BUSY : BASE;
   const qc = useMemo(
-    () => (busy ? offersClient(offersToday()) : new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })),
+    () => {
+      if (busy) return offersClient(offersToday());
+      const c = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+      c.setQueryData(["settings"], { user_id: "harness", theme: "light" });
+      return c;
+    },
     [busy],
   );
   const store = useMemo(() => ({ data: fx.vertical, ready: true, togglePushLanded: () => {} }) as unknown as VerticalStore, [fx]);

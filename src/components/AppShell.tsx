@@ -277,7 +277,6 @@ const AppShellInner = memo(function AppShellInner() {
   // memoized (it renders on every desktop surface), and an inline closure here
   // would hand it a fresh prop on every AppShell render.
   const openSettings = useCallback(() => openOverlay("settings"), [openOverlay]);
-  const openShortcuts = useCallback(() => openOverlay("shortcuts"), [openOverlay]);
   const openSearch = useCallback(() => openOverlay("search"), [openOverlay]);
 
   // Focus mode: collapse the spine + the inbox·today rail to give the calendar
@@ -488,7 +487,6 @@ const AppShellInner = memo(function AppShellInner() {
         rung={rung}
         setRung={goRung}
         openSettings={openSettings}
-        openShortcuts={openShortcuts}
         openSearch={openSearch}
       />
 

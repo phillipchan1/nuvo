@@ -33,7 +33,7 @@ export type OverlayKind =
   // so Esc / Back / ⌘[ leave it like every other overlay.
   | "memory";
 
-export type SettingsSection = "appearance" | "schedule" | "reminders" | "connections" | "inbound" | "apps" | "labels" | "desktop" | "account" | "billing" | "about";
+export type SettingsSection = "appearance" | "schedule" | "reminders" | "connections" | "inbound" | "apps" | "labels" | "shortcuts" | "desktop" | "account" | "billing" | "about";
 
 export type FloorModal = null | "new-initiative" | "new-project";
 

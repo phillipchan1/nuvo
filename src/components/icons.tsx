@@ -100,6 +100,16 @@ export function SettingsIcon({ size = 19 }: { size?: number }) {
   );
 }
 
+/** Light ↔ dark: a ring, half filled. Same hand as the rest of the chrome. */
+export function ThemeIcon({ size = 19 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden>
+      <circle cx="10" cy="10" r="6.5" />
+      <path d="M10 3.5a6.5 6.5 0 0 1 0 13Z" fill="currentColor" />
+    </svg>
+  );
+}
+
 export function ChevronIcon({ dir, size = 15 }: { dir: "left" | "right"; size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>

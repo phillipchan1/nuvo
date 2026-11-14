@@ -131,12 +131,30 @@ export function useSettings() {
   return { settings: query.data, isLoading: query.isLoading, update };
 }
 
+/** The theme actually showing for a setting — "system" resolves to the OS's. */
+function resolveTheme(theme: UserSettings["theme"] | undefined, systemDark: boolean): "light" | "dark" {
+  return !theme || theme === "system" ? (systemDark ? "dark" : "light") : theme;
+}
+
+/**
+ * Flip light ↔ dark from whatever is showing right now — so from "system" on a
+ * dark OS it goes to light, not nowhere. It stores an explicit choice; "system"
+ * stays one tap away in Settings. `next` is what a tap will switch TO, for the
+ * control's label.
+ */
+export function useToggleTheme() {
+  const { settings, update } = useSettings();
+  const showing = resolveTheme(settings?.theme, window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ?? false);
+  const next = showing === "dark" ? "light" : "dark";
+  return { next, toggle: () => update({ theme: next }) };
+}
+
 /** Apply theme setting to <html data-theme> (system | light | dark). */
 export function useApplyTheme(theme: UserSettings["theme"] | undefined) {
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const apply = () => {
-      const effective = !theme || theme === "system" ? (mq.matches ? "dark" : "light") : theme;
+      const effective = resolveTheme(theme, mq.matches);
       document.documentElement.dataset.theme = effective;
     };
     apply();

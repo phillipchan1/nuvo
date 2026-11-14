@@ -16,6 +16,7 @@ import {
   Globe,
   Hourglass,
   Info,
+  Keyboard,
   List,
   Mail,
   MapPin,
@@ -72,6 +73,7 @@ export type IconName =
   | "eye-off"
   | "globe"
   | "info"
+  | "keyboard"
   | "mail"
   | "moon"
   | "more"
@@ -114,6 +116,7 @@ const GLYPHS: Record<IconName, LucideIcon> = {
   "eye-off": EyeOff,
   globe: Globe,
   info: Info,
+  keyboard: Keyboard,
   mail: Mail,
   moon: Moon,
   more: MoreHorizontal,

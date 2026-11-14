@@ -7,7 +7,8 @@ import { toneColor } from "./floors/ReadinessBanner";
 import { useWeekCrown } from "../hooks/useWeekCrown";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { Dot, Kbd, NuvoMark } from "./kit";
-import { AltitudeIcon, ChevronIcon, SettingsIcon } from "./icons";
+import { AltitudeIcon, ChevronIcon, SettingsIcon, ThemeIcon } from "./icons";
+import { useToggleTheme } from "../hooks/useSettings";
 import { Icon } from "./Icon";
 import GettingStarted from "./orientation/GettingStarted";
 import { useMemory } from "../hooks/useMemory";
@@ -35,6 +36,33 @@ function MemoryRow({ railed }: { railed: boolean }) {
         </Suspense>
       )}
     </>
+  );
+}
+
+/** Light ↔ dark, one tap from the chrome and ⇧⌘L from anywhere. Owns its own
+ *  key listener (like ⌘\ below) so the sidebar body doesn't re-render when the
+ *  theme setting changes. */
+function ThemeRow() {
+  const { next, toggle } = useToggleTheme();
+  const toggleRef = useRef(toggle);
+  toggleRef.current = toggle;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.altKey || e.key.toLowerCase() !== "l") return;
+      e.preventDefault();
+      toggleRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  const label = `Switch to ${next} (⇧⌘L)`;
+  return (
+    <button onClick={toggle} title={label} aria-label={label} className="sb-item">
+      <span className="sb-icon">
+        <ThemeIcon size={16} />
+      </span>
+      <span className="sb-label">Theme</span>
+    </button>
   );
 }
 
@@ -107,7 +135,6 @@ interface SpineProps {
   rung: Rung;
   setRung: (r: Rung) => void;
   openSettings: () => void;
-  openShortcuts: () => void;
   openSearch: () => void;
   /** Focus mode: slide the whole spine closed (the calendar takes the room). */
   collapsed?: boolean;
@@ -146,7 +173,6 @@ const SpineBody = memo(function SpineBody({
   rung,
   setRung,
   openSettings,
-  openShortcuts,
   openSearch,
   collapsed = false,
   forceRail = false,
@@ -352,13 +378,8 @@ const SpineBody = memo(function SpineBody({
           <GettingStarted compact={railed} />
           <MemoryRow railed={railed} />
           {utility({ icon: <Icon name="search" size={16} />, label: "Search", hint: "/", onClick: openSearch })}
+          <ThemeRow />
           {utility({ icon: <SettingsIcon size={16} />, label: "Settings", hint: "⌘,", onClick: openSettings })}
-          {utility({
-            icon: <span className="text-caption leading-none">?</span>,
-            label: "Shortcuts",
-            hint: "?",
-            onClick: openShortcuts,
-          })}
           {/* The width is a control, so it sits with the other chrome — never a
               hover-only affordance. Not offered while the rail is forced (the
               chat is open on a narrow window): an Expand that cannot expand is

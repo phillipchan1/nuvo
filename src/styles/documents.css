@@ -68,6 +68,8 @@
 /* the Shortcuts sheet: groups in two columns, a label and its keycaps */
 .sc-grid > section { break-inside: avoid; padding-bottom: 16px; }
 @media (min-width: 640px) { .sc-grid { columns: 2; column-gap: 32px; } }
+/* In Settings the pane is already a column — one list, not two. */
+.set-main .sc-grid { columns: 1; }
 .sc-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 30px; border-bottom: 1px solid var(--line-1); color: var(--ink-2); font: 400 13px/1.35 var(--font-sans); }
 .sc-keys { display: inline-flex; flex: none; align-items: center; gap: 4px; }
 .sc-combo { display: inline-flex; align-items: center; gap: 4px; }

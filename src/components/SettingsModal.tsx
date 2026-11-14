@@ -38,6 +38,7 @@ import { BillingPane } from "./billing/BillingPane";
 import { DeleteAccount } from "./account/DeleteAccount";
 import { useSubscription } from "../hooks/useSubscription";
 import SyncPanel from "./SyncPanel";
+import { ShortcutGroups } from "./ShortcutsModal";
 import type { SettingsSection } from "../lib/appNav";
 import { useMaxPerWeek, useMaxPerQuarter } from "../hooks/usePlannerPrefs";
 import { DIAL_NOTE, useDial } from "../lib/planDial";
@@ -67,7 +68,7 @@ const DOWNLOAD_MAC_URL =
   "https://github.com/phillipchan1/nuvo-releases/releases/latest/download/Nuvo.dmg";
 
 // ── Section registry ──────────────────────────────────────────────────────
-type SectionId = "appearance" | "schedule" | "reminders" | "connections" | "inbound" | "apps" | "labels" | "account" | "billing" | "about";
+type SectionId = "appearance" | "schedule" | "reminders" | "connections" | "inbound" | "apps" | "labels" | "shortcuts" | "account" | "billing" | "about";
 
 const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
   { id: "appearance", label: "Appearance", icon: <Icon name="sun" size={16} /> },
@@ -82,6 +83,9 @@ const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
   // watch's token under a heading about calendars.
   { id: "apps", label: "Apps & devices", icon: <Icon name="package" size={16} /> },
   { id: "labels", label: "Labels", icon: <Icon name="tag" size={16} /> },
+  // The keyboard's list lives here, not as a `?` on the spine (the `?` key
+  // still opens it anywhere). A phone has no keyboard to list — see `sections`.
+  { id: "shortcuts", label: "Shortcuts", icon: <Icon name="keyboard" size={16} /> },
   { id: "account", label: "Account", icon: <Icon name="user" size={16} /> },
   { id: "billing", label: "Billing", icon: <Icon name="card" size={16} /> },
   { id: "about", label: "About", icon: <Icon name="info" size={16} /> },
@@ -1503,6 +1507,7 @@ export default function SettingsModal({
 }) {
   const { setSettingsSection } = useAppNavigation();
   const isMobile = useIsMobile();
+  const sections = isMobile ? SECTIONS.filter((s) => s.id !== "shortcuts") : SECTIONS;
 
   // The active section is owned here so it works in both shells. Desktop seeds it
   // from the nav (deep-links / URL), the mobile shell mounts at the section list.
@@ -1538,6 +1543,12 @@ export default function SettingsModal({
           Named apart so "connection" never means two things (P11). */}
       {active === "apps" && <AppsDevicesPane />}
       {active === "labels" && <LabelsPane />}
+      {active === "shortcuts" && (
+        <div>
+          <PaneHeader title="Shortcuts" />
+          <ShortcutGroups />
+        </div>
+      )}
       {active === "account" && <AccountPane />}
       {active === "billing" && <BillingPane />}
       {active === "about" && <AboutPane onClose={onClose} />}
@@ -1557,7 +1568,7 @@ export default function SettingsModal({
           className="tap -ml-2"
         />
         <span className="min-w-0 flex-1 truncate">
-          {SECTIONS.find((s) => s.id === active)?.label ?? "Settings"}
+          {sections.find((s) => s.id === active)?.label ?? "Settings"}
         </span>
       </div>
     ) : (
@@ -1571,7 +1582,7 @@ export default function SettingsModal({
           </div>
         ) : (
           <nav className="set-index" aria-label="Settings sections">
-            {SECTIONS.map((s) => (
+            {sections.map((s) => (
               <button key={s.id} type="button" onClick={() => select(s.id)} className="set-index-item">
                 {s.icon}
                 <span>{s.label}</span>
@@ -1592,7 +1603,7 @@ export default function SettingsModal({
       <div className="set">
         <nav className="set-nav" aria-label="Settings sections">
           <div className="set-nav-h">Settings</div>
-          {SECTIONS.map((s) => (
+          {sections.map((s) => (
             <button
               key={s.id}
               type="button"

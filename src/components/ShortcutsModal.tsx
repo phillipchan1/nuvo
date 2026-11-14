@@ -41,6 +41,7 @@ const GROUPS: Group[] = [
       { keys: [["⌘", "K"]], label: "Quick add — a task, event or slot" },
       { keys: [["⌘", "1"], ["⌘", "3"]], sep: "–", label: "In quick add: Task · Event · Slot" },
       { keys: [["⌘", ","]], label: "Settings" },
+      { keys: [["⇧", "⌘", "L"]], label: "Switch light / dark" },
       { keys: [["⌘", "+"], ["⌘", "−"]], sep: "/", label: "Zoom in / out" },
       { keys: [["⌘", "0"]], label: "Reset zoom" },
       { keys: [["P"]], label: "New project" },
@@ -133,6 +134,23 @@ function Row({ keys, sep, label }: Shortcut) {
   );
 }
 
+/** The groups themselves — the `?` panel wraps them in a dialog, and Settings →
+ *  Shortcuts is the same list in a pane (the spine no longer carries a `?`). */
+export function ShortcutGroups({ className = "" }: { className?: string }) {
+  return (
+    <div className={`sc-grid ${className}`}>
+      {GROUPS.map((g) => (
+        <section key={g.title}>
+          <SectionHeader title={g.title} className="!px-0" />
+          {g.items.map((s) => (
+            <Row key={s.label} {...s} />
+          ))}
+        </section>
+      ))}
+    </div>
+  );
+}
+
 export default function ShortcutsModal({ onClose }: { onClose: () => void }) {
   return (
     // Centered and bounded, with the body owning the scroll: this dialog is
@@ -140,16 +158,7 @@ export default function ShortcutsModal({ onClose }: { onClose: () => void }) {
     <Modal onClose={onClose} width="max-w-2xl" align="center">
       <DialogHead title="Keyboard shortcuts" onClose={onClose} />
       {/* Two columns on desktop; a single column on a phone. */}
-      <div className="dlg-body sc-grid">
-        {GROUPS.map((g) => (
-          <section key={g.title}>
-            <SectionHeader title={g.title} className="!px-0" />
-            {g.items.map((s) => (
-              <Row key={s.label} {...s} />
-            ))}
-          </section>
-        ))}
-      </div>
+      <ShortcutGroups className="dlg-body" />
     </Modal>
   );
 }
