@@ -284,7 +284,7 @@ const stepId = crypto.randomUUID();
   ok(remind.error?.code === "42501", `B reminder on A's task: 42501 (${remind.error?.code})`);
 
   await db.query(
-    `INSERT INTO contacts_directory (user_id, email, name) VALUES ($1, 'secret-a@example.test', 'Secret A')`,
+    `INSERT INTO contacts_directory (user_id, email, display_name) VALUES ($1, 'secret-a@example.test', 'Secret A')`,
     [a.id],
   );
   const mine = await A.rpc("contacts", { search: "secret" });

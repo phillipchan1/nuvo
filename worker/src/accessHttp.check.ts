@@ -382,7 +382,7 @@ await db.query(
   [A_ROW.event_domain_routing, a.id, A_ROW.domains],
 );
 await db.query(
-  `INSERT INTO contacts_directory (id, user_id, email, name) VALUES ($1, $2, 'secret-a@example.test', 'Secret A')`,
+  `INSERT INTO contacts_directory (id, user_id, email, display_name) VALUES ($1, $2, 'secret-a@example.test', 'Secret A')`,
   ["c0a11e00-5555-4000-8000-000000000001", a.id],
 );
 await db.query(`UPDATE user_settings SET theme = 'light', inbound_token = 'token-a-secret' WHERE user_id = $1`, [a.id]);
