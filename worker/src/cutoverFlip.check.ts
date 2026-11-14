@@ -564,9 +564,10 @@ ok(maintUnsetBody.write_freeze === false && maintUnsetBody.cutover_armed === fal
 ok(!("CUTOVER_FLIPPED" in maintUnsetBody), "maintenance does not echo CUTOVER_FLIPPED");
 const maintKeys = Object.keys(maintUnsetBody).sort();
 ok(
-  maintKeys.join(",") === "cutover_armed,cutover_flipped,message,write_freeze",
-  `maintenance keys are only the four flags: ${maintKeys.join(",")}`,
+  maintKeys.join(",") === "cutover_armed,cutover_flipped,inbound_mail_domain,message,write_freeze",
+  `maintenance keys are only the four flags plus inbound_mail_domain: ${maintKeys.join(",")}`,
 );
+ok(maintUnsetBody.inbound_mail_domain === "inbox.nuvo.day", "maintenance inbound_mail_domain defaults to inbox.nuvo.day");
 
 const maintOn = await app.request("http://localhost/api/maintenance", {}, { CUTOVER_FLIPPED: "1" });
 const maintOnBody = (await maintOn.json()) as Record<string, unknown>;

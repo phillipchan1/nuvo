@@ -37,6 +37,8 @@ import {
 } from "./entitlement.ts";
 import { handleDay } from "./dayHttp.ts";
 import { handleInboundEmail } from "./inboundHttp.ts";
+import { inboundMailDomain } from "../../supabase/functions/_shared/inboundEmail.ts";
+import { handleInboundMail, type InboundMailMessage } from "./inboundMail.ts";
 import { handleMcp } from "./mcpHttp.ts";
 import { scheduleClose } from "./requestIo.ts";
 import { handleGithubActivity } from "./githubActivity.ts";
@@ -140,6 +142,7 @@ app.get("/api/maintenance", (c) =>
       cutover_armed: writeFrozen(c.env?.CUTOVER_ARMED),
       cutover_flipped: cutoverFlipped(c.env?.CUTOVER_FLIPPED),
       message: writeFrozen(c.env?.MAINTENANCE_WRITE_FREEZE) ? WRITE_FROZEN_MESSAGE : null,
+      inbound_mail_domain: inboundMailDomain(c.env?.INBOUND_MAIL_DOMAIN || null),
     },
     200,
     { ...OPEN_CORS, "Cache-Control": "no-store" },
@@ -612,6 +615,15 @@ function queue(
   ctx.waitUntil(consumeCalendarSyncBatch(batch, env));
 }
 
-Object.assign(app, { scheduled, queue });
+/** Cloudflare Email Routing → Worker (inbox addresses). See inboundMail.ts. */
+async function email(
+  message: InboundMailMessage,
+  env: Env,
+  ctx: { waitUntil(promise: Promise<unknown>): void },
+): Promise<void> {
+  await handleInboundMail(message, env, ctx);
+}
+
+Object.assign(app, { scheduled, queue, email });
 
 export default app;

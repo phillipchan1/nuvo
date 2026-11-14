@@ -12,6 +12,7 @@ const {
   parseMaintenanceFlag,
   CUTOVER_FLIP_STORAGE_KEY,
   LAUNCH_TIMEOUT_MS,
+  liveInboundMailDomain,
 } = await import("../src/lib/maintenance");
 
 // A baked build (the desktop release bakes https://api.nuvo.day/api) — not yet flipped.
@@ -395,5 +396,23 @@ describe("agent callers", () => {
       expect(src, file).toMatch(/assertWritable\(\)/);
       expect(src, file).toMatch(/functions\/v1\/agent|functionUrl\("agent"\)/);
     }
+  });
+});
+
+describe("inbound_mail_domain", () => {
+  it("is null until the Worker answers", () => {
+    expect(liveInboundMailDomain()).toBeNull();
+  });
+
+  it("takes a valid domain from /api/maintenance, lowercased", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ok({ write_freeze: false, inbound_mail_domain: "Nuvo.Day" })));
+    await resolveLaunchBackend();
+    expect(liveInboundMailDomain()).toBe("nuvo.day");
+  });
+
+  it("ignores a malformed domain", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ok({ write_freeze: false, inbound_mail_domain: "evil@x" })));
+    await resolveLaunchBackend();
+    expect(liveInboundMailDomain()).toBeNull();
   });
 });

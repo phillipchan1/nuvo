@@ -43,11 +43,20 @@ type MaintenanceBody = {
   write_freeze?: unknown;
   cutover_armed?: unknown;
   cutover_flipped?: unknown;
+  inbound_mail_domain?: unknown;
 };
 
 let cached: { frozen: boolean; at: number } | null = null;
 let seenArmed = false;
 let resolved = false;
+let liveInboundDomain: string | null = null;
+
+const DOMAIN_RE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
+
+/** Inbox-address domain from GET /api/maintenance (`inbound_mail_domain`), or null before the first answer. */
+export function liveInboundMailDomain(): string | null {
+  return liveInboundDomain;
+}
 
 function flagOn(raw: string | undefined): boolean {
   const v = raw?.trim().toLowerCase() ?? "";
@@ -113,6 +122,7 @@ export function maintenanceUrl(): string {
 export function resetMaintenanceCacheForTests(): void {
   cached = null;
   seenArmed = false;
+  liveInboundDomain = null;
   resolved = false;
   persistFlip(false);
   setWorkersEnabled(false);
@@ -127,6 +137,10 @@ function isPlainObject(value: unknown): value is MaintenanceBody {
 }
 
 function applyBody(body: MaintenanceBody, atLaunch: boolean): void {
+  if (typeof body.inbound_mail_domain === "string") {
+    const d = body.inbound_mail_domain.trim().toLowerCase();
+    if (DOMAIN_RE.test(d)) liveInboundDomain = d;
+  }
   seenArmed = parseMaintenanceFlag(body.cutover_armed) === true || bakedArmed();
   cached = { frozen: parseMaintenanceFlag(body.write_freeze) === true, at: Date.now() };
 
