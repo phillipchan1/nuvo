@@ -7,6 +7,7 @@ import {
 } from "../lib/vertical";
 import { VerticalFreeze, VerticalProvider, useVerticalActions, useVerticalSelector } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
+import { isTypingIn } from "../lib/a11y";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useEventRouter } from "../hooks/useEventRouter";
 import { useReminderDelivery } from "../hooks/useReminders";
@@ -380,6 +381,27 @@ const AppShellInner = memo(function AppShellInner() {
     return () => window.removeEventListener("keydown", onKey);
   }, [jumpToRung, rung, back, canGoBack, closeOverlay, nav.overlay, nav.flow, nav.floorModal]);
 
+  // "/" finds — its own door, never the capture line (N-19, D-210) — and it is
+  // RESERVED app-wide (D-212). It listens in the capture phase, so no list,
+  // card or draft below can spend it first: the rail's filter used to take `/`
+  // whenever a row was selected, and a record on top swallowed it, so the same
+  // key opened search on one screen and something else on the next. Only two
+  // things outrank it: typing (then `/` is a character) and a flow, which owns
+  // the whole screen. A record or a create composer on top is lifted, pushed
+  // to history, so Back returns to it. `tests/search-slash.test.ts` fails on a
+  // second bare-`/` binding.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTypingIn(e.target) || nav.flow || nav.overlay === "search") return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      openOverlay("search");
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [openOverlay, nav.flow, nav.overlay]);
+
   // ⌘. slides the side panels away (and back) — focus the calendar from anywhere.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -424,12 +446,6 @@ const AppShellInner = memo(function AppShellInner() {
       const el = e.target as HTMLElement;
       if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
       if (nav.overlay !== "none" || nav.flow || nav.floorModal) return;
-      // "/" finds — its own door, never the capture line (N-19, D-210).
-      if (e.key === "/") {
-        e.preventDefault();
-        openOverlay("search");
-        return;
-      }
       // "?" opens the shortcuts reference from anywhere.
       if (e.key === "?") {
         e.preventDefault();

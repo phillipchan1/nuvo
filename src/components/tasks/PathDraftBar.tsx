@@ -68,7 +68,7 @@ export default function PathDraftBar({ draft, keys }: { draft: PathDraft; keys: 
               placeholder="Steer the rest — smaller steps, skip the research…"
               aria-label="Steer the drafted steps"
               icon={<Icon name="sparkles" size={13} />}
-              trailing={keys ? <Kbd keys="/" /> : undefined}
+              trailing={keys ? <Kbd keys="S" /> : undefined}
               autoComplete="off"
               enterKeyHint="send"
               onKeyDown={(e) => {

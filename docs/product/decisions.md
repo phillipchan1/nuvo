@@ -8209,3 +8209,30 @@ in Chromium at 390×844 and 320×568 with `visualViewport` faked to a 340px keyb
 field visible and above the keys in each, no horizontal overflow. **Not driven on a real iPhone** —
 Chromium has no on-screen keyboard, so the keyboard height and the pan are simulated; check on a
 device before calling the iOS behaviour confirmed.*
+
+---
+
+**D-212 · 2026-11-14 · `/` is search's, everywhere — reserved, and nothing below it can spend it first**
+
+D-210 put search on `/`, but bound it in the same bubbling handler as `p` / `i`, after two other
+claims on the key. The task rail's filter answered `/` whenever a row had focus (and called
+`preventDefault`, which the shell honoured by standing down), a drafted path under review took it
+to focus its steer field, and any record or composer on top switched it off. So the same key
+opened search on one screen and the rail's filter popover on the next — the operator saw
+"something else popping up" and stopped trusting it.
+
+→ **One binding, in `AppShell`, in the capture phase, with `stopImmediatePropagation`.** It
+stands down for only two things: typing (then `/` is a character) and a flow (which owns the
+whole screen). A record or create composer on top is lifted and pushed to history, so Back
+returns to it.
+→ **The rail's filter moves to `F`; a path draft's steer moves to `S`.** Both were free.
+→ **`tests/search-slash.test.ts` fails on a second bare-`/` binding** anywhere in `src`, and on
+the shell's listener leaving the capture phase.
+
+Ledger: no row moved — this is D-210's door made dependable. Strains nothing; retires a habit (`/`
+to filter the rail), named in the shortcuts sheet as `F`.
+
+*Status: built. Guard test passes, and fails against the pre-fix code. Driven at `?rail` (the real
+`LeftRail`): with a row selected, `/` no longer opens the filter and `F` does. **The shell's `/`
+not yet driven in the signed-in app** — no dev env in this checkout — so `/` over an open record
+is typechecked and test-guarded, not walked.*

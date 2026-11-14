@@ -698,7 +698,8 @@ function LeftRail({
               return true;
             }
             return false;
-          case "/":
+          // `f` filters. `/` is search's, app-wide (D-212).
+          case "f":
             e.preventDefault();
             setFilterOpen((v) => !v);
             return true;

@@ -339,7 +339,7 @@ export default function TaskFilter(props: {
       onClick={() => setOpen(!open)}
       aria-expanded={open}
       aria-label={count ? `Filters — ${count} active` : "Filter tasks"}
-      title="Filter tasks (/)"
+      title="Filter tasks (F)"
       icon={<Icon name="filter" size={13} />}
       data-icon={count > 0 ? undefined : ""}
       className={`tap-bloom shrink-0 ${className}`}

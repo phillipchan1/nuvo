@@ -534,7 +534,8 @@ export function usePathDraft(home: PathDraftHome | null, tasks: Task[], mutation
         case "E":
           if (k) stop(), s.setEditing(k);
           return;
-        case "/":
+        // `s` steers. `/` is search's, app-wide (D-212).
+        case "s":
           stop();
           steerRef.current?.focus();
           return;

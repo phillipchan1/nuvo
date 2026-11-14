@@ -96,7 +96,7 @@ const GROUPS: Group[] = [
       { keys: [["R"]], label: "Pick a date and time" },
       { keys: [["#"]], label: "Label" },
       { keys: [["B"]], label: "Remind (a scheduled task or a deadline)" },
-      { keys: [["/"]], label: "Filter the list (Esc clears it)" },
+      { keys: [["F"]], label: "Filter the list (Esc clears it)" },
       { keys: [["U"]], label: "Restore (on the Trash tab)" },
       { keys: [["1"], ["2"], ["3"]], sep: "/", label: "Today / Inbox / Trash tab (no row selected)" },
     ],
