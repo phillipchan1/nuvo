@@ -34,6 +34,12 @@
       "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/nuvo"
     }
   ],
+  // Cloudflare Email Sending (inbox.nuvo.day). Sign-in codes and referral
+  // notices send as RESEND_FROM. Named envs don't inherit this; preview
+  // declares its own.
+  "send_email": [
+    { "name": "EMAIL", "allowed_sender_addresses": ["noreply@inbox.nuvo.day"] }
+  ],
   "observability": {
     "enabled": true
   },
@@ -76,6 +82,10 @@
       // Empty array, not omitted — wrangler inherits top-level routes
       // otherwise and a preview deploy would steal api.nuvo.day.
       "routes": [],
+      // Not inherited from the top level.
+      "send_email": [
+        { "name": "EMAIL", "allowed_sender_addresses": ["noreply@inbox.nuvo.day"] }
+      ],
       // No Hyperdrive here on purpose. Wrangler does not inherit the
       // top-level binding; preview uses the DATABASE_URL secret. The
       // dry-run warning about a missing HYPERDRIVE on preview is expected.

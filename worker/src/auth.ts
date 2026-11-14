@@ -11,6 +11,7 @@ import {
   readAppleAuthConfig,
 } from "../../supabase/functions/_shared/appleIdentity.ts";
 import { parseBetterAuthSecrets, sealAccountTokenFields } from "./lib/accountTokens.ts";
+import { mailFrom } from "./mailFrom.ts";
 import { verifyPassword } from "./passwordHash.ts";
 import { parseRawKey } from "./secrets.ts";
 
@@ -28,29 +29,18 @@ async function sendOtpEmail(env: Env, email: string, otp: string, type: string):
     ? "Reset your Nuvo sign-in"
     : "Your Nuvo sign-in code";
   const text = `Your code is ${otp}. It expires in 5 minutes.\n\nIf you did not request this, ignore the email.`;
-  if (!env.RESEND_API_KEY) {
+  if (!env.EMAIL) {
     if (otpConsoleAllowed(env)) {
       console.log(`[auth] OTP for ${email} (${type}): ${otp}`);
     }
     return;
   }
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.RESEND_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: env.RESEND_FROM || "Nuvo <noreply@localhost>",
-      to: email,
-      subject,
-      text,
-    }),
+  await env.EMAIL.send({
+    from: mailFrom(env.RESEND_FROM || "Nuvo <noreply@localhost>"),
+    to: email,
+    subject,
+    text,
   });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`resend ${res.status}: ${body.slice(0, 200)}`);
-  }
 }
 
 /** Social sign-in persists provider tokens; never wire one we cannot seal. */

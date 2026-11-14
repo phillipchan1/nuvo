@@ -17,6 +17,7 @@
  */
 import type { Sql } from "../db.ts";
 import type { Env } from "../env.ts";
+import { mailFrom } from "../mailFrom.ts";
 import {
   configuredIapProductIds,
   iapEnvFrom,
@@ -315,24 +316,19 @@ async function notifyReferral(deps: BillingDeps, referrerAuthId: string, kind: "
   } catch {
     /* a notice never fails the webhook */
   }
-  const key = env.RESEND_API_KEY?.trim();
-  if (!key) return;
+  if (!env.EMAIL) return;
   try {
     const rows = (await sql`SELECT email FROM "user" WHERE id = ${referrerAuthId} LIMIT 1`) as { email: string | null }[];
     const to = rows[0]?.email;
     if (!to) return;
     const appUrl = env.APP_URL?.trim() || "https://app.nuvo.day";
-    const res = await (deps.fetchImpl ?? fetch)("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from: env.RESEND_FROM || "Nuvo <hello@nuvo.day>",
-        to: [to],
-        subject: msg.title,
-        text: `${msg.body}\n\nSettings → Billing: ${appUrl}\n`,
-      }),
+    await env.EMAIL.send({
+      from: mailFrom(env.RESEND_FROM || "Nuvo <hello@nuvo.day>"),
+      to: [to],
+      subject: msg.title,
+      text: `${msg.body}\n\nSettings → Billing: ${appUrl}\n`,
     });
-    await logBilling(sql, "stripe", `${kind}_email`, res.ok ? "ok" : "error", res.ok ? null : `${res.status}`, referrerAuthId);
+    await logBilling(sql, "stripe", `${kind}_email`, "ok", null, referrerAuthId);
   } catch (e) {
     await logBilling(sql, "stripe", `${kind}_email`, "error", e instanceof Error ? e.message : String(e), referrerAuthId);
   }
