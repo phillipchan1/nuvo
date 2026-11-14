@@ -40,6 +40,7 @@ import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
 import { requestIo, requireStore, type AppEnv } from "./session.ts";
 import { runPushDispatch } from "./pushDispatch.ts";
 import { readJson } from "./http.ts";
+import { rolloverUserTasks } from "./rollover.ts";
 
 export interface QueueMessage<T> {
   body: T;
@@ -127,27 +128,8 @@ async function runRollover(sql: Sql): Promise<{ rolled: number; today: string; u
   const users = (await sql`SELECT id FROM users`) as { id: string }[];
   let rolled = 0;
   for (const user of users) {
-    const rows = (await sql`
-      UPDATE tasks
-      SET do_date = ${today},
-          start_time = NULL,
-          slot_id = NULL,
-          roll_count = roll_count + GREATEST(${today}::date - COALESCE(do_date, ${today}::date), 1),
-          status = 'planned',
-          updated_at = now()
-      WHERE user_id = ${user.id}
-        AND status IN ('inbox', 'planned')
-        AND do_date IS NOT NULL
-        AND do_date < ${today}::date
-        AND parent_task_id IS NULL
-      RETURNING id
-    `) as { id: string }[];
-    rolled += rows.length;
-    await sql`
-      UPDATE user_settings
-      SET last_rollover_date = ${today}, updated_at = now()
-      WHERE user_id = ${user.id}
-    `;
+    // One definition of "what carries" (D-145 / D-147) — see rollover.ts.
+    rolled += (await rolloverUserTasks(sql, user.id, today)).length;
   }
   return { rolled, today, users: users.length };
 }
@@ -460,25 +442,6 @@ export async function handleUserRollover(c: Context<AppEnv>): Promise<Response> 
   const got = await requireStore(c);
   if ("error" in got) return got.error;
   const today = todayLA();
-  const rows = (await got.store.sql`
-    UPDATE tasks
-    SET do_date = ${today},
-        start_time = NULL,
-        slot_id = NULL,
-        roll_count = roll_count + GREATEST(${today}::date - COALESCE(do_date, ${today}::date), 1),
-        status = 'planned',
-        updated_at = now()
-    WHERE user_id = ${got.store.userId}
-      AND status IN ('inbox', 'planned')
-      AND do_date IS NOT NULL
-      AND do_date < ${today}::date
-      AND parent_task_id IS NULL
-    RETURNING id
-  `) as { id: string }[];
-  await got.store.sql`
-    UPDATE user_settings
-    SET last_rollover_date = ${today}, updated_at = now()
-    WHERE user_id = ${got.store.userId}
-  `;
+  const rows = await rolloverUserTasks(got.store.sql, got.store.userId, today);
   return json({ ok: true, rolled: rows.length, today }, 200, OPEN_CORS);
 }

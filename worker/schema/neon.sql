@@ -206,6 +206,12 @@ CREATE TABLE IF NOT EXISTS public.contacts_directory (
 );
 
 ALTER TABLE public.domains ADD COLUMN IF NOT EXISTS charter TEXT NOT NULL DEFAULT '';
+-- A recurring occurrence's identity (supabase/migrations/00000000000009_recurrence.sql).
+-- Prod already has these from the pg_dump; rollover (worker/src/rollover.ts, D-145)
+-- reads them, so the rehearsal DB must carry them too.
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS recurrence_id UUID;
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS recurrence_date DATE;
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS recurrence_overridden BOOLEAN NOT NULL DEFAULT FALSE;
 -- Memory (supabase/migrations/00000000000094_memory.sql, docs/memory.md): what
 -- you answered about what Nuvo learned, and which kind each domain is. The
 -- cutover's pg_dump carries both from Supabase; this keeps the rehearsal DB the same shape.

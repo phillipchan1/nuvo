@@ -8257,3 +8257,32 @@ not the mechanism. "Draft the path" survives only in code and docs as the featur
 Ledger: no row moved. Strains nothing; removes an overlapping name.
 
 *Status: shipped. Tests updated to the new words; checked at `?ready` / `?kit` and on the Schedule.*
+
+---
+
+**D-214 · 2026-11-14 · Rollover has one definition, in the Worker — and the guard drives it.**
+*(Asked by the operator, from a screenshot: "multiple 'Get ready for Sunday service' entries… I'm
+pretty sure I finished this Thursday.")* On Saturday the Today list showed three open copies of a
+weekly Thursday task, one marked **↻114d**. The cause was the Cloudflare flip: the Worker's
+rollover was ported from the August SQL, before D-145, so it carried **every** open recurring
+occurrence to today — including ones a later occurrence had already superseded. Every missed week
+in the account was swept onto Today at once. `tests/rollover.test.ts` had held D-145 the whole
+time, against the legacy Supabase migration that nothing runs any more — a guard on a copy.
+
+→ `worker/src/rollover.ts` is the only rollover; the cron and the client route both call it. It is
+the D-145 / D-147 rule, pinned and counted in days, and it judges a task in a passed slot by the
+slot's date. `worker/src/rollover.check.ts` runs the statement against Postgres (PGlite) with the
+screenshot's weekly series as a fixture, and was proven by deleting the guard: it reproduces
+`↻114d` on the July 23 occurrence. Rows already moved are put back by
+`scripts/repair-rollover-recurrence.ts` (dry run by default; `--apply`, or `--apply --trash`).
+
+Closes **D4** again for repeating work. Strains no principle — it restores D-145. **P7** is the
+point: the fix is at the writer, not a read-time filter that hides duplicates, so a stranger's
+account never shows a pile that the data shouldn't contain. Same lesson as the planning kernel:
+a rule that exists in two runtimes drifts, and a battery has to drive the code that ships.
+
+*Status: fixed in code — `worker/src/rollover.ts`, `rolloverRepair.ts`, `rollover.check.ts` (in
+`check:worker`), `tests/rollover.test.ts`. **Not yet run against the real Neon database** (this
+machine has no credentials): the repair is a dry run until someone with `NEON_DATABASE_URL` runs it
+and the Worker is deployed. The recurrence columns on `tasks` were added to `neon.sql` so the
+rehearsal DB matches prod.*
