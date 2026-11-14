@@ -108,7 +108,14 @@ function SpotlightFrame({ children }: { children: ReactNode }) {
     // mounts mid-`k-dialog-in` at scale(0.98), so the rect read 2% short, and a
     // transform never fires the ResizeObserver to correct it — the panel stayed
     // fitted to the shrunken card and clipped the Task · Event · Slot row.
-    const fit = () => void invoke("fit_spotlight", { height: card.offsetHeight + 24 });
+    // Plus the frame's own padding, read from CSS: it is sized to hold the
+    // card's shadow, and a hard-coded copy here is how the shadow got clipped.
+    const frame = card.parentElement;
+    const fit = () => {
+      const pad = frame ? getComputedStyle(frame) : null;
+      const room = pad ? parseFloat(pad.paddingTop) + parseFloat(pad.paddingBottom) : 64;
+      void invoke("fit_spotlight", { height: Math.ceil(card.offsetHeight + room) });
+    };
     fit();
     const ro = new ResizeObserver(fit);
     ro.observe(card);

@@ -966,9 +966,13 @@ html:root .capture-door .task-composer-input:focus-visible { outline: none; }
   align-items: flex-start;
   justify-content: center;
   overflow: hidden;
-  padding: 12px;
+  /* The window is fitted to the card plus this padding, and the native window
+     edge clips whatever paints past it — so the padding must hold the card's
+     whole shadow. --sh-modal reaches ~76px below (a visible rectangle cut
+     through it); --sh-pop reaches 8–16px up, 24–32px out, 40–48px down. */
+  padding: 16px 40px 48px;
 }
-.k-spotlight > .k-command { max-height: none; animation-duration: var(--d-slow); }
+.k-spotlight > .k-command { max-height: none; box-shadow: var(--sh-pop); animation-duration: var(--d-slow); }
 .k-spotlight-done { display: grid; justify-items: center; gap: 6px; padding: 28px 24px; text-align: center; }
 .k-spotlight-done .k-spotlight-ok {
   display: grid;
