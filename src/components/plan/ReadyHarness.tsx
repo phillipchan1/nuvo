@@ -18,12 +18,10 @@ const day = (offset: number) => {
   return toDateISO(d);
 };
 
-export default function ReadyHarness({ phone = false }: { phone?: boolean }) {
+/** The fixture stack — also what `?rail=deck` shows at rest (D-209). */
+// eslint-disable-next-line react-refresh/only-export-components
+export function useHarnessReadyCards(say: (s: string) => void) {
   const [done, setDone] = useState<Set<string>>(() => new Set());
-  const [log, setLog] = useState<string[]>([]);
-  const [open, setOpen] = useState(true);
-  const say = (s: string) => setLog((l) => [s, ...l].slice(0, 6));
-
   const cards = useMemo(() => {
     const today = day(0);
     const gone = (k: string) => setDone((d) => new Set(d).add(k));
@@ -70,9 +68,17 @@ export default function ReadyHarness({ phone = false }: { phone?: boolean }) {
       thin: [{ projectId: "p4", name: "Launch site", evidence: "3h held · 20m of work" }],
       memory: { key: "m1", statement: "You stop at 4pm on Fridays", evidence: "6 of the last 8 weeks", consequence: "Fridays end at 4pm" },
     }).filter((c) => !done.has(c.key));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [done]);
+  return { cards, reset: () => setDone(new Set()) };
+}
 
-  const reset = () => (setDone(new Set()), setOpen(true), setLog([]));
+export default function ReadyHarness({ phone = false }: { phone?: boolean }) {
+  const [log, setLog] = useState<string[]>([]);
+  const [open, setOpen] = useState(true);
+  const say = (s: string) => setLog((l) => [s, ...l].slice(0, 6));
+  const { cards, reset: resetCards } = useHarnessReadyCards(say);
+  const reset = () => (resetCards(), setOpen(true), setLog([]));
 
   if (phone)
     return (

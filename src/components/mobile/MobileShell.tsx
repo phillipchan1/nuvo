@@ -69,6 +69,8 @@ import MobileTaskSheet from "./MobileTaskSheet";
 import { useWeekCommitAct } from "../tasks/TaskActionsMenu";
 import { MobileOpenTaskContext } from "./openTask";
 import MobileEventSheet, { type CalendarTap } from "./MobileEventSheet";
+import { readDay, spanWords } from "../../lib/marks";
+import { haptic } from "../../lib/haptics";
 
 const MemoryPage = lazy(() => import("../memory/MemoryPage"));
 const RhythmIntro = lazy(() => import("../memory/RhythmIntro"));
@@ -353,6 +355,23 @@ export default function MobileShell() {
   const { data: vertical, ready: verticalReady } = useVertical();
   const { data: inbox = [], isPending: inboxPending } = useInboxTasks();
   const { data: todayTasks = [], isPending: todayPending } = useDayTasks(today);
+  // The day (D-209): today's own tasks, closed the moment the last one is.
+  // On the Calendar's "Today" the top bar's hero earns its stop and the fact
+  // says the hour you got back — the phone's version of the rail's day crown.
+  const day = useMemo(() => readDay(todayTasks, settings?.work_end_minutes ?? 990), [todayTasks, settings?.work_end_minutes]);
+  const dayWasClosed = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (todayPending) return;
+    if (dayWasClosed.current === false && day.closed) haptic("success");
+    dayWasClosed.current = day.closed;
+  }, [day.closed, todayPending]);
+  const dayHero = useMemo(() => {
+    if (!calHero || calHero.hero !== "Today" || day.total === 0) return calHero;
+    if (!day.closed) return { ...calHero, stop: false };
+    const at = day.closedAtDate ? day.closedAtDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).replace(":00", "").replace(" ", "").toLowerCase() : null;
+    const fact = at ? `Done at ${at}${day.backMins ? ` · ${spanWords(day.backMins)} back` : ""}` : "Done";
+    return { ...calHero, stop: true, fact, factAccent: true };
+  }, [calHero, day]);
   const { data: weekTasks = [], isPending: weekPending } = useSprintTasks(vertical.sprint?.id ?? null);
   const { data: allTasks = [] } = useAllTasks();
   // The floor under delete. Its own query (every other read excludes trashed
@@ -597,7 +616,7 @@ export default function MobileShell() {
           (an empty one holds its height), so changing tab or lens never moves
           the content under the bar (D-123). */}
       <PhoneTopBar
-        hero={tab === "calendar" ? calHero : null}
+        hero={tab === "calendar" ? dayHero : null}
         title={TAB_HERO[tab]}
         fact={format(now, "EEEE, MMMM d")}
         onSearch={() => setSearchOpen(true)}

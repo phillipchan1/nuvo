@@ -13,6 +13,11 @@
 // OnDeckPlanner / WeekBoard: one document-level capture pointerdown, a 5px move
 // threshold to tell a drag from a click, elementFromPoint hit-testing.
 
+import { initiativeReadinessAxes } from "../../lib/lenses";
+import { initiativeDeckMarks, movingIds } from "../../lib/marks";
+import { weekPushes } from "../../lib/priorities";
+import { planningWeekStartISO } from "../../lib/dates";
+import RestDeck from "../plan/RestDeck";
 import { armDragCancel } from "../../lib/dragCancel";
 import { useOptionalUndoStack } from "../../hooks/useUndoStack";
 import { writeWithUndo } from "../../lib/deckUndo";
@@ -31,7 +36,6 @@ import {
 } from "../../lib/vertical";
 import DomainCoverage, { type CoverageRow } from "./DomainCoverage";
 import CoverageControls from "./CoverageControls";
-import { initiativeReadinessAxes } from "../../lib/lenses";
 import {
   LANE_ORDER,
   quarterEndISO,
@@ -139,6 +143,24 @@ export default function InitiativeDeck() {
   // ready/grooming/done rollup (grooming = still needs OKRs / shaping / a finish line).
   const onTrack = board.lanes.filter((l) => l.state === "on_track").length;
   const grooming = board.lanes.filter((l) => l.state === "needs_okrs" || l.state === "needs_shaping" || l.state === "idea").length;
+  // The readings (D-209): Ready · On a week · Moving — a bet is clear, it is
+  // being worked this week, its number moved this quarter (kernel rule).
+  const betMarks = useMemo(() => {
+    const onWeek = new Set(weekPushes(data, planningWeekStartISO()).map((w) => w.project.initiativeId).filter(Boolean));
+    const moving = new Set(movingIds(data, now));
+    return initiativeDeckMarks(
+      board.lanes.map((l) => {
+        const axes = initiativeReadinessAxes(data, l.initiative);
+        return {
+          id: l.initiative.id,
+          color: domainById(data, l.initiative.domainId)?.color ?? "var(--accent)",
+          ready: axes.defined && axes.planned,
+          onWeek: onWeek.has(l.initiative.id),
+          moving: moving.has(l.initiative.id),
+        };
+      }),
+    );
+  }, [board.lanes, data, now]);
 
   // ── domain re-home cascade (same rule as InitiativesFloor) ──────────────────
   const setDomain = (i: Initiative, domainId: string) => {
@@ -471,6 +493,10 @@ export default function InitiativeDeck() {
           // The line (D-207): at risk first, then what needs shaping.
           line,
           onLine: () => setReadyMode(true),
+          // The readings (D-209) and the deck at rest.
+          title: "This quarter",
+          marks: board.lanes.length > 0 ? betMarks : undefined,
+          deck: deckCards.length > 0 ? <RestDeck cards={deckCards} onAll={() => setReadyMode(true)} /> : undefined,
         }}
         poolLabel="Needs a quarter"
         poolCount={board.inbox.length}

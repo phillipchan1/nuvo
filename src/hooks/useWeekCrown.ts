@@ -31,6 +31,7 @@ import {
 import { projectPace, spanElapsed } from "../lib/pace";
 import { planningWeekStartISO, weekRangeLabel } from "../lib/dates";
 import { composeWeekTrack, weekElapsed, type WeekTrack } from "../lib/weekTrack";
+import { movingIds } from "../lib/marks";
 import type { ReactNode } from "react";
 import type { BigRock, Task } from "../lib/types";
 
@@ -199,7 +200,8 @@ export function useWeekCrown(forWeekISO?: string): WeekCrown | null {
       composed: ownWeek && Boolean(data.sprint?.reviewed_at),
       track: composeWeekTrack(
         rows,
-        { projects: data.projects, initiativeIds: data.initiatives.map((i) => i.id) },
+        // Significant = toward a bet whose number moved this quarter (D-209).
+        { projects: data.projects, initiativeIds: movingIds(data, now) },
         weekElapsed(weekISO, now),
       ),
     };

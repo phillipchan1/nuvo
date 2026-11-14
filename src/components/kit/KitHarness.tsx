@@ -1,3 +1,4 @@
+import type { DayRead, Mark, MarkPiece } from "../../lib/marks";
 import { useState, type ReactNode } from "react";
 import { Icon } from "../Icon";
 import {
@@ -18,6 +19,8 @@ import {
   OfferChip,
   OfferCard,
   Crown,
+  DayCrown,
+  MarkSet,
   CrownLine,
   Menu,
   MenuItem,
@@ -343,6 +346,10 @@ function Column({ theme }: { theme: "light" | "dark" }) {
         </div>
       </Block>
 
+      <Block title="Readings" part="Stop · MarkBar · MarkSet · DayCrown (D-209)">
+        <ReadingsDemo />
+      </Block>
+
       <Block title="PageBar" part="PageBar — sheds by its own width: root crumb → button words → D·W·M·Y → Today">
         <div style={{ display: "grid", gap: 10 }}>
           {[860, 620, 440, 360].map((w) => (
@@ -477,3 +484,39 @@ export default function KitHarness() {
     </div>
   );
 }
+
+/** The readings (D-209), live: press "Finish" to fill the next piece and watch
+ *  the ladder — a Ready click, a Placed lock, the day's stop and its hour back. */
+function ReadingsDemo() {
+  const [n, setN] = useState(3);
+  const piece = (on: boolean, color: string): MarkPiece => ({ state: on ? "fill" : "empty", color });
+  const day: DayRead = {
+    total: 5,
+    done: Math.min(n, 5),
+    closed: n >= 5,
+    closedAt: null,
+    closedAtDate: n >= 5 ? new Date(new Date().setHours(15, 4, 0, 0)) : null,
+    backMins: n >= 5 ? 116 : null,
+    tasks: [],
+  };
+  const marks: Mark[] = [
+    { key: "ready", label: "Ready", n: Math.min(n, 4), of: 4, full: n >= 4, tier: "small", pieces: [0, 1, 2, 3].map((i) => piece(i < n, HUES.work)) },
+    { key: "placed", label: "Placed", n: Math.min(n + 4, 9), of: 9, full: n >= 5, tier: "medium", pieces: [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => ({ state: i < n + 4 ? "soft" : "empty", color: HUES.health })) },
+    { key: "done", label: "Done", n: Math.min(n, 9), of: 9, full: false, tier: "medium", pieces: [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => ({ state: i < n ? (i % 3 ? "fill" : "other") : "empty", color: HUES.writing })), detail: `${Math.max(0, n - 1)} toward a moving initiative · 1 other` },
+  ];
+  return (
+    <div style={{ display: "grid", gap: 14, width: 340, maxWidth: "100%", minWidth: 0 }}>
+      <DayCrown day={day} pieces={[0, 1, 2, 3, 4].map((i) => piece(i < n, [HUES.work, HUES.health, HUES.writing, HUES.family, HUES.work][i]))} next={n < 5 ? "Measure the wall at 4pm" : null} />
+      <MarkSet marks={marks} />
+      <div style={{ display: "flex", gap: 8 }}>
+        <Button size="sm" onClick={() => setN((x) => Math.min(x + 1, 9))}>
+          Finish one
+        </Button>
+        <Button size="sm" kind="ghost" onClick={() => setN(3)}>
+          Reset
+        </Button>
+      </div>
+    </div>
+  );
+}
+

@@ -22,6 +22,8 @@ import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { startOfDay } from "date-fns";
 import LeftRail, { type RailTab } from "./LeftRail";
+import RestDeck from "./plan/RestDeck";
+import { useHarnessReadyCards } from "./plan/ReadyHarness";
 import ReadyHarness from "./plan/ReadyHarness";
 import Spine from "./Spine";
 import { AgentProvider } from "../hooks/useAgentContext";
@@ -166,7 +168,7 @@ function PopoverStandIn({ tasks }: { tasks: Task[] }) {
   );
 }
 
-function Desktop({ embedded = false, bar, fx = BASE }: { embedded?: boolean; bar?: ReactNode; fx?: Fixture }) {
+function Desktop({ embedded = false, bar, fx = BASE, withDeck = false }: { embedded?: boolean; bar?: ReactNode; fx?: Fixture; withDeck?: boolean }) {
   const [tasks, setTasks] = useState(() => [...fx.seed(), ...fx.inbox()]);
   const [tab, setTab] = useState<RailTab>("today");
   const [lines, setLines] = useState<string[]>([]);
@@ -184,6 +186,8 @@ function Desktop({ embedded = false, bar, fx = BASE }: { embedded?: boolean; bar
       .map((t) => (t.slot_id && byId.get(t.slot_id) ? { ...t, start_time: byId.get(t.slot_id)!.start_time } : t));
   }, [tasks, fx.slots]);
   const slotTitle = useCallback((s: Slot, kids: Task[]) => deriveSlotTitle(s, kids, fx.vertical), [fx.vertical]);
+  // `?rail=deck` (D-209): the deck at rest, over the Get ready fixture stack.
+  const { cards } = useHarnessReadyCards(log);
 
   return (
     <div className={embedded ? "flex min-h-0 flex-1" : "flex h-screen gap-6 p-0"}>
@@ -201,6 +205,8 @@ function Desktop({ embedded = false, bar, fx = BASE }: { embedded?: boolean; bar
         slots={fx.slots}
         slotTitle={slotTitle}
         onOpenSlot={(s, anchor) => openOverlay("slot", s.id, anchor)}
+        deck={withDeck && cards.length > 0 ? <RestDeck cards={cards} onAll={() => log("→ Get ready (all)")} /> : undefined}
+        onCrownLine={withDeck ? () => log("→ Get ready") : undefined}
       />
       {/* The bar is NOT here: as in Planner, it spans the rail and the grid
           (D-208) — the Frame draws it above this row. `bar` is for a caller
@@ -410,7 +416,7 @@ export default function RailHarness() {
               <Frame />
             </AgentProvider>
           ) : (
-            <Desktop fx={fx} />
+            <Desktop fx={fx} withDeck={mode === "deck"} />
           )}
         </AppNavigationProvider>
       </VerticalStoreProvider>

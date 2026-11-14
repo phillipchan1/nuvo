@@ -2263,7 +2263,7 @@ drag against the macOS Tauri window-drag region, and a project whose loose work 
 | **N-01** | Auto-schedule the day (Motion-style) | Removes the judgment the product exists to build; when it's wrong you have no model of why | Never — this is identity, not a feature gap |
 | **N-02** | Multi-**player**: shared funnels, assignees, someone else's dashboard | Consensus objects blunt every altitude (D-003). ⚠️ **Not** an argument against multi-tenancy — that's D-024, and it's a yes | A separate product, not this one |
 | **N-03** | A separate "event" entity for scheduled tasks | Doubles every sync path (D-001) | Never |
-| **N-04** | Streaks, scores, karma, debt ledgers — and running tallies of acts ("12 tasks groomed today"), which are a score however they glow (D-202) | Serves *optimizer*; we serve *steward* | Never |
+| **N-04** | Streaks, levels, XP, badges, karma, debt ledgers, a combined score, history on a surface — and running tallies of acts ("12 tasks groomed today"), which are a score however they glow (D-202). **Not** the celebrations of D-209 (the pop, the sweep, the stop, the Seal): a reward for this act, now, is juice; a number that accumulates across acts is an economy | An economy turns the work into the game; the juice keeps the work the game (D-209) | Never |
 | **N-05** | Notion-style databases / custom fields | A blank canvas is a product you have to finish | Never |
 | **N-06** | A fifth pool | The funnel's power is its small vocabulary (Principle 10) | Two independent instances prove the need |
 | **N-07** | Push notifications for planning **nudges** | The app reports, you decide (Principle 4) | ⚠️ **Narrowed and partly overturned, 2026-08-13 (D-102, D-105); horizon of a lead widened 2026-09-04 (D-138).** Push itself is no longer refused — Phil ruled it acceptable **with explicit user consent**. What this row still refuses is the *nudge*: an unprompted message about your planning rather than about a commitment that is about to happen. That refusal stands regardless of consent |
@@ -6809,6 +6809,81 @@ open-then-⌘-click flow was driven against a navigation-state stand-in for the 
 real `TaskPopover`. **Not run:** `npm run perf` (the rail is a shared surface; `perf-budget` in
 `npm test` passes). `guard-public-ci` fails on a clean tree too (a case-insensitive filesystem
 can't tell `checks.yml` from `checks.YML`) — not from this change.*
+
+**D-209 · 2026-11-14 · The readiness ladder: three marks at every altitude, a day that closes
+at 3pm, rewards that grow with what they mean, and the deck first in the rail.** *(Asked by the
+operator: "a readiness graph or some multi indicator… I want it to feel like a game… really cool
+animations that feel haptically rewarding, esp if it was done by agentic recommendation"; then "I
+want to change these rules — the shape is changing since redesigning to be more ambitious.
+Ambitious people like gamesmanship. I'm an Enneagram 3"; "ready, fits, shipped are increasingly
+important… shipped should have a larger celebration. We reward significance properly measured";
+"daily rewards… I finished at 3:00 p.m. and I feel freaking great"; "let's go deck first"; "make sure
+our agent works well like this for the cards". Spec: [`readiness-ladder.md`](../readiness-ladder.md).
+Prototype: [Nuvo Readiness](https://claude.ai/artifact/VrHP29PAmat3gQCrrPbs11).)*
+
+→ **The rules change, on purpose.** D-203 refused glow, bursts and count-ups, and P9 read every
+celebration as engagement. This decision keeps the economy refused but lets the **juice** be loud.
+Allowed now:
+- the piece pop, the sweep and the ring;
+- the ember stop dropping with sparks;
+- the Seal.
+
+Still refused: streaks, levels, XP, badges, a running tally, a combined score, history on a surface,
+sound, and any motion on load, on a refetch or for a write Nuvo made on its own. N-04 and P9 are
+re-worded to say exactly that.
+
+→ **Three marks at every altitude, one drawing.** Shaped · given time · the run:
+- **Week:** Ready · Placed · Done.
+- **Projects:** Ready · **Fits** (70–100% of capacity) · Shipped.
+- **Initiatives:** Ready · **On a week** · **Moving**.
+
+When the first two close, the title earns the ember stop. **Amends D-206's one track**: the operator
+had asked for one drawing because 3–5 metrics "all looked different". These are three marks in one
+drawing, which is that answer.
+
+→ **The day sits above them.** Today's own tasks close the moment the last is done ("Done at 3:04pm.
+1h 56m of your day back"), and the grid draws the rest of the working day as **Yours**. A repeating
+task that rolled in doesn't block the day (settled by Phil: "today's tasks only").
+
+→ **Rewards grow with what they mean:**
+- Ready clicks.
+- Fits / Placed lock.
+- The day stops.
+- Shipped is **the Seal** (settled by Phil over the Ascent and the Statement), sized by
+  significance.
+
+→ **Significance, properly measured:** only work toward an initiative whose number **moved this
+quarter** (settled by Phil). It applies to the crown's Done mark, the week track and the Seal.
+
+→ **Deck first** (settled by Phil). The rail shows the Get ready stack's top card at rest, under
+the crown, in place of the line. Not now sends a card to the back. Today and Inbox fold into a tray
+above Capture. **Amends D-207**: the line still speaks when there's no card (Handle's Review).
+
+→ **One rule, two runtimes.** `dayReadiness`, `movingInitiativeIds` and `fitsCapacity` live in the
+kernel. The agent's context carries the day and the moving bets, and its prompt names them. So the
+cards the agent drafts land through the same stack and Reach.
+
+→ **Anchor.**
+- **Ledger:** **D1 · D7** (the day you can finish), **W1** (Fits), **W2** (Placed), **W6** (Significant,
+  during the week), **Q3 · Q4** (Ready).
+- **Strains P9 and P4:** rewritten here, not worked around. A breathing hatch was prototyped and not
+  built.
+- **Four no's:** no pool. New names: *Fits*, *On a week*, *Moving*, *Yours*, *the Seal*, *the stop*
+  (glossary). P7: an empty day never closes, and an empty week draws no marks. P16: an account with
+  no initiatives sees no significance line.
+- **The objection, led with:** "moving" is a stand-in until key results keep a changed-at stamp.
+
+*Status: built and shipped 2026-11-14 (`claude/readiness`); see the spec's §7 for deviations.
+Typecheck and build clean; `npm test` at the 18 known failures; the `readiness-ladder` suite, `rail-offers`
+and the re-recorded agent prompt baseline pass. **Driven on a signed-in account** (a local stack: production's
+schema restored structure-only into local Postgres, the Worker under `wrangler dev`, a seeded week with a
+114-day recurring pile-up, a slot, one moving and one stalled bet), desktop and 375px: the day closed at
+9:07am with "7h 53m of your day back" and the Yours band; the significance line counted only the moving
+bet. **`npm run perf`** against `origin/master` on the same account: it caught two regressions, both fixed
+(the Yours band re-measured the grid on every page switch, 170 forced layouts; the week marks blocked week
+travel 51ms). Every interaction now matches master on blocked time and dropped frames. Renders run 5–15%
+higher (the crown's marks), and completing a block reads layout more (785 vs 187) for the celebration's
+Reach and ring, with no blocked time or dropped frame.*
 
 **D-208 · 2026-11-14 · One bar across the panel, and the tabs stand still: a page's views sit at
 one x on every page, on ⌥⌘1–N.** *(Asked by the operator: "instead of right-aligning day, month,

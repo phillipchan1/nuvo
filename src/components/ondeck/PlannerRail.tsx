@@ -18,7 +18,9 @@
 
 import { useMemo, type ReactNode } from "react";
 import { Icon } from "../Icon";
-import { Button, Crown, IconButton, SectionHeader } from "../kit";
+import { Button, Crown, CrownLine, IconButton, MarkSet, SectionHeader, Stop } from "../kit";
+import { marksReady, type Mark } from "../../lib/marks";
+import { DECK_REACH_KEY } from "../../lib/motion";
 import type { CrownLineData } from "../../lib/crownLine";
 import { RAIL_WIDTH_CSS } from "../../lib/railWidth";
 
@@ -43,6 +45,12 @@ export interface RailCrown {
   /** the crown is also the doorway to the play that moves the count (Groom). */
   onOpen?: () => void;
   openTitle?: string;
+  /** The readings (D-209): with these the crown draws a title that earns its
+   *  ember stop and the altitude's three marks, in place of number + track. */
+  title?: string;
+  marks?: Mark[];
+  /** the deck at rest: the Get ready stack's top card, in place of the line */
+  deck?: ReactNode;
 }
 
 export default function PlannerRail({
@@ -85,28 +93,60 @@ export default function PlannerRail({
   return (
     <aside {...{ [dropAttr]: "" }} className="pr" data-over={over || undefined} style={{ width }}>
       {/* ── the crown — the readiness, as the surface's one hero ─────────────── */}
-      <Crown
-        eyebrow={crown.eyebrow}
-        eyebrowAction={
-          crown.onOpen && (
-            <IconButton
-              size="xs"
-              label={crown.openTitle ?? "Open Groom"}
-              icon={<Icon name="arrow-right" size={14} />}
-              onClick={crown.onOpen}
+      {crown.marks ? (
+        <>
+          <div className="k-crown" data-crown="">
+            <div className="k-crown-k">
+              <span className="k-crown-eyebrow">{crown.eyebrow}</span>
+              <span className="k-crown-grow" />
+              {crown.onOpen && (
+                <IconButton
+                  size="xs"
+                  label={crown.openTitle ?? "Open Groom"}
+                  icon={<Icon name="arrow-right" size={14} />}
+                  onClick={crown.onOpen}
+                />
+              )}
+            </div>
+            <h2 className="k-crown-hero text-display masthead">
+              {crown.title}
+              <Stop on={marksReady(crown.marks)} />
+            </h2>
+            <MarkSet
+              marks={crown.marks}
+              // A card that writes Reaches the deck (D-207) — it lands on Ready.
+              attrsFor={(k) => (k === crown.marks![0].key ? { "data-crown-deck": "" } : undefined)}
+              reachKeyFor={(k) => (k === crown.marks![0].key ? DECK_REACH_KEY : undefined)}
             />
-          )
-        }
-        done={crown.done}
-        total={crown.total}
-        noun={crown.noun}
-        empty="Nothing placed"
-        track={crown.track}
-        line={crown.line}
-        onLine={crown.onLine}
-      >
-        {groomAction && <div className="pr-groom">{groomAction}</div>}
-      </Crown>
+            {!crown.deck && crown.line && <CrownLine line={crown.line} onPress={crown.onLine} />}
+            {groomAction && <div className="pr-groom">{groomAction}</div>}
+          </div>
+          {crown.deck}
+        </>
+      ) : (
+      <Crown
+          eyebrow={crown.eyebrow}
+          eyebrowAction={
+            crown.onOpen && (
+              <IconButton
+                size="xs"
+                label={crown.openTitle ?? "Open Groom"}
+                icon={<Icon name="arrow-right" size={14} />}
+                onClick={crown.onOpen}
+              />
+            )
+          }
+          done={crown.done}
+          total={crown.total}
+          noun={crown.noun}
+          empty="Nothing placed"
+          track={crown.track}
+          line={crown.line}
+          onLine={crown.onLine}
+        >
+          {groomAction && <div className="pr-groom">{groomAction}</div>}
+        </Crown>
+      )}
 
       {/* ── the pool ─────────────────────────────────────────────────────────────
           An EMPTY pool centres its two words in the space it owns rather than

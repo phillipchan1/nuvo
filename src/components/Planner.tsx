@@ -38,6 +38,8 @@ import { useWeekRepair, type Repair } from "../hooks/useWeekRepair";
 import { useRepairs } from "./plan/repairActs";
 import { repairLineText } from "./plan/RepairLine";
 import { useReady } from "./plan/useReadyCards";
+import RestDeck from "./plan/RestDeck";
+import { readDay } from "../lib/marks";
 import type { CrownLineData } from "../lib/crownLine";
 import { useWorkingDays } from "../hooks/useWorkingDays";
 const PlanRail = lazy(() => import("./plan/PlanRail"));
@@ -371,6 +373,25 @@ export default function Planner({
   // lists an empty slot as held time (lib/slotRuns, D-178). Same filter
   // `todayTasksForRail` uses, so the header and its tasks can't disagree.
   const todaySlots = useMemo(() => slots.filter((s) => s.do_date === today), [slots, today]);
+  // The day (D-209), read once here for the grid: closed before the working day
+  // ends, the rest of it is drawn as yours. (The rail reads the same tasks.)
+  const workEnd = settings?.work_end_minutes ?? 990;
+  // Keyed on the two times, not the task array: the array is rebuilt on every
+  // navigation, and a new band object makes FullCalendar drop and re-add the
+  // event — a full re-measure of the grid (`npm run perf` caught 170 forced
+  // layouts per page switch).
+  const yoursSpan = useMemo(() => {
+    const d = readDay(todayTasksForRail, workEnd);
+    if (!d.closed || !d.closedAtDate || !d.backMins) return null;
+    const end = new Date(d.closedAtDate);
+    end.setHours(0, workEnd, 0, 0);
+    return `${d.closedAtDate.getTime()}|${end.getTime()}`;
+  }, [todayTasksForRail, workEnd]);
+  const yoursBand = useMemo(() => {
+    if (!yoursSpan) return null;
+    const [a, b] = yoursSpan.split("|").map(Number);
+    return { start: new Date(a), end: new Date(b) };
+  }, [yoursSpan]);
 
   // The grid's colours and names, keyed by id, built from the vertical's
   // DIRECTORY — a snapshot that only moves when a name, hue or parent does. They
@@ -531,6 +552,12 @@ export default function Planner({
   }, [ready.line, repairState.open, repairState.applied, repairState.dial]);
   const crownLine = ready.line ?? handled;
   const onCrownLine = handled ? openRepair : openGetReady;
+  // The deck at rest (D-209): the same cards, the top one shown under the
+  // crown. Under Handle with nothing else to say, the Review line stands alone.
+  const restDeck = useMemo(
+    () => (ready.cards.length > 0 ? <RestDeck cards={ready.cards} onAll={openGetReady} /> : null),
+    [ready.cards, openGetReady],
+  );
 
   // Anything droppable that the render set doesn't hold. The week crown offers a
   // project's loose work for drag, and that work is deliberately outside all six
@@ -725,6 +752,7 @@ export default function Planner({
           onOpenSlot={openSlotAt}
           crownLine={onSchedule ? crownLine : null}
           onCrownLine={onCrownLine}
+          deck={onSchedule ? restDeck : null}
         />
         )}
         {/* min-w: 280 was the old floor and it was too low to be a floor at
@@ -740,6 +768,7 @@ export default function Planner({
               slid shut: one door, always visible, never two opposite corners. */}
           <Suspense fallback={<div className="min-h-0 flex-1" />}>
           <CalendarPane
+            yours={yoursBand}
             learned={learned}
             onOpenMemory={openMemory}
             rhythm={rhythmOn}

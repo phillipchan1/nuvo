@@ -32,7 +32,7 @@
 //      open to their loose work — so the row says what the sidebar can't:
 //      weight left, pace, and what has no time.
 
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { useThinPaths } from "../hooks/useThinPaths";
 import { PathOffer, pathCandidates } from "./nuvo/RailOffers";
 import type { RailOfferCandidate } from "../lib/railOffers";
@@ -49,8 +49,13 @@ import { MARQUEE_OPEN_EVENT } from "../lib/marquee";
 import { deckWeight } from "../lib/pace";
 import { ProjectShipAssess } from "./record/ShipAssess";
 import type { EmblemSpec } from "../lib/weekEmblem";
-import { PaceTrack, WeekTrack } from "./progress/PaceTrack";
-import { Button, Chip, Crown, IconButton, SectionHeader } from "./kit";
+import { PaceTrack } from "./progress/PaceTrack";
+import { Button, Chip, CrownLine, DayCrown, IconButton, MarkLabel, MarkSet, SectionHeader, Stop } from "./kit";
+import { dayPieces, marksReady, movingIds, readDay, weekMarks } from "../lib/marks";
+import { WEEK_REACH_KEY } from "../lib/motion";
+import { useSettings } from "../hooks/useSettings";
+import { taskDomainColor } from "../lib/vertical";
+import type { Task } from "../lib/types";
 import type { CrownLineData } from "../lib/crownLine";
 
 /** The week door's lifecycle, owned by Planner and worn by this header. */
@@ -64,6 +69,11 @@ export interface WeekDoor {
   onOpen: () => void;
 }
 
+const rows0 = (c: { rows: readonly unknown[] }) => c.rows.length > 0;
+// Stable, so the memoized MarkSet skips a render when nothing changed.
+const WEEK_PLACED_ATTRS = { "data-crown-week": "", "data-crown-color": "var(--landed)" };
+const weekMarkAttrs = (k: string) => (k === "placed" ? WEEK_PLACED_ATTRS : undefined);
+const weekMarkReach = (k: string) => (k === "placed" ? WEEK_REACH_KEY : undefined);
 const OPEN_KEY = "nuvo-rail-week-open";
 function readOpen(): boolean {
   try {
@@ -80,6 +90,8 @@ export default function WeekPanel({
   onLine,
   offers,
   onPathCandidates,
+  today,
+  deck,
 }: {
   door?: WeekDoor;
   renderTask: RenderCrownTask;
@@ -96,6 +108,13 @@ export default function WeekPanel({
    *  rank them against the day's offers. Empty while the list is folded: the
    *  shut crown never carries a chip. */
   onPathCandidates?: (cands: RailOfferCandidate[]) => void;
+  /** Today's tasks as the rail lists them (slot children included) — the day's
+   *  reading (D-209). Omitted (a harness), the crown draws no day. */
+  today?: readonly Task[];
+  /** The deck at rest (D-209): the Get ready stack's top card. When it's
+   *  present it stands where the line would; the line still speaks when
+   *  there's no card to show (Handle's "Nuvo moved N · Review"). */
+  deck?: ReactNode;
 }) {
   const { data, togglePushLanded } = useVertical();
   const { openFlow, openRecord, nav } = useAppNavigation();
@@ -138,12 +157,31 @@ export default function WeekPanel({
     reportRef.current?.(candsRef.current);
   }, [pathSig]);
   useEffect(() => () => reportRef.current?.([]), []);
+  const { settings } = useSettings();
+  const workEnd = settings?.work_end_minutes ?? 990;
+  const day = useMemo(() => (today ? readDay(today, workEnd) : null), [today, workEnd]);
+  // The readings (D-209): the week's three marks. Memoized on the read model —
+  // Ready runs each project's pace math, and this panel re-renders on every
+  // range change (week travel measured a 51ms block without it).
+  const marks = useMemo(() => {
+    if (!data || !crown) return [];
+    const now = new Date();
+    return weekMarks(crown, data, now, movingIds(data, now));
+  }, [crown, data]);
+  const dayPiecesNow = useMemo(
+    () => (day && data ? dayPieces(day, (t: Task) => taskDomainColor(data, t) ?? "var(--muted)") : []),
+    [day, data],
+  );
   if (!data || !crown) return null;
+  const weekReady = rows0(crown) && marksReady(marks);
+  const nextTask = day && !day.closed ? day.tasks.find((t) => t.status !== "done") ?? null : null;
+  const nextLine = nextTask
+    ? nextTask.start_time
+      ? `${nextTask.title} at ${fmtDayTime(nextTask.start_time).replace(/^[A-Z][a-z]{2} /, "")}`
+      : nextTask.title
+    : null;
 
   const { rows, landed } = crown;
-  // The hero follows the sprint the way the label always has: no sprint row,
-  // no span — the week is then simply "This week".
-  const hero = data.sprint?.week_start ? crown.weekLabel : "This week";
 
   // The panel is the ambient face of the Week's Plan: composed → open the
   // surface (view), not yet → the compose ritual (plan). Planner owns the real
@@ -190,32 +228,46 @@ export default function WeekPanel({
           the week it measures; the hero is the one number; the track is the
           week (D-206); the line is the door to Get ready. A host with no Get
           ready mode (a harness) keeps the old week door at the eyebrow's end. */}
-      <Crown
-        className="crown-head"
-        eyebrow={hero}
-        eyebrowAction={
-          onLine ? undefined : (
-            <Button
-              size="xs"
-              kind={mode === "view" ? "ghost" : "secondary"}
-              onClick={openWeekPlan}
-              title={door?.title ?? `The week's plan — ${slateSentence}`}
-              aria-label={`${action}. ${slateSentence}.`}
-              icon={door?.glow ? <span className="crown-door-dot" aria-hidden /> : undefined}
-              trailing={mode === "view" ? <Icon name="chevron-right" size={12} /> : undefined}
-            >
-              {action}
-            </Button>
-          )
-        }
-        done={crown.track.done}
-        total={rows.length > 0 ? crown.track.total : 0}
-        noun="done"
-        empty={rows.length > 0 ? "Nothing shaped yet" : "No projects yet"}
-        track={rows.length > 0 && crown.track.total > 0 ? <WeekTrack track={crown.track} /> : undefined}
-        line={line}
-        onLine={onLine}
-      />
+      <div className="crown-readings" data-crown="">
+        {/* The day (D-209): today's own tasks, closed the moment the last one
+            is — at 3pm or whenever — with the hour you got back. The rail's
+            hero; the week reads under it so a good day never waits for Friday. */}
+        {day && <DayCrown day={day} pieces={dayPiecesNow} next={nextLine} />}
+        <div className="crown-week">
+          <div className="crown-week-head">
+            <MarkLabel k="week">This week</MarkLabel>
+            <Stop on={weekReady} />
+            {data.sprint?.week_start && <span className="crown-week-sub">&nbsp;· {crown.weekLabel}</span>}
+            {!onLine && (
+              <span className="crown-week-act">
+                <Button
+                  size="xs"
+                  kind={mode === "view" ? "ghost" : "secondary"}
+                  onClick={openWeekPlan}
+                  title={door?.title ?? `The week's plan — ${slateSentence}`}
+                  aria-label={`${action}. ${slateSentence}.`}
+                  icon={door?.glow ? <span className="crown-door-dot" aria-hidden /> : undefined}
+                  trailing={mode === "view" ? <Icon name="chevron-right" size={12} /> : undefined}
+                >
+                  {action}
+                </Button>
+              </span>
+            )}
+          </div>
+          {rows.length > 0 ? (
+            <MarkSet
+              marks={marks}
+              // The Reach for an act that changes the WEEK lands on Placed —
+              // a card that gives work a time moves exactly that bar (D-206).
+              attrsFor={weekMarkAttrs}
+              reachKeyFor={weekMarkReach}
+            />
+          ) : (
+            <p className="k-markset-detail">No projects on this week yet</p>
+          )}
+        </div>
+      </div>
+      {deck ?? (line ? <div className="crown-line-solo"><CrownLine line={line} onPress={onLine} /></div> : null)}
 
       {rows.length > 0 && (
         <>
@@ -223,7 +275,7 @@ export default function WeekPanel({
               sidebar's to say (This week · n/m), on every page. */}
           <SectionHeader title="Projects" count={rows.length} collapsed={!listOpen} onToggle={toggleList} />
           {listOpen && (
-            <div className="crown-projects" data-tauri-drag-region="false">
+            <div className="crown-projects crown-oneline" data-tauri-drag-region="false">
               {rows.map((row) => (
                 <ProjectStackRow
                   key={row.rock.id}

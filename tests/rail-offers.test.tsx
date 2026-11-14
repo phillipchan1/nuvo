@@ -213,13 +213,16 @@ describe("Draft the path on the week crown's project row", () => {
 describe("the crown header: one track, one number, and the line as the door (D-206, D-207)", () => {
   beforeEach(() => localStorage.clear());
 
-  it("draws the week as a track under one number — the shared crown — and no Significant bar", async () => {
+  it("draws the week as three marks — Ready · Placed · Done (D-209) — and no Significant bar", async () => {
     const { container } = mountCrown();
     await waitFor(() => expect(container.querySelector("[data-crown-week]")).not.toBeNull());
-    const track = container.querySelector("[data-crown-week]") as HTMLElement;
-    expect(track.getAttribute("aria-label")).toMatch(/^\d+ of \d+ done: /);
-    // The hero is the number (D-207): "N of M done", in the kit's Crown.
-    expect(container.querySelector(".k-crown .k-crown-hero")?.textContent).toMatch(/^\d+ of \d+ done$/);
+    // The Reach for an act that changes the week lands on Placed.
+    const placed = container.querySelector("[data-crown-week]") as HTMLElement;
+    expect(placed.getAttribute("aria-label")).toMatch(/^Placed: \d+ of \d+$/);
+    const labels = [...container.querySelectorAll(".k-markset .k-mark-k")].map((el) => el.textContent);
+    expect(labels).toEqual(["Ready", "Placed", "Done"]);
+    // Every label carries its definition.
+    for (const el of container.querySelectorAll(".k-markset .k-mark-k")) expect(el.getAttribute("title")).toBeTruthy();
     expect(container.querySelector(".significance")).toBeNull();
     expect(container.textContent).not.toMatch(/with no time/);
     expect(container.textContent).not.toMatch(/Plan the week ›/);

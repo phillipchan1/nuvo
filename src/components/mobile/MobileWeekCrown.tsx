@@ -36,19 +36,21 @@
 // that couldn't. The row still carries no swipe here: the calendar under this
 // crown pages horizontally, and a swipe-to-defer inside it would fight the pager.
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useThinPaths } from "../../hooks/useThinPaths";
 import { PHONE_OFFERS_MAX } from "../../lib/railOffers";
 import type { ThinPath } from "../../lib/thinPath";
 import { PathOffer, pathCandidates, useOfferBudget, useStableCandidates } from "../nuvo/RailOffers";
 import { Icon } from "../Icon";
-import { Button, Chip, CrownLine } from "../kit";
+import { Button, Chip, CrownLine, MarkBar, MarkSet, Stop } from "../kit";
+import { marksReady, movingIds, weekMarks } from "../../lib/marks";
+import { useVertical } from "../../hooks/useVertical";
 import type { CrownLineData } from "../../lib/crownLine";
 import { fmtDayTime } from "../../lib/dates";
 import { carryMark } from "../../lib/priorities";
 import { useWeekCrown, type RenderCrownTask, type WeekCrownRow } from "../../hooks/useWeekCrown";
 import { WeekPlanSheet } from "./WeekPlanCard";
-import { PaceTrack, SlatePips, WeekTrack } from "../progress/PaceTrack";
+import { PaceTrack } from "../progress/PaceTrack";
 
 const OPEN_KEY = "nuvo-mobile-weekcrown-open";
 
@@ -114,6 +116,13 @@ export default function MobileWeekCrown({
   readyLine?: CrownLineData | null;
 }) {
   const crown = useWeekCrown();
+  const { data: vertical } = useVertical();
+  const marks = useMemo(() => {
+    if (!crown || !vertical) return [];
+    const now = new Date();
+    return weekMarks(crown, vertical, now, movingIds(vertical, now));
+  }, [crown, vertical]);
+  const weekReady = (crown?.rows.length ?? 0) > 0 && marksReady(marks);
   const [open, setOpenState] = useState(readOpen);
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const [planOpen, setPlanOpen] = useState(false);
@@ -199,11 +208,20 @@ export default function MobileWeekCrown({
           }
           className="ph-crown-strip row-hover"
         >
-          <span className="ph-crown-name">This week</span>
+          <span className="ph-crown-name">
+            This week
+            <Stop on={weekReady} />
+          </span>
           {total === 0 ? (
             <span className="truncate text-body text-muted">Nothing on it yet</span>
           ) : (
-            <SlatePips rows={rows} />
+            // Three hairlines — Ready, Placed, Done (D-209). Still one line
+            // drawn, not written (D-110); its height never changes (D-123).
+            <span className="ph-crown-lines" aria-hidden>
+              {marks.map((m) => (
+                <MarkBar key={m.key} pieces={m.pieces} thin />
+              ))}
+            </span>
           )}
           <span className="flex-1" />
           {/* The one light on the strip. Not a count — a state: something in
@@ -251,15 +269,11 @@ export default function MobileWeekCrown({
           drawing. The shut strip stays one line of pips: its amber light is
           the outlined pieces' fact, and a strip that grew a track would resize
           under the thumb (D-123). */}
+      {/* The week's three marks (D-209) — the rail crown's own drawing, each
+          label carrying its definition (a tap says it). */}
       {track.total > 0 && (
-        <div className="crown-track pb-1 pt-1">
-          <WeekTrack track={track} />
-          <span className="crown-track-num">
-            <b>
-              {track.done}/{track.total}
-            </b>{" "}
-            done
-          </span>
+        <div className="pb-1 pt-1">
+          <MarkSet marks={marks} attrsFor={(k) => (k === "placed" ? { "data-crown-week": "", "data-crown-color": "var(--landed)" } : undefined)} />
         </div>
       )}
       {line}

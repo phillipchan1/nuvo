@@ -15,8 +15,10 @@ import {
 import {
   carriedWeeks,
   fromProjectRow,
+  dayReadiness,
   isCompleteStatus,
   isOnSlate,
+  movingInitiativeIds,
   isOpenProjectStatus,
   needsASprint,
   planningWeekStart,
@@ -42,7 +44,7 @@ import {
 import { describeRule, nextOccurrenceDate, type RecurrenceRule } from "../_shared/recurrence.ts";
 
 const TASK_COLS =
-  "id, title, status, do_date, start_time, duration_minutes, deadline, priority, notes, roll_count, completed_at";
+  "id, title, status, do_date, start_time, duration_minutes, deadline, priority, notes, roll_count, completed_at, recurrence_id";
 
 
 export async function buildContext(
@@ -112,7 +114,7 @@ export async function buildContext(
       .eq("user_id", userId)
       .maybeSingle(),
     admin.from("domains").select("id, name, intention, charter, context, icon, color, weekly_target_hours").eq("user_id", userId).order("sort_order"),
-    admin.from("initiatives").select("id, name, domain_id, outcome, description, status, target_date, start_date, key_results(id, name, baseline_value, current_value, target_value, unit)").eq("user_id", userId).order("sort_order"),
+    admin.from("initiatives").select("id, name, domain_id, outcome, description, status, target_date, start_date, key_results(*)").eq("user_id", userId).order("sort_order"),
     admin.from("projects").select("id, name, domain_id, initiative_id, outcome, description, status, start_date, target_date, shipped_at").eq("user_id", userId).order("sort_order"),
     admin
       .from("calendar_accounts")
@@ -354,6 +356,30 @@ export async function buildContext(
         }
       : null,
     todaySchedule,
+    // Readiness (D-209) — the SAME rules the app's crown reads (the kernel), so
+    // Nuvo and the screen agree on whether today is done and which bets count.
+    readiness: {
+      day: dayReadiness(
+        (todayRes.data ?? []).map((t) => ({
+          id: t.id as string,
+          status: t.status as string,
+          completedAt: (t.completed_at as string | null) ?? null,
+          rollCount: (t.roll_count as number | null) ?? 0,
+          recurrenceId: (t.recurrence_id as string | null) ?? null,
+        })),
+      ),
+      movingInitiativeIds: movingInitiativeIds(
+        (initiativesRes.data ?? []).map((i) => ({
+          id: i.id as string,
+          keyResults: ((i.key_results ?? []) as Record<string, unknown>[]).map((k) => ({
+            baseline: (k.baseline_value as number | null) ?? null,
+            current: (k.current_value as number | null) ?? null,
+            updatedAt: (k.updated_at as string | null) ?? null,
+          })),
+        })),
+        today,
+      ),
+    },
     todayOpenWindows,
     todaySlots,
     inbox,

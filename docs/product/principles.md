@@ -74,16 +74,19 @@ that answers three questions answers none.
 **Violated when** you can't state a surface's question in one sentence, or two surfaces
 claim the same question.
 
-### 9 · Quiet by default
+### 9 · Quiet by default, loud on your act
 
-**Why.** The identity is *steward*, not *optimizer*. No streaks, no badges, no
-notification theater, no gamified debt. Signal is reserved for **now** (`--signal`).
-**Violated when** something animates, colors, or notifies for engagement rather than
-information.
-*Since D-187 the app has a motion vocabulary for ambition (Momentum, in
-[`design-language.md`](../design-language.md)). It lives inside this principle, not beside it:
-a motion is allowed only as the synchronous consequence of the user's own act, once, and
-never on load, on a refetch, or for a write the assistant made.*
+**Why.** Nuvo is for ambitious people, and they like to win (D-209). So the app is quiet until
+you act, and then it celebrates in proportion to what you did. It never keeps score across acts:
+no streaks, no levels, no badges, no tallies, no notification theater, no gamified debt. Signal is
+reserved for **now** (`--signal`); the ember stop is the mark's own full stop.
+**Violated when** something animates, colors, or notifies for engagement rather than in answer to
+the user's own act. Also violated when a reward accumulates into a number (N-04), or when a motion
+plays on load, on a refetch, or for a write the assistant made on its own.
+*The rewards are a ladder (`readiness-ladder.md` §4): Ready clicks, Fits / Placed lock, the day
+stops, Shipped seals, each sized by what it means. Motion is Momentum's vocabulary
+([`design-language.md`](../design-language.md)): transform and opacity only, once, off under
+reduced motion.*
 
 ### 10 · Don't add a pool, a name, or a place without paying for it
 

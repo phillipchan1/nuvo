@@ -960,3 +960,85 @@ html:root .pace-now {
 /* The phone's way in: one quiet control above the project's list, 44px. */
 .ph-draft-trigger { display: flex; justify-content: flex-end; margin: -4px 0 4px; }
 .ph-draft-trigger .k-btn { min-height: 44px; }
+
+/* ── The deck at rest (D-209) — the Get ready stack's top card under the
+   crown, its siblings drawn as edges beneath it (no count, P4). ─────────── */
+.rest-deck { display: grid; gap: 8px; padding: 12px 16px 14px; border-bottom: 1px solid var(--line-1); }
+.rest-deck-head { display: flex; align-items: center; gap: 6px; color: var(--muted); font: 600 11px/1 var(--font-sans); letter-spacing: 0.04em; text-transform: uppercase; }
+.rest-deck-spark { color: var(--accent); letter-spacing: 0; }
+.rest-deck-all {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--muted);
+  font: 500 12px/1 var(--font-sans);
+  text-transform: none;
+  letter-spacing: 0;
+}
+@media (hover: hover) {
+  .rest-deck-all:hover { color: var(--ink); background: var(--hover); }
+}
+html:root .rest-deck-all:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+.rest-deck-stack { position: relative; display: grid; }
+.rest-deck-stack[data-edges] { padding-bottom: 6px; }
+.rest-deck-stack[data-edges="2"] { padding-bottom: 11px; }
+.rest-deck-stack > .k-offer-card { position: relative; z-index: 2; }
+.rest-deck-edge {
+  position: absolute;
+  height: 14px;
+  bottom: 0;
+  border-radius: 0 0 var(--r-card, 8px) var(--r-card, 8px);
+  background: var(--raised, var(--surface));
+  box-shadow: var(--shadow-2);
+}
+.rest-deck-edge[data-n="1"] { left: 6px; right: 6px; bottom: 5px; z-index: 1; }
+.rest-deck-stack:not([data-edges="2"]) .rest-deck-edge[data-n="1"] { bottom: 0; }
+.rest-deck-edge[data-n="2"] { left: 12px; right: 12px; z-index: 0; opacity: 0.8; }
+
+/* ── The crown's readings (D-209): Today on top, the week's marks under it. */
+.crown-readings { display: grid; gap: 14px; padding: 14px 16px 14px; border-bottom: 1px solid var(--line-1); min-width: 0; }
+.crown-week { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line-1); min-width: 0; }
+.crown-week-head { display: flex; align-items: baseline; gap: 4px; min-width: 0; color: var(--ink); font: 600 13px/1.2 var(--font-sans); }
+.crown-week-head .k-stop { width: 5px; height: 5px; }
+.crown-week-head .k-mark-k { text-transform: none; letter-spacing: 0; font: 600 13px/1.2 var(--font-sans); color: var(--ink); }
+.crown-week-sub { color: var(--faint); font: 450 12px/1.2 var(--font-sans); font-variant-numeric: tabular-nums; }
+.crown-week-act { margin-left: auto; }
+
+/* One line per project (D-209): ring · name · its pieces · what's left. The
+   row's top and marks share one line; the work still opens beneath. */
+.crown-readings ~ .crown-projects .crown-proj-row,
+.crown-oneline .crown-proj-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; }
+.crown-oneline .crown-proj-top { display: contents; }
+.crown-oneline .crown-proj-top > .crown-ring { order: 1; }
+.crown-oneline .crown-proj-top > .crown-name { order: 2; }
+.crown-oneline .crown-proj-marks { order: 3; flex: none; padding-left: 0; gap: 6px; }
+.crown-oneline .crown-proj-marks .pace-track { width: 56px; flex: none; }
+.crown-oneline .crown-proj-top > :nth-child(n + 3) { order: 4; }
+.crown-oneline .crown-proj-top > :last-child { order: 5; }
+
+/* The tray (D-209): Today and Inbox fold to their tab strip above Capture and
+   open into the rail's lower part. The day's blocks are already on the grid. */
+.rail-tray-shut .rail-list { display: none; }
+.rail-tray-open .rail-scroll { flex: 0 1 auto; max-height: 42%; }
+.rail-tray-toggle { margin-left: 2px; }
+.crown-line-solo { padding: 8px 16px 10px; border-bottom: 1px solid var(--line-1); }
+
+/* The day closed (D-209): the rest of the working day on the grid, said once. */
+.fc .fc-bg-event.evt-yours {
+  background: color-mix(in srgb, var(--slot) 9%, transparent) !important;
+  border-top: 1.5px solid var(--slot);
+  opacity: 1;
+}
+.fc .fc-bg-event.evt-yours .fc-event-title {
+  margin: 4px 6px;
+  color: var(--slot);
+  font: 700 10px/1 var(--font-sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-style: normal;
+}

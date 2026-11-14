@@ -72,6 +72,9 @@ zero-import module beside it (e.g. `_shared/conferencing.ts`) and is cited inlin
 | Act | Kernel | UI | Agent |
 |---|---|---|---|
 | Which week am I planning | `planningWeekStart` | `planningWeekStartISO` (`lib/dates.ts`) | `context.ts`, `tools.ts` |
+| Is today done (D-209) | `dayReadiness` | `readDay` (`lib/marks.ts`) → the rail's `DayCrown`, the phone's top bar, the grid's **Yours** | `context.readiness.day` |
+| Which bets make work significant (D-209) | `movingInitiativeIds` / `krMovedSince` / `quarterStartISO` | `movingIds` (`lib/marks.ts`) → the Done mark, `useWeekCrown`'s track, the Seal, the initiative deck's Moving | `context.readiness.movingInitiativeIds` |
+| Does the week fit (D-209) | `fitsCapacity` (+ `FITS_LOW`) | `projectDeckMarks` → On Deck's **Fits** | *none yet* |
 | Which week does the plan open on (D-199) | `planSessionWeekStart` (+ `WEEK_HANDOVER_MINS`) | `planSessionWeekStartISO` (`lib/dates.ts`) → `PlanRail` | *none yet — no agent tool drafts a week* |
 | What's on this week (scoreboard) | `isOnSlate` / `deriveSlateIds` | `weekPushes` → rail crown, phone slate, week card, **`composeWeek` / the Week's Plan floor** (D-060 — the last surface still reading `big_rocks` as a list) | `context.weekSlate` |
 | What can I work on this week | `isOnDeckThisWeek` | `projectsOnDeck` → `suggestPull` | `context.weekSlate[].openTasks` |

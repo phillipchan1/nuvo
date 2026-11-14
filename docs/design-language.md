@@ -213,13 +213,18 @@ durations) holds by construction. The ms below are Paper's.
 | **Arrive** | `--d-slow`, `--ease-out` | 340ms, 6px rise, **no fade** | a hero takes its place | `WeekSetMoment`'s hero (`.arrive`); floors already rise on `floor-enter` | fading a hero in (it must be readable on frame one) |
 | **Now** | — | **static** | which way time is moving | the now-line's **wake** (a `--signal-soft` band over the minutes just gone, `--now-wake-h`) on the desktop Schedule and the phone's Day canvas | a pulse, a breathe, a glow that animates — the line moves only with the clock |
 | **Reach** | `--d-advance`, `--ease-momentum` | one 8px mark in the project's hue, arcing from what you touched to the bar it moved | **where the change came from**: an act climbs one altitude to the reading it moved (D-202) | `reachToCrown` from a held plan block, a loose piece dropped on the grid, the phone's Put in a slot | more than one mark per project per act, more than one altitude, a chat or assistant write, to anything off-screen or unmounted |
+| **Pop** (D-209) | `--d-land`, `--ease-land` | a piece that just filled jumps (scaleY) and settles | **a click** — the smallest reward, every piece | `MarkBar`, on a piece moving up a state | on mount, a refetch's echo without a change |
+| **Sweep** (D-209) | `--d-advance`, `--ease-momentum` | one bright pass across a bar that just closed | **a lock** — a Placed / Fits / On a week mark closed | `closeMark` (`lib/celebrate.ts`) | on a Ready mark (shaping is upkeep: it clicks) |
+| **Stop** (D-209) | `--d-land`, `--ease-land` | the ember full stop drops onto a title with a little overshoot, then eight sparks | **ready** — the day closed, or an altitude's first two marks closed | `Stop` (kit), on its own `on` flipping true | ever on mount; the stop is always mounted, so the title never reflows |
+| **Seal** (D-209) | `--d-advance` | a "Shipped" stamp slams onto the project and fades; toward a moving bet the target jolts and an ember ring opens | **shipped** — the largest reward short of a season | `seal` from `ProjectShipAssess` | a ship toward no moving bet gets the stamp alone |
 | Travel · Zoom · Lift | existing | — | unchanged: `TimePager`, `LensZoom`, `.glass-lift` | | |
 
 Laws that hold for every row of that table:
 
 1. **Transform and opacity only**, one element per act — never per row of a list at once
    (perf rule 2). `tests/momentum.test.tsx` fails on any other property in a momentum keyframe.
-2. **Only what you did, when you did it.** Momentum is the visible consequence of the user's
+2. **Only what you did, when you did it — and in proportion to what it means** (D-209: the
+   ladder, `readiness-ladder.md` §4). Momentum is the visible consequence of the user's
    own act. A tap and a chat message place a project identically (one kernel), but only the
    tap *lands* — the assistant proposes; it is never celebrated (P3).
 3. **Forward only.** Progress advances; a reversal snaps.

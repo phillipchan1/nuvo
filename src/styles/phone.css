@@ -873,3 +873,9 @@ button.ph-dayhead { width: 100%; border-top: 0; border-left: 0; border-right: 0;
   .ph-travel .k-btn[data-icon] { width: 28px; }
   .ph-travel .k-btn:not([data-icon]) { padding: 0 9px; }
 }
+
+/* The shut strip's three hairlines (D-209): Ready · Placed · Done, one line
+   drawn. Fixed height, so the strip never resizes under the thumb (D-123). */
+.ph-crown-lines { display: grid; gap: 3px; flex: 1 1 auto; min-width: 0; max-width: 168px; }
+.ph-crown-name .k-stop { width: 5px; height: 5px; }
+.ph-hero .k-stop { margin-left: 0.04em; }

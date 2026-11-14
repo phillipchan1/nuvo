@@ -15,6 +15,7 @@ import { Icon } from "../Icon";
 import { IconButton } from "../kit";
 import { AltitudeIcon, type AltitudeKind } from "../icons";
 import type { CalHero } from "./CalendarChrome";
+import { Stop } from "../kit";
 
 /**
  * The Calendar's hero, in the top bar.
@@ -32,7 +33,13 @@ function CalendarTitle({ hero }: { hero: CalHero }) {
   const jumpRef = useRef<HTMLInputElement>(null);
   const canJump = Boolean(hero.date);
 
-  if (!canJump) return <h1 className="ph-hero text-display masthead">{hero.hero}</h1>;
+  if (!canJump)
+    return (
+      <h1 className="ph-hero text-display masthead">
+        {hero.hero}
+        {hero.stop != null && <Stop on={hero.stop} />}
+      </h1>
+    );
 
   return (
     <>
@@ -52,7 +59,10 @@ function CalendarTitle({ hero }: { hero: CalHero }) {
         aria-label={`${hero.hero} — jump to another date`}
         className="ph-hero-btn"
       >
-        <span className="ph-hero text-display masthead">{hero.hero}</span>
+        <span className="ph-hero text-display masthead">
+          {hero.hero}
+          {hero.stop != null && <Stop on={hero.stop} />}
+        </span>
       </button>
       {/* `sr-only` and opened by the button above: iOS paints a date input's own
           value at the control's intrinsic width while its picker is open, which

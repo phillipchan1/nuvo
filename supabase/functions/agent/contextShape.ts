@@ -58,6 +58,15 @@ export interface AgentContext {
   settings: { dayStartHour: number; dayEndHour: number } | null;
   /** Pre-filtered timed items for today (the user's zone). Primary source for "what's on today" — events, scheduled tasks AND slots, because all three occupy the grid. */
   todaySchedule: ScheduleItem[];
+  /** Readiness (D-209), from the planning kernel — the same answers the app's
+   *  crown shows. `day`: today's own tasks (a repeating task that rolled in
+   *  doesn't count); closed when every one is done. `movingInitiativeIds`: the
+   *  bets whose number moved this quarter — only work toward these is
+   *  significant. */
+  readiness?: {
+    day: { total: number; done: number; closed: boolean; closedAt: string | null };
+    movingInitiativeIds: string[];
+  };
   /** Pre-computed open windows today (≥30 min, future-only, between real busy blocks). Use this for all availability questions — never count gaps from todaySchedule yourself. */
   todayOpenWindows: OpenWindow[];
   /** The Slots the user holds in the loaded range — blocks of time that own several tasks. To put work inside one, use add_to_slot with its id; to hold new time, create_slot. */

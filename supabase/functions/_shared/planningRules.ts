@@ -645,3 +645,85 @@ export function doneTaskSignificance(input: {
   }
   return { initiativeTasks, otherTasks };
 }
+
+// ── readiness, from the day to the season (D-209, docs/readiness-ladder.md) ─
+
+/** The quarter a date falls in, as its first day ('YYYY-MM-DD'). UTC date math
+ *  on the calendar date, like every rule here. */
+export function quarterStartISO(dateISO: string): string {
+  const [y, m] = dateISO.split("-").map(Number);
+  const q = Math.floor((m - 1) / 3) * 3 + 1;
+  return `${y}-${String(q).padStart(2, "0")}-01`;
+}
+
+/** A key result as far as "is this bet moving" cares. */
+export interface MovingKr {
+  baseline: number | null;
+  current: number | null;
+  updatedAt: string | null;
+}
+
+/** Has this key result's number moved this quarter? A key result keeps no
+ *  history, only its current value, so "moved" is read as: the number differs
+ *  from where it started AND the row was written this quarter. A stand-in until
+ *  a dedicated value-changed stamp exists (docs/readiness-ladder.md §7). */
+export function krMovedSince(kr: MovingKr, sinceISO: string): boolean {
+  if (kr.current == null || kr.updatedAt == null) return false;
+  if (kr.baseline != null && kr.current === kr.baseline) return false;
+  return kr.updatedAt.slice(0, 10) >= sinceISO;
+}
+
+/** **Moving**: the initiatives whose number moved this quarter. Significance
+ *  counts only work toward these (D-209: "toward a moving bet"), so busywork on
+ *  a stalled bet stays grey until you record progress. */
+export function movingInitiativeIds(
+  initiatives: readonly { id: string; keyResults: readonly MovingKr[] }[],
+  todayISO: string,
+): string[] {
+  const since = quarterStartISO(todayISO);
+  return initiatives.filter((i) => i.keyResults.some((kr) => krMovedSince(kr, since))).map((i) => i.id);
+}
+
+/** What the day is made of — the tasks dated today, as far as closing it cares. */
+export interface DayTask {
+  id: string;
+  status: string;
+  completedAt: string | null;
+  rollCount: number;
+  recurrenceId: string | null;
+}
+
+export interface DayReadiness {
+  total: number;
+  done: number;
+  /** every one of today's own tasks is done */
+  closed: boolean;
+  /** when the last of them was finished (ISO), once the day is closed */
+  closedAt: string | null;
+}
+
+/** **The day** (D-209): today's own tasks — everything dated today, except a
+ *  repeating task's occurrence that rolled in from an earlier day. A pile-up
+ *  never makes the day unwinnable; finishing one still counts. Closes when the
+ *  last one is done, at whatever hour that is. An empty day never closes (P7:
+ *  nothing to finish is not a win). */
+export function dayReadiness(tasks: readonly DayTask[]): DayReadiness {
+  const own = tasks.filter(
+    (t) => t.status !== "trashed" && (isCompleteStatus(t.status) || !(t.recurrenceId != null && t.rollCount > 0)),
+  );
+  const done = own.filter((t) => isCompleteStatus(t.status));
+  const closed = own.length > 0 && done.length === own.length;
+  const closedAt = closed
+    ? done.reduce<string | null>((m, t) => (t.completedAt && (!m || t.completedAt > m) ? t.completedAt : m), null)
+    : null;
+  return { total: own.length, done: done.length, closed, closedAt };
+}
+
+/** **Fits** (D-209): the week's project hours against capacity close inside
+ *  70–100%. Under is room, over is overflow; neither is a verdict. */
+export const FITS_LOW = 0.7;
+export function fitsCapacity(demandMins: number, capacityMins: number): "under" | "fits" | "over" {
+  if (capacityMins <= 0) return demandMins > 0 ? "over" : "under";
+  const r = demandMins / capacityMins;
+  return r > 1 ? "over" : r >= FITS_LOW ? "fits" : "under";
+}

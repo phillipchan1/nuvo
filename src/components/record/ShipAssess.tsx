@@ -26,6 +26,8 @@
 // the usual case is the work happened) or drop them. There is deliberately no
 // "leave them open": that was the false signal.
 
+import { seal } from "../../lib/celebrate";
+import { movingIds } from "../../lib/marks";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { DialogFoot, DialogHead, Modal } from "../ui";
@@ -67,6 +69,10 @@ export function ProjectShipAssess({
     if (verdict === "done") openTasks.forEach((t) => toggleTask(t.id));
     else if (verdict === "drop") openTasks.forEach((t) => deleteTask(t.id));
     updateProject(project.id, { status: "complete" });
+    // The Seal (D-209): sized by significance — toward a bet whose number moved
+    // this quarter it lands with the jolt and the ring; toward none, the stamp.
+    const significant = project.initiativeId != null && movingIds(data, new Date()).includes(project.initiativeId);
+    requestAnimationFrame(() => seal(project.id, significant));
     onShipped?.(verdict, openTasks.length);
     onClose();
   };

@@ -816,6 +816,77 @@ html:root [data-sonner-toaster] [data-sonner-toast] [data-button] {
   .k-bar-tabs { margin-left: 8px; }
 }
 
+/* ── Readings — the marks, the day, the stop (D-209, docs/readiness-ladder.md) ──
+   Every planner altitude reads through three marks of pieces (shaped · given
+   time · the run). Bars sit flat on the ground; only motion is a float. */
+.k-stop {
+  display: inline-block;
+  width: 0.2em;
+  height: 0.2em;
+  margin-left: 0.05em;
+  border-radius: 50%;
+  background: var(--signal);
+  opacity: 0;
+  transform: scale(0.3);
+}
+.k-stop[data-on] { opacity: 1; transform: none; }
+.k-markbar {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  height: 6px;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 2px;
+}
+.k-markbar-thin { height: 3px; gap: 1.5px; }
+.k-markbar[data-empty] { height: 6px; background: var(--line); }
+.k-markpiece { position: relative; flex: 1 1 0; min-width: 2px; border-radius: 1px; background: var(--line); overflow: hidden; }
+.k-markfill { position: absolute; inset: 0; transform-origin: left center; }
+.k-sweep {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--panel) 85%, transparent) 50%, transparent);
+  transform: translateX(-100%);
+}
+.k-ring { position: fixed; z-index: 89; pointer-events: none; border: 2px solid var(--signal); border-radius: var(--r-ctl); }
+.k-spark { position: fixed; z-index: 90; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; pointer-events: none; background: var(--signal); }
+.k-spark[data-tone="accent"] { background: var(--accent); }
+.k-markset { display: grid; gap: 6px; min-width: 0; }
+.k-markset-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.k-mark { display: grid; gap: 5px; min-width: 0; }
+.k-mark-head { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
+.k-mark-k {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font: 600 10.5px/1.2 var(--font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-bottom: 1px dotted transparent;
+}
+@media (hover: hover) {
+  .k-mark-k:hover { border-bottom-color: var(--line-strong); }
+}
+html:root .k-mark-k:focus-visible { outline: none; border-radius: 2px; box-shadow: 0 0 0 2px var(--accent-ring); }
+.k-mark[data-full] .k-mark-k { color: var(--ink); }
+.k-mark[data-full] .k-mark-k::after { content: " \2713"; }
+.k-mark-v { margin-left: auto; flex: none; color: var(--faint); font: 450 11px/1.2 var(--font-sans); font-variant-numeric: tabular-nums; }
+.k-mark-v b { color: var(--ink); font-weight: 600; font-size: 12px; }
+.k-markset-detail, .k-day-line { margin: 0; color: var(--muted); font: 450 12px/1.45 var(--font-sans); font-variant-numeric: tabular-nums; }
+.k-mark-def { margin: 2px 0 0; color: var(--ink-2); font: 450 12px/1.45 var(--font-sans); }
+.k-mark-def b { font-weight: 600; }
+.k-mark-def span { color: var(--muted); }
+.k-day { display: grid; gap: 8px; min-width: 0; }
+.k-day-head { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.k-day-head .k-mark-k { margin-left: auto; text-transform: none; letter-spacing: 0; font: 450 12px/1.2 var(--font-sans); }
+.k-day-hero { margin: 0; color: var(--ink); white-space: nowrap; }
+.k-day .k-markbar { height: 10px; gap: 3px; }
+.k-day[data-closed] .k-day-line { color: var(--ink); }
+
 /* ── Crown — the head of every planner page's rail (D-207) ─────────────────
    Eyebrow · one number · the page's track · the line. The Schedule and both
    decks wear it; the line is the door to Get ready. Flat on the rail's ground
@@ -915,4 +986,21 @@ html:root button.k-crown-line:focus-visible { outline: none; box-shadow: 0 0 0 2
   .k-bar-actions { gap: 2px; }
   .k-bar-actions .k-seg button { padding: 0 6px; }
   .k-btn[data-shed] { display: none; }
+}
+
+/* The Seal (D-209) — a stamp that slams onto a shipped project and fades. */
+.k-seal {
+  position: fixed;
+  z-index: 91;
+  pointer-events: none;
+  padding: 3px 9px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-ctl);
+  background: var(--raised);
+  color: var(--ink);
+  font: 800 12px/1.2 var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transform: translate(-50%, -50%) rotate(-6deg);
 }

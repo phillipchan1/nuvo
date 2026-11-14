@@ -53,6 +53,7 @@ import { coverage, pruneTo, rangeBetween, selectionClosesOverlay, toggleGroup, t
  * only when it holds something.
  */
 export type RailTab = "inbox" | "today" | "trash";
+const TRAY_KEY = "nuvo-rail-tray-open";
 type Mutations = ReturnType<typeof useTaskMutations>;
 
 /** Keyboard / menu / tab-drop triage: destination may vanish from the rail, so
@@ -82,6 +83,7 @@ function LeftRail({
   onOpenSlot,
   crownLine,
   onCrownLine,
+  deck,
 }: {
   tab: RailTab;
   setTab: (t: RailTab) => void;
@@ -119,6 +121,8 @@ function LeftRail({
   crownLine?: CrownLineData | null;
   /** Pressing the line opens Get ready (D-207). */
   onCrownLine?: () => void;
+  /** The deck at rest (D-209): the Get ready stack's top card, under the crown. */
+  deck?: React.ReactNode;
 }) {
   // The directory, not the whole vertical: the rail labels its rows (project,
   // domain, hue) and offers pickers; it shows no progress. Reading the whole
@@ -226,6 +230,29 @@ function LeftRail({
   // left on from last Tuesday, quietly hiding work, is the failure mode every
   // list tool has, and in a planner a short list reads as "you're on top of it".
   // Saved views are the thing that persists; applying one is a deliberate act.
+  // The tray (D-209) — shut by default; a per-viewer convenience.
+  const [trayOpen, setTrayOpenState] = useState(() => {
+    try {
+      return localStorage.getItem(TRAY_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const setTrayOpen = useCallback((v: boolean) => {
+    setTrayOpenState(v);
+    try {
+      localStorage.setItem(TRAY_KEY, v ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  // A tab chosen from the keyboard (1/2/3) or by the app opens the tray.
+  const lastTab = useRef(tab);
+  useEffect(() => {
+    if (lastTab.current === tab) return;
+    lastTab.current = tab;
+    setTrayOpen(true);
+  }, [tab, setTrayOpen]);
   const filter = useTaskFilter(now);
   const [filterOpen, setFilterOpen] = useState(false);
   const { apply: applyFilter } = filter;
@@ -906,7 +933,7 @@ function LeftRail({
           it shut in focus mode. Window drag is scoped to the titlebar strip +
           crown/tabs — the task list opts out so row drags aren't window drags. */}
       <div
-        className="rail-inner relative flex h-full flex-col"
+        className={`rail-inner relative flex h-full flex-col ${trayOpen ? "rail-tray-open" : "rail-tray-shut"}`}
         style={{
           width: railWidth,
           opacity: collapsed ? 0 : 1,
@@ -927,7 +954,7 @@ function LeftRail({
       />
       {/* Clears macOS traffic lights — explicit drag target, not inherited from deep. */}
       <div data-tauri-drag-region className="rail-titlebar-drag w-full shrink-0" aria-hidden />
-      <div data-tauri-drag-region="deep" className="shrink-0">
+      <div data-tauri-drag-region="deep" className="rail-scroll min-h-0 flex-1 overflow-y-auto">
         {/* The crown — the planner's one hero (the week's span), its fact, and
             the week's projects. Its door is "Plan the week". */}
         <WeekPanel
@@ -964,7 +991,15 @@ function LeftRail({
           onLine={onCrownLine}
           offers={offers}
           onPathCandidates={setPathCands}
+          today={today}
+          deck={deck}
         />
+      </div>
+      {/* The tray (D-209): Today and Inbox fold to this strip above Capture —
+          the day's blocks are already on the grid beside the rail, so the list
+          is one tap away instead of taking a third of the rail. A tab (or 1/2/3)
+          opens it; the chevron folds it. */}
+      <div data-tauri-drag-region="deep" className="rail-tray-handle shrink-0">
         {/* The faces — Today and Inbox, the day's two; Trash is recovery, so it
             sits as an icon at the strip's end, only while it holds something
             (D-136). Mid-drag the two faces become the two acts you can perform
@@ -984,7 +1019,9 @@ function LeftRail({
                 aria-pressed={tab === t}
                 onClick={() => {
                   if (suppressTabClickRef.current) return;
+                  if (trayOpen && tab === t) return setTrayOpen(false);
                   setTab(t);
+                  setTrayOpen(true);
                 }}
                 {...(t === "inbox"
                   ? { "data-inbox-tab": "", "data-teach": "inbox-tab" }
@@ -1010,6 +1047,14 @@ function LeftRail({
                 }}
               />
             )}
+            <IconButton
+              size="xs"
+              className="rail-tray-toggle"
+              label={trayOpen ? "Fold Today and Inbox" : "Open Today and Inbox"}
+              aria-expanded={trayOpen}
+              icon={<Icon name="chevron-down" size={14} style={trayOpen ? undefined : { transform: "rotate(180deg)" }} />}
+              onClick={() => setTrayOpen(!trayOpen)}
+            />
             {/* The filter modifies the face you're looking at, so it rides the
                 strip. Inert on Trash — a filtered trash could hide the row you
                 came back for without saying so. */}

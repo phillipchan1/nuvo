@@ -56,7 +56,9 @@ export function motionOff(): boolean {
   return motionMs("--d-land") < STILL_MS;
 }
 
-function play(
+/** The one player every motion here goes through — exported for the
+ *  celebration ladder (lib/celebrate.ts), which plays on the same tokens. */
+export function play(
   el: Element | null | undefined,
   keyframes: Keyframe[],
   durationToken: string,

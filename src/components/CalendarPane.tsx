@@ -299,6 +299,7 @@ function useOnScreen(ref: React.RefObject<HTMLElement | null>, x: number, y: num
 
 // ── Main component ─────────────────────────────────────────────────────────
 function CalendarPane({
+  yours,
   learned,
   onOpenMemory,
   rhythm,
@@ -382,6 +383,9 @@ function CalendarPane({
    *  the Schedule — Memory's "Show on the Schedule" turns it on. While it is on,
    *  the bar carries a pressed "Rhythm" that takes it off again. */
   rhythm?: boolean;
+  /** The day is done (D-209): the rest of the working day, drawn as a band
+   *  that says "Yours". Null while the day is open. */
+  yours?: { start: Date; end: Date } | null;
   onRhythmChange?: (on: boolean) => void;
   now: Date;
   /** Domain color per task — blocks carry their thread up the vertical. */
@@ -2111,11 +2115,32 @@ function CalendarPane({
     return out;
   }, [rhythmOn, visibleSpan, settings?.work_start_minutes, settings?.work_end_minutes, memory, rhythmHot]);
 
+  // The day closed (D-209): what's left of the working day is yours. One
+  // background event — no layout among the blocks, nothing draggable.
+  const yoursEvents = useMemo<EventInput[]>(
+    () =>
+      yours
+        ? [
+            {
+              id: "day-yours",
+              title: "Yours",
+              start: yours.start,
+              end: yours.end,
+              display: "background",
+              classNames: ["evt-yours"],
+              extendedProps: { kind: "planghost" as const, refId: "" },
+            },
+          ]
+        : [],
+    [yours],
+  );
+
   const gridEvents = useMemo(() => {
     const withPlan = planEvents.length ? [...fcEvents, ...planEvents] : fcEvents;
-    const base = rhythmEvents.length ? [...rhythmEvents, ...withPlan] : withPlan;
+    const withYours = yoursEvents.length ? [...yoursEvents, ...withPlan] : withPlan;
+    const base = rhythmEvents.length ? [...rhythmEvents, ...withYours] : withYours;
     return draftPreviewEvent ? [...base, draftPreviewEvent] : base;
-  }, [fcEvents, planEvents, rhythmEvents, draftPreviewEvent]);
+  }, [fcEvents, planEvents, rhythmEvents, yoursEvents, draftPreviewEvent]);
 
   // FullCalendar treats a new `events` array as a new source and re-parses
   // every block. Keep the option stable, then reconcile only the blocks whose

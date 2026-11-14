@@ -180,6 +180,9 @@ export interface CalHero {
   fact?: string;
   /** True when that fact is the accent-worthy one (open time, not a count). */
   factAccent?: boolean;
+  /** The day is done (D-209): "Today" earns its ember stop. Set by the shell,
+   *  which reads the day; the Calendar never computes it. */
+  stop?: boolean;
   /** The day the OS date picker opens on — and the day a capture files to.
    *  Null on Year, where a single date means nothing. */
   date: Date | null;

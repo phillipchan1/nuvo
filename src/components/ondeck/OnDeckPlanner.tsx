@@ -19,6 +19,9 @@ import { addDays, format } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useDeferProject } from "../../hooks/useProjectTime";
 import { useCapacity } from "../../hooks/useCapacity";
+import { projectDeckMarks } from "../../lib/marks";
+import { demandByWeekDetailed } from "../../lib/pace";
+import RestDeck from "../plan/RestDeck";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { useMaxPerWeek, useCoverageHidden, useCoverageCollapsed, useDeckByDomain } from "../../hooks/usePlannerPrefs";
 import { useRecordContextMenu } from "../RecordContextMenu";
@@ -127,6 +130,23 @@ export default function OnDeckPlanner() {
   const readyN = placed.filter((l) => l.readyTier === "ready").length;
   const groomN = placed.filter((l) => l.readyTier === "grooming").length;
   const doneN = placed.filter((l) => l.readyTier === "done").length;
+  // The deck's readings (D-209): Ready · Fits · Shipped. Fits is this week's
+  // share of each placed project's pace against this week's open hours — the
+  // same demand the timeline's pinch reads (demandByWeekDetailed).
+  const deckMarks = (() => {
+    const ws = byWeek[0]?.weekStart;
+    const owed = new Map((ws ? demandByWeekDetailed(data, now, [ws])[0].contributors : []).map((c) => [c.project.id, c.mins]));
+    return projectDeckMarks(
+      placed.map((l) => ({
+        id: l.project.id,
+        color: domainById(data, l.project.domainId)?.color ?? "var(--accent)",
+        ready: l.readyTier === "ready" || l.readyTier === "done",
+        shipped: l.project.shippedAt != null,
+        weekMins: owed.get(l.project.id) ?? 0,
+      })),
+      byWeek[0]?.availMins ?? 0,
+    );
+  })();
 
   // ── drag state (in React so the bar + counts preview live) ───────────────────
   // inbox drags ride a card-shaped ghost (placed bars preview in place instead)
@@ -688,6 +708,10 @@ export default function OnDeckPlanner() {
           // The line (D-207): the deck's Get ready stack, first card in words.
           line,
           onLine: () => setReadyMode(true),
+          // The readings (D-209) and the deck at rest.
+          title: "On Deck",
+          marks: placed.length > 0 ? deckMarks : undefined,
+          deck: deckCards.length > 0 ? <RestDeck cards={deckCards} onAll={() => setReadyMode(true)} /> : undefined,
         }}
         poolLabel="Needs a week"
         poolCount={inbox.length}
