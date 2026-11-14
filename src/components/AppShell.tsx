@@ -277,6 +277,7 @@ const AppShellInner = memo(function AppShellInner() {
   // would hand it a fresh prop on every AppShell render.
   const openSettings = useCallback(() => openOverlay("settings"), [openOverlay]);
   const openShortcuts = useCallback(() => openOverlay("shortcuts"), [openOverlay]);
+  const openSearch = useCallback(() => openOverlay("search"), [openOverlay]);
 
   // Focus mode: collapse the spine + the inbox·today rail to give the calendar
   // the whole workspace. Lives here (the common ancestor of Spine and Planner)
@@ -423,6 +424,12 @@ const AppShellInner = memo(function AppShellInner() {
       const el = e.target as HTMLElement;
       if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
       if (nav.overlay !== "none" || nav.flow || nav.floorModal) return;
+      // "/" finds — its own door, never the capture line (N-19, D-210).
+      if (e.key === "/") {
+        e.preventDefault();
+        openOverlay("search");
+        return;
+      }
       // "?" opens the shortcuts reference from anywhere.
       if (e.key === "?") {
         e.preventDefault();
@@ -466,6 +473,7 @@ const AppShellInner = memo(function AppShellInner() {
         setRung={goRung}
         openSettings={openSettings}
         openShortcuts={openShortcuts}
+        openSearch={openSearch}
       />
 
       {/* The panel (D-190): all the work sits on one inset sheet with a 12px

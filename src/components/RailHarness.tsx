@@ -241,7 +241,7 @@ function Frame() {
       <div className="app-shell flex h-full">
         <div className="app-canvas flex min-w-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1">
-            <Spine rung={rung} setRung={setRung} openSettings={() => {}} openShortcuts={() => {}} />
+            <Spine rung={rung} setRung={setRung} openSettings={() => {}} openShortcuts={() => {}} openSearch={() => {}} />
             <div className="app-panel flex min-w-0 flex-1 flex-col">
               {/* The one bar, across the whole panel on every page; its crumb
                   holds the rail's width, so the tabs stand still (D-208). */}

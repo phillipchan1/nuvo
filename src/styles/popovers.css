@@ -929,6 +929,69 @@ html:root .capture-door .task-composer-input:focus-visible { outline: none; }
   border-top: 1px solid var(--line-1);
 }
 
+/* ── Command · search (`/`, D-210) ─────────────────────────────────────── */
+/* The same frame as capture: the line is the head, kit rows below it. */
+/* Grows with its answer, to a ceiling; nothing to say → just the line. */
+.ks-line {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 0 14px 0 16px;
+  color: var(--faint);
+}
+.ks-line > input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font: 450 16px/24px var(--font-sans);
+  letter-spacing: -0.01em;
+}
+.ks-line > input::placeholder { color: var(--faint); }
+html:root .ks-line > input:focus-visible { outline: none; box-shadow: none; }
+/* The calendar's half is a server read — a quiet pulse while it's out. */
+.ks-busy {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--faint);
+  animation: ks-busy 900ms var(--ease-out) infinite alternate;
+}
+@keyframes ks-busy { from { opacity: 0.25; } to { opacity: 0.9; } }
+
+.ks-body {
+  flex: 1;
+  min-height: 0;
+  max-height: min(460px, 62vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  border-top: 1px solid var(--line-1);
+}
+.ks-body:empty { display: none; }
+.ks-group + .ks-group { margin-top: 6px; }
+.ks-group > .k-section { height: 28px; color: var(--faint); }
+
+.ks-row { gap: 10px; }
+.ks-row .ks-lead { display: grid; flex: none; place-items: center; width: 16px; color: var(--muted); }
+.ks-row .ks-glyph { display: grid; place-items: center; }
+.ks-row > .k-row-title { display: flex; align-items: baseline; gap: 8px; }
+.ks-row .ks-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); font-size: 13.5px; }
+.ks-row .ks-ctx { flex: 0 10 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--faint); font-size: 12px; }
+.ks-row[data-done] .ks-title,
+.ks-row[data-done] .ks-hit { color: var(--faint); }
+.ks-hit { background: none; color: var(--ink); font-weight: 600; }
+.ks-row > .k-row-meta [data-signal] { color: var(--signal); }
+/* The keycap holds its place on every row and shows only on the active one,
+   so the meta column never shifts as the selection moves. */
+.ks-row .ks-enter { visibility: hidden; }
+.ks-row[aria-selected="true"] .ks-enter { visibility: visible; }
+.ks-note { padding: 8px 10px; color: var(--faint); font-size: 12px; }
+
 /* The phone's sheet: the same door at thumb size. */
 .capture-door-sheet { gap: 12px; }
 .capture-door-sheet .task-composer-field-box .task-composer-line {
@@ -996,6 +1059,7 @@ html.spotlight-window .tap-bloom::before { content: none; }
   .insp-drop,
   .k-toast,
   .k-command,
+  .ks-busy,
   .marquee-pill,
   .capture-door .task-composer-menu,
   .k-spotlight-done .k-spotlight-ok { animation: none; }

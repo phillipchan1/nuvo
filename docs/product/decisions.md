@@ -8129,3 +8129,55 @@ initiative"). Driven on a test account: toggle, persistence independent of the p
 card click doesn't start a create, a socket opens a domain-bound composer (closed without
 writing), the project deck unchanged after the extraction, no horizontal overflow at 1680, and the
 phone at 375 (unaffected).*
+
+---
+
+**D-210 · 2026-11-14 · Search comes back to the desktop as its own door — `/` — and both shells
+rank through one read.**
+*(Asked by the operator: "global search that's beautiful, on brand, using / … make it
+intelligent.")* D-149 took search out of ⌘K because one line can't both *add what I typed* and
+*find what I typed*; N-19 said a desktop search would return only as its own door with its own key.
+This is that door. The phone kept its Search sheet, ranking inline.
+
+→ **`/` opens it** from anywhere a typed character isn't spent (the same guard as `?`, `P`, `I`),
+and the Spine carries a **Search** row above Settings, so it's never keyboard-only. The frame is
+the Command popover (the kit's scrim, a 600px card whose line is the head) with kit `Row`s; it
+grows with its answer and shows nothing but the line when there's nothing to say. ↑↓ move, ↵
+opens, Esc clears then leaves (D-051). The active row carries its ↵ keycap — no hint row.
+
+→ **One read, two layouts.** `lib/search.ts` decides what a result is and in what order;
+`useSearch` adds the date, the recents and the calendar's async half (`useEventSearch`,
+unchanged). The desktop door (`search/SearchDoor`) and the phone sheet (`MobileSearch`) only draw
+it — the phone's inline ranking is gone. Never rank in a surface.
+
+→ **What "intelligent" means here, and only this:**
+- *Words in any order, at the start of words; initials on an item's own name* ("sce"). A word must
+  land or it's no match. Notes and a task's project name can carry words the title lacks, at a
+  discount.
+- *Live work first.* A task due today or overdue, this week, freshly captured, a project in
+  flight — those outrank the same words in the archive. Done and shipped are still found (D7:
+  "did I actually finish that?") but sink below live work, including live work found only through
+  its project.
+- *A date is a place.* When the whole query is a day ("friday", "dec 3", "tomorrow"), the first
+  row takes you there — read by `parseCapture`, so a date means the same in search as in ⌘K.
+- *Where you went last.* The empty search lists the last few things opened from it, per device
+  (localStorage — a convenience, never state). Deliberately not a dashboard of the week: the slate
+  has one home (`useWeekCrown`).
+- Sections are ordered by their best hit, so ↵ on the first row is the best answer of any kind.
+
+→ **Every open replaces the search's history entry**, so Back from what you opened returns to
+where you were, not to the search.
+
+Ledger: no row asks *"where did I put that?"* outright; it is the recall half of **D6** / **A1** —
+capture promises "nothing lost", and something you can't find again is lost in practice. Not
+re-scored: neither row's answer changed, and adding a row is the operator's call. Strains **P11**
+slightly — "Search" is a new name on the desktop, though not a new one in the product (the phone
+has said it since D-086). Adds no pool, needs no clean data (an untitled task is found by its
+project), and holds in a stranger's account — nothing in it knows the builder's domains.
+
+*Status: built. Ranking pinned in `tests/search.test.ts` (18). Driven at `?search`
+(`search/SearchHarness`, both shells over one stranger's fixtures): typing, ↑↓/↵, Esc twice,
+recents, a date, an acronym, dark mode, and the phone at 375 (48px rows, no overflow). The Spine
+row checked at `?rail=frame`. **Not yet driven in the signed-in app** — the only dev server
+reachable from this session had no env — so the `/` key in `AppShell`, the `search` overlay in
+`Planner`, and each target's navigation (`DesktopSearch`) are typechecked but unwalked.*

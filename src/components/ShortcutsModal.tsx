@@ -37,6 +37,7 @@ const GROUPS: Group[] = [
     title: "Create & tools",
     items: [
       { keys: [["A"], ["C"]], sep: "or", label: "Add a task (the rail's box)" },
+      { keys: [["/"]], label: "Search — tasks, projects, domains, meetings, a date" },
       { keys: [["⌘", "K"]], label: "Quick add — a task, event or slot" },
       { keys: [["⌘", "1"], ["⌘", "3"]], sep: "–", label: "In quick add: Task · Event · Slot" },
       { keys: [["⌘", ","]], label: "Settings" },

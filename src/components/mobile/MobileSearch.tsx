@@ -1,20 +1,22 @@
-// Global search — the fastest way around the phone. One field, reachable from
-// the top bar on every tab, that matches across the whole vertical (projects,
-// initiatives, domains) AND tasks. Tap a result to jump straight there: vertical
-// items open their Plan detail, tasks open the task sheet. No drill-down, no tab
-// hunting. Pure read: it searches the live VerticalData snapshot + task rows.
+// Global search on the phone — one field, reachable from the top bar on every
+// tab. A layout over `useSearch` (D-210): the same ranking, the same date
+// reading and the same recents as the desktop's `/` door, at thumb size.
+// Tap a result to jump straight there: vertical items open their detail,
+// tasks open the task sheet, a day or a meeting lands on the Calendar.
 
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Icon } from "../Icon";
-import { domainById, initiativeById, projectById, taskDomainColor, type VerticalData } from "../../lib/vertical";
+import type { VerticalData } from "../../lib/vertical";
 import type { Task } from "../../lib/types";
-import { useEventSearch } from "../../hooks/useEventSearch";
 import { eventHitSubtitle, type EventHit } from "../../lib/eventSearch";
+import type { SearchHit } from "../../lib/search";
+import { useSearch } from "../../hooks/useSearch";
 import { useRaiseKeyboard } from "../../hooks/useRaiseKeyboard";
 import Sheet from "./Sheet";
 import { Dot, IconButton, SearchField } from "../kit";
 import { PhEmpty, PhSection } from "./touch";
 import DomainSymbol from "../domain/DomainSymbol";
+import Highlight from "../search/Highlight";
 
 export type JumpKind = "domain" | "initiative" | "project";
 
@@ -24,6 +26,7 @@ export default function MobileSearch({
   onOpenItem,
   onOpenTask,
   onOpenEvent,
+  onOpenDate,
   onClose,
 }: {
   vertical: VerticalData;
@@ -33,71 +36,36 @@ export default function MobileSearch({
   /** Land on a calendar event's day. Optional so the sheet still works in a
    *  host that has no calendar to land on. */
   onOpenEvent?: (hit: EventHit) => void;
+  /** Land on a day the query named ("friday"). Optional for the same reason. */
+  onOpenDate?: (dateISO: string) => void;
   onClose: () => void;
 }) {
   const [q, setQ] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   useRaiseKeyboard(inputRef);
 
-  const query = q.trim().toLowerCase();
+  const model = useSearch(q, { vertical, tasks, withEvents: !!onOpenEvent });
+  const { events, eventsLoading, eventsOffline } = model;
+  const searching = q.trim().length > 0;
+  const localTotal = model.sections.reduce((n, s) => n + s.hits.length, 0);
 
-  const results = useMemo(() => {
-    if (!query) return null;
-    // prefix match beats a mid-string match; take the best field per item.
-    const rank = (s: string | null | undefined): number | null => {
-      if (!s) return null;
-      const i = s.toLowerCase().indexOf(query);
-      return i < 0 ? null : i === 0 ? 0 : 1;
-    };
-    const best = (...fields: (string | null | undefined)[]): number | null => {
-      let b: number | null = null;
-      for (const f of fields) {
-        const r = rank(f);
-        if (r != null && (b == null || r < b)) b = r;
-      }
-      return b;
-    };
-    const take = <T,>(scored: { item: T; s: number; name: string }[]) =>
-      scored.sort((a, b) => a.s - b.s || a.name.localeCompare(b.name)).slice(0, 8).map((x) => x.item);
-
-    const projects = take(
-      vertical.projects
-        .map((p) => ({ item: p, s: best(p.name, p.outcome), name: p.name }))
-        .filter((x): x is { item: typeof x.item; s: number; name: string } => x.s != null),
-    );
-    const initiatives = take(
-      vertical.initiatives
-        .map((i) => ({ item: i, s: best(i.name, i.outcome), name: i.name }))
-        .filter((x): x is { item: typeof x.item; s: number; name: string } => x.s != null),
-    );
-    const domains = take(
-      vertical.domains
-        .map((dm) => ({ item: dm, s: best(dm.name, dm.intention), name: dm.name }))
-        .filter((x): x is { item: typeof x.item; s: number; name: string } => x.s != null),
-    );
-    const taskItems = take(
-      tasks
-        .filter((t) => t.status !== "trashed")
-        .map((t) => ({ item: t, s: best(t.title), name: t.title }))
-        .filter((x): x is { item: typeof x.item; s: number; name: string } => x.s != null),
-    );
-    const total = projects.length + initiatives.length + domains.length + taskItems.length;
-    return { projects, initiatives, domains, tasks: taskItems, total };
-  }, [query, vertical, tasks]);
-
-  // Calendar hits are a server read, not part of the local snapshot — they
-  // arrive after the local groups and never hold the keystroke. See
-  // lib/eventSearch.ts for why the mirror isn't cached locally.
-  const { hits: events, loading: eventsLoading, offline: eventsOffline } = useEventSearch(
-    onOpenEvent ? q : "",
-  );
-
-  const taskContext = (t: Task): string => {
-    if (t.project_id) return projectById(vertical, t.project_id)?.name ?? "Project";
-    if (t.initiative_id) return initiativeById(vertical, t.initiative_id)?.name ?? "Initiative";
-    if (t.domain_id) return domainById(vertical, t.domain_id)?.name ?? "Domain";
-    return t.status === "inbox" ? "Inbox" : "Loose";
+  const openHit = (h: SearchHit) => {
+    model.remember({ kind: h.kind, id: h.id });
+    if (h.kind === "task") onOpenTask(h.id);
+    else onOpenItem(h.kind, h.id);
   };
+  const hitRow = (h: SearchHit) => (
+    <ResultRow
+      key={`${h.kind}:${h.id}`}
+      accent={h.color}
+      glyph={h.kind === "domain" ? <DomainSymbol value={h.icon} size={16} /> : undefined}
+      title={<Highlight text={h.title || "Untitled"} ranges={h.ranges} />}
+      subtitle={[h.context, h.when].filter(Boolean).join(" · ") || undefined}
+      dim={h.done && h.kind === "task"}
+      past={h.done && h.kind !== "task"}
+      onClick={() => openHit(h)}
+    />
+  );
 
   return (
     <Sheet onClose={onClose} tall contentClassName="flex flex-col">
@@ -127,58 +95,36 @@ export default function MobileSearch({
       </div>
 
       <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto pb-4">
-        {!results ? (
-          <PhEmpty icon="search">Find anything</PhEmpty>
-        ) : results.total === 0 && events.length === 0 && !eventsLoading ? (
+        {onOpenDate && model.date && (
+          <div>
+            <PhSection title="Go to" />
+            <ResultRow
+              glyph={<Icon name="calendar" size={16} />}
+              title={model.date.label}
+              subtitle="Calendar"
+              onClick={() => onOpenDate(model.date!.dateISO)}
+            />
+          </div>
+        )}
+        {!searching ? (
+          model.recent.length > 0 ? (
+            <div>
+              <PhSection title="Recent" />
+              {model.recent.map(hitRow)}
+            </div>
+          ) : (
+            <PhEmpty icon="search">Find anything</PhEmpty>
+          )
+        ) : localTotal === 0 && events.length === 0 && !eventsLoading && !model.date ? (
           <PhEmpty>No matches</PhEmpty>
         ) : (
           <>
-            <Group label="Projects" items={results.projects}>
-              {(p) => (
-                <ResultRow
-                  key={p.id}
-                  accent={domainById(vertical, p.domainId)?.color}
-                  title={p.name}
-                  subtitle={projectContext(vertical, p.domainId, p.initiativeId)}
-                  onClick={() => onOpenItem("project", p.id)}
-                />
-              )}
-            </Group>
-            <Group label="Initiatives" items={results.initiatives}>
-              {(i) => (
-                <ResultRow
-                  key={i.id}
-                  accent={domainById(vertical, i.domainId)?.color}
-                  title={i.name}
-                  subtitle={domainById(vertical, i.domainId)?.name ?? undefined}
-                  onClick={() => onOpenItem("initiative", i.id)}
-                />
-              )}
-            </Group>
-            <Group label="Domains" items={results.domains}>
-              {(dm) => (
-                <ResultRow
-                  key={dm.id}
-                  accent={dm.color}
-                  glyph={<DomainSymbol value={dm.icon} size={16} />}
-                  title={dm.name}
-                  subtitle={dm.intention || undefined}
-                  onClick={() => onOpenItem("domain", dm.id)}
-                />
-              )}
-            </Group>
-            <Group label="Tasks" items={results.tasks}>
-              {(t) => (
-                <ResultRow
-                  key={t.id}
-                  accent={taskDomainColor(vertical, t) ?? undefined}
-                  title={t.title}
-                  subtitle={taskContext(t)}
-                  dim={t.status === "done"}
-                  onClick={() => onOpenTask(t.id)}
-                />
-              )}
-            </Group>
+            {model.sections.map((s) => (
+              <div key={s.kind}>
+                <PhSection title={s.label} count={s.hits.length} />
+                {s.hits.map(hitRow)}
+              </div>
+            ))}
             {/* Calendar last: it lands a beat after the local groups, so nothing
                 already under the thumb moves when it does. */}
             {onOpenEvent && (eventsOffline || eventsLoading || events.length > 0) && (
@@ -208,25 +154,6 @@ export default function MobileSearch({
   );
 }
 
-// Where a project lives, for the flat result row: "Domain · Initiative".
-function projectContext(v: VerticalData, domainId: string, initiativeId: string | null): string | undefined {
-  const dom = domainById(v, domainId);
-  const init = initiativeId ? initiativeById(v, initiativeId) : null;
-  const head = dom?.name ?? "";
-  if (init) return head ? `${head} · ${init.name}` : init.name;
-  return head || undefined;
-}
-
-function Group<T>({ label, items, children }: { label: string; items: T[]; children: (item: T) => ReactNode }) {
-  if (items.length === 0) return null;
-  return (
-    <div>
-      <PhSection title={label} count={items.length} />
-      {items.map(children)}
-    </div>
-  );
-}
-
 function ResultRow({
   accent,
   glyph,
@@ -238,7 +165,7 @@ function ResultRow({
 }: {
   accent?: string;
   glyph?: ReactNode;
-  title: string;
+  title: ReactNode;
   subtitle?: string;
   /** Done — struck through. */
   dim?: boolean;

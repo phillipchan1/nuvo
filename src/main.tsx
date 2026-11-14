@@ -103,6 +103,7 @@ const showCaptureHarness = import.meta.env.DEV && params.has("capture");
 const showSheetsHarness = import.meta.env.DEV && params.has("sheets");
 const showRailHarness = import.meta.env.DEV && params.has("rail");
 const showKitHarness = import.meta.env.DEV && params.has("kit");
+const showSearchHarness = import.meta.env.DEV && params.has("search");
 const showMemoryHarness = import.meta.env.DEV && params.has("memory");
 const showStatementHarness = import.meta.env.DEV && params.has("statement");
 const showOrientationHarness = import.meta.env.DEV && params.has("orientation");
@@ -173,6 +174,14 @@ if (showDeckHarness) {
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>
         <MemoryHarness />
+      </React.StrictMode>,
+    );
+  });
+} else if (showSearchHarness) {
+  void import("./components/search/SearchHarness").then(({ default: SearchHarness }) => {
+    ReactDOM.createRoot(document.getElementById("root")!).render(
+      <React.StrictMode>
+        <SearchHarness />
       </React.StrictMode>,
     );
   });

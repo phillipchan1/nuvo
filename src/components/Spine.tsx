@@ -8,6 +8,7 @@ import { useWeekCrown } from "../hooks/useWeekCrown";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { Dot, Kbd, NuvoMark } from "./kit";
 import { AltitudeIcon, ChevronIcon, SettingsIcon } from "./icons";
+import { Icon } from "./Icon";
 import GettingStarted from "./orientation/GettingStarted";
 import { useMemory } from "../hooks/useMemory";
 import { MemoryIcon } from "./memory/MemoryIcon";
@@ -107,6 +108,7 @@ interface SpineProps {
   setRung: (r: Rung) => void;
   openSettings: () => void;
   openShortcuts: () => void;
+  openSearch: () => void;
   /** Focus mode: slide the whole spine closed (the calendar takes the room). */
   collapsed?: boolean;
   /**
@@ -145,6 +147,7 @@ const SpineBody = memo(function SpineBody({
   setRung,
   openSettings,
   openShortcuts,
+  openSearch,
   collapsed = false,
   forceRail = false,
   overlaid = false,
@@ -348,6 +351,7 @@ const SpineBody = memo(function SpineBody({
               for established users, always dismissible. */}
           <GettingStarted compact={railed} />
           <MemoryRow railed={railed} />
+          {utility({ icon: <Icon name="search" size={16} />, label: "Search", hint: "/", onClick: openSearch })}
           {utility({ icon: <SettingsIcon size={16} />, label: "Settings", hint: "⌘,", onClick: openSettings })}
           {utility({
             icon: <span className="text-caption leading-none">?</span>,

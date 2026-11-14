@@ -587,6 +587,12 @@ export default function MobileShell() {
     setSearchOpen(false);
     setTab("calendar");
   };
+  // A day the query named ("friday") lands the same way, without an event.
+  const openDateFromSearch = (dateISO: string) => {
+    revealOnCalendar({ dateISO });
+    setSearchOpen(false);
+    setTab("calendar");
+  };
 
   // Route a readiness "turn" to the surface that resolves it.
   const reviewFloor = (floor: Floor) => {
@@ -922,6 +928,7 @@ export default function MobileShell() {
           onOpenItem={openPlanItem}
           onOpenTask={openTaskFromSearch}
           onOpenEvent={openEventFromSearch}
+          onOpenDate={openDateFromSearch}
           onClose={() => setSearchOpen(false)}
         />
       )}

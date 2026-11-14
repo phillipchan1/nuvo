@@ -10,6 +10,8 @@ export const NAV_STACK_INDEX_KEY = "nuvo-nav-idx";
 export type OverlayKind =
   | "none"
   | "cmd"
+  // `/` — the search door (D-210). Capture and search are separate doors (N-19).
+  | "search"
   | "settings"
   | "shortcuts"
   | "evening"

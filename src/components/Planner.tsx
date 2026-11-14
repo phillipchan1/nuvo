@@ -47,6 +47,7 @@ const RepairRail = lazy(() => import("./plan/RepairRail"));
 const GetReadyRail = lazy(() => import("./plan/GetReadyRail"));
 const WeekPlanFloor = lazy(() => import("./floors/WeekPlanFloor"));
 const QuickAdd = lazy(() => import("./capture/QuickAdd"));
+const DesktopSearch = lazy(() => import("./search/DesktopSearch"));
 const RecurringUpkeepPanel = lazy(() => import("./RecurringUpkeepPanel"));
 const SettingsModal = lazy(() => import("./SettingsModal"));
 const TaskPopover = lazy(() => import("./SlideOver").then((m) => ({ default: m.TaskPopover })));
@@ -926,6 +927,11 @@ export default function Planner({
       {showCmd && (
         <Suspense fallback={null}>
           <QuickAdd onClose={closeOverlay} />
+        </Suspense>
+      )}
+      {overlay === "search" && (
+        <Suspense fallback={null}>
+          <DesktopSearch onClose={closeOverlay} />
         </Suspense>
       )}
       {recordTask && (

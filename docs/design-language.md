@@ -147,9 +147,10 @@ Every page is one of six layouts, every floating surface one of six kinds — al
 
 Popovers (`PopoverParts`, `styles/popovers.css`): **Menu** · **Picker** · **Date** (typed line
 over `MiniMonth`) · **Inspector** (352px, flush: head · strip · 36px rows · ghost footer) ·
-**Tooltip/Toast** · **Command** (⌘K / ⌥Space: 54px line, parsed chips, Task·Event·Slot). The
+**Tooltip/Toast** · **Command** (⌘K / ⌥Space: 54px line, parsed chips, Task·Event·Slot; `/` search:
+the same line over kit Rows, D-210). The
 phone (`styles/phone.css`) is the same kit at touch size. Verify: `?rail=frame`, `?gather`,
-`?docs`, `?build`, `?domains`, `?horizon`, `?sheets`, `?planweek`, `?login`, `?kit`.
+`?docs`, `?build`, `?domains`, `?horizon`, `?sheets`, `?planweek`, `?login`, `?kit`, `?search`.
 
 *Sections below this point predate D-190; where they describe glass, lifts or Fraunces, the
 grammar at the top of this file wins.*
