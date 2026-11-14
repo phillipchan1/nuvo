@@ -689,6 +689,9 @@ html:root [data-sonner-toaster] [data-sonner-toast] [data-button] {
 .k-crumb-sep { color: var(--faint); }
 .k-crumb-up { overflow: hidden; text-overflow: ellipsis; }
 .k-crumb-here { color: var(--ink); font-weight: 600; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.005em; }
+/* A crumb that changes as you travel (the Schedule's span) holds the width of its
+   longest spelling, so the tabs after it stand still while you page (D-123). */
+.k-crumb-span { display: inline-block; min-width: 8.25em; font-variant-numeric: tabular-nums; }
 .k-bar-tabs { display: flex; align-self: stretch; margin-left: 18px; }
 .k-bar-tabs .k-tabs { min-height: 0; }
 .k-bar-fill { flex: 1; align-self: stretch; min-width: 8px; }

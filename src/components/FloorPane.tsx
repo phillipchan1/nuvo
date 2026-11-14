@@ -9,7 +9,7 @@ import { useAppNavigation } from "../hooks/useAppNavigation";
 import { skipWhenAsleep } from "./KeepAlive";
 import { Icon } from "./Icon";
 import { AltitudeIcon } from "./icons";
-import { IconButton, PageBar, Tabs } from "./kit";
+import { IconButton, PageBar, Tabs, usePageTabKeys, withPageTabKeys } from "./kit";
 import DomainFloor from "./floors/DomainFloor";
 import InitiativesFloor from "./floors/InitiativesFloor";
 import InitiativeOnDeckFloor from "./floors/InitiativeOnDeckFloor";
@@ -22,13 +22,14 @@ import ProjectReadinessStrip from "./floors/ProjectReadinessStrip";
 import InitiativeReadinessStrip from "./floors/InitiativeReadinessStrip";
 
 const RUNG_LABEL: Record<Rung, string> = { day: "Schedule", project: "Projects", initiative: "Initiatives", domain: "Domains" };
-// The four faces of a build altitude (D-099), numbered 1–4 in their tooltips.
-const FACES = [
-  { value: "ondeck", label: "On Deck", title: "On Deck (1)" },
-  { value: "groom", label: "Groom", title: "Groom (2)" },
-  { value: "all", label: "Table", title: "Table (3)" },
-  { value: "shipped", label: "Shipped", title: "Shipped (4)" },
-] as const;
+// The four faces of a build altitude (D-099). ⌥⌘1–4 everywhere (the page's
+// views, one chord below the sidebar's ⌘1–4); plain 1–4 too, on these rungs.
+const FACES = withPageTabKeys([
+  { value: "ondeck", label: "On Deck" },
+  { value: "groom", label: "Groom" },
+  { value: "all", label: "Table" },
+  { value: "shipped", label: "Shipped" },
+] as const);
 
 // The faces of the project altitude: "ondeck" answers WHEN (time-box projects
 // across weeks, with the needs-a-week inbox); "groom" answers WHAT (shape each
@@ -89,6 +90,9 @@ function FloorPane({
   const workspace =
     (rung === "project" && projectView === "ondeck") ||
     (rung === "initiative" && initiativeView === "ondeck");
+
+  // ⌥⌘1–4 — the same chord every page's views answer to (kit/pageTabKeys).
+  usePageTabKeys(FACES, rung === "project" ? setProjectView : rung === "initiative" ? setInitiativeView : undefined, active);
 
   // Plain 1 · 2 · 3 · 4 switch the Build faces (On Deck · Groom · Table · Shipped)
   // — like the Schedule view's number keys. Scoped to the project & initiative

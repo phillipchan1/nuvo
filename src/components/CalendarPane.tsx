@@ -2,7 +2,7 @@ import { duplicateEventInput } from "../lib/eventActs";
 import { duplicateSlotInput, duplicateTaskInput } from "../lib/taskActs";
 import { format } from "date-fns";
 import { Icon } from "./Icon";
-import { Button, Dot, IconButton, Kbd, Menu, MenuItem, MenuSeparator, PageBar, Segmented } from "./kit";
+import { Button, Dot, IconButton, Kbd, Menu, MenuItem, MenuSeparator, PageBar, Tabs, usePageTabKeys, withPageTabKeys } from "./kit";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -90,14 +90,15 @@ const FC_PLUGINS = [timeGridPlugin, dayGridPlugin, interactionPlugin];
 
 export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board" | "year";
 
-// The view switch's five faces, in the bar's Segmented (D-190).
-const CAL_VIEWS = [
+// The view switch's five faces — the bar's tabs, left of the fill like every
+// page's views (D-190), on ⌥⌘1–5 like every page's views (kit/pageTabKeys).
+const CAL_VIEWS = withPageTabKeys([
   { value: "board", label: "Spread" },
   { value: "timeGridDay", label: "Day" },
   { value: "timeGridWeek", label: "Week" },
   { value: "dayGridMonth", label: "Month" },
   { value: "year", label: "Year" },
-] as const satisfies readonly { value: CalView; label: string }[];
+] as const satisfies readonly { value: CalView; label: string }[]);
 
 /** Views that aren't FullCalendar at all — they own their own canvas, so every
  *  `calRef.getApi()` path (paging, today, resize, drag wiring) has to stand
@@ -869,6 +870,9 @@ function CalendarPane({
     if (view === "year") setYearCursor(now.getFullYear());
     else calRef.current?.getApi()?.today();
   };
+
+  // ⌥⌘1–5 — the views in the bar's order, the chord every page's views take.
+  usePageTabKeys(CAL_VIEWS, onViewChange, hotkeysEnabled);
 
   // Schedule hotkeys. Views always win on bare s / w / d / m / y (the rail's
   // triage letters moved off these). = / - page the period, as do ⌘→ / ⌘←; ⌘T
@@ -4781,7 +4785,10 @@ function CalendarPane({
           ) : undefined
         }
         icon={<Icon name="calendar" size={16} />}
-        trail={["Schedule", view === "board" ? "Spread" : isYear ? String(yearCursor) : monthTitle]}
+        // The span reserves the width of its longest spelling ("September 2026",
+        // "Nov 30 – Dec 6"), so the tabs after it never shift as you page (D-123).
+        trail={["Schedule", <span className="k-crumb-span">{view === "board" ? "Spread" : isYear ? String(yearCursor) : monthTitle}</span>]}
+        tabs={onViewChange && <Tabs label="Calendar view" value={view as CalView} onChange={onViewChange} tabs={CAL_VIEWS} />}
         actions={
           <>
             {/* Only while you're away from home (the phone hides it too). */}
@@ -4805,7 +4812,6 @@ function CalendarPane({
                 <IconButton label="Next" shortcut="⌘→" icon={<Icon name="chevron-right" size={14} />} onClick={() => pageBy(1)} />
               </>
             )}
-            {onViewChange && <Segmented label="Calendar view" value={view as CalView} onChange={onViewChange} options={CAL_VIEWS} />}
             <IconButton
               ref={utilsBtn}
               label="More calendar tools"

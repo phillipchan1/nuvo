@@ -76,7 +76,10 @@ cue in its tone (a calm floor shows its ⌘-key on hover), then **This week** �
 committed projects with pieces landed, from `useWeekCrown` — and Settings · Shortcuts · Collapse
 (⌘\\, a 52px icon rail). All the work sits in one **inset panel** (`.app-panel`, 12px corner,
 `--panel`); every `.atmosphere` inside it paints the panel. Every page wears one **PageBar**:
-breadcrumb (the last word is the page, or the span on screen) · tabs · drag gap · actions. The
+breadcrumb (the last word is the page, or the span on screen) · tabs · drag gap · actions. A
+page's views are always those tabs, left of the gap — the Schedule's Spread · Day · Week · Month ·
+Year too — and answer **⌥⌘1–N**, one chord below the sidebar's ⌘1–4 (`kit/pageTabKeys`). A crumb
+that changes as you travel holds its widest width (`.k-crumb-span`) so the tabs never move. The
 chat slot sits on the ground beside the panel. Verify the whole frame at `?rail=frame`.
 
 ## Statement pages (D-192)

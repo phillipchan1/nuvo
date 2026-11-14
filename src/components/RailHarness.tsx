@@ -25,7 +25,7 @@ import LeftRail, { type RailTab } from "./LeftRail";
 import Spine from "./Spine";
 import { AgentProvider } from "../hooks/useAgentContext";
 import { Icon } from "./Icon";
-import { Button, IconButton, PageBar, Segmented } from "./kit";
+import { Button, IconButton, PageBar, Tabs } from "./kit";
 import MobileTaskList from "./mobile/MobileTaskList";
 import BulkBar from "./BulkBar";
 import { useBulkOps } from "../hooks/useBulkOps";
@@ -210,24 +210,26 @@ function Frame() {
             <div className="app-panel flex min-w-0 flex-1 flex-col">
               <PageBar
                 icon={<Icon name="calendar" size={16} />}
-                trail={["Schedule", "November 2026"]}
+                trail={["Schedule", <span className="k-crumb-span">November 2026</span>]}
+                tabs={
+                  <Tabs
+                    label="Calendar view"
+                    value={view}
+                    onChange={setView}
+                    tabs={[
+                      { value: "board", label: "Spread" },
+                      { value: "timeGridDay", label: "Day" },
+                      { value: "timeGridWeek", label: "Week" },
+                      { value: "dayGridMonth", label: "Month" },
+                      { value: "year", label: "Year" },
+                    ]}
+                  />
+                }
                 actions={
                   <>
                     <IconButton label="Previous" shortcut="⌘←" icon={<Icon name="chevron-left" size={14} />} />
                     <Button>Today</Button>
                     <IconButton label="Next" shortcut="⌘→" icon={<Icon name="chevron-right" size={14} />} />
-                    <Segmented
-                      label="Calendar view"
-                      value={view}
-                      onChange={setView}
-                      options={[
-                        { value: "board", label: "Spread" },
-                        { value: "timeGridDay", label: "Day" },
-                        { value: "timeGridWeek", label: "Week" },
-                        { value: "dayGridMonth", label: "Month" },
-                        { value: "year", label: "Year" },
-                      ]}
-                    />
                     <IconButton label="More calendar tools" icon={<Icon name="more" size={14} />} />
                   </>
                 }

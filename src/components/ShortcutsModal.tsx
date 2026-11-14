@@ -30,6 +30,7 @@ const GROUPS: Group[] = [
     items: [
       { keys: [["⌘", "1"], ["⌘", "4"]], sep: "–", label: "Jump to a floor" },
       { keys: [["⌘", "↑"], ["⌘", "↓"]], sep: "/", label: "Travel the ladder" },
+      { keys: [["⌥", "⌘", "1"], ["⌥", "⌘", "5"]], sep: "–", label: "The page's views (Day · Week… / On Deck · Groom…)" },
     ],
   },
   {
