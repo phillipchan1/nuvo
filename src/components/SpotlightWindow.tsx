@@ -104,7 +104,11 @@ function SpotlightFrame({ children }: { children: ReactNode }) {
   useLayoutEffect(() => {
     const card = cardRef.current;
     if (!card || !IS_TAURI) return;
-    const fit = () => void invoke("fit_spotlight", { height: Math.ceil(card.getBoundingClientRect().height) + 24 });
+    // Layout height (`offsetHeight`), never `getBoundingClientRect()`: the card
+    // mounts mid-`k-dialog-in` at scale(0.98), so the rect read 2% short, and a
+    // transform never fires the ResizeObserver to correct it — the panel stayed
+    // fitted to the shrunken card and clipped the Task · Event · Slot row.
+    const fit = () => void invoke("fit_spotlight", { height: card.offsetHeight + 24 });
     fit();
     const ro = new ResizeObserver(fit);
     ro.observe(card);
