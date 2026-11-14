@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useDialogFocus } from "../../hooks/useDialogFocus";
-import { useKeyboardInset } from "../../hooks/useKeyboardInset";
+import { useKeyboardInset, useVisibleViewport } from "../../hooks/useKeyboardInset";
 import { rubberBand, releaseVelocity, type VelocitySample } from "../../lib/gesture";
 import { IconButton } from "../kit";
 import { Icon } from "../Icon";
@@ -38,6 +38,7 @@ export default function Sheet({
   title,
   action,
   tall = false,
+  fitViewport = false,
   contentClassName = "",
   onContentScroll,
 }: {
@@ -48,6 +49,12 @@ export default function Sheet({
    *  Rendered only when there IS a title row. */
   action?: ReactNode;
   tall?: boolean;
+  /** For a screen-sized sheet that also raises the keyboard (search). The sheet
+   *  is laid out inside the *visible* viewport — the scrim stops where the keys
+   *  start — instead of being padded up from the bottom, which left a tall sheet
+   *  no body at all once the keyboard took its share. A sheet that hugs its
+   *  content doesn't need it. */
+  fitViewport?: boolean;
   contentClassName?: string;
   /** so a sheet can react to its own scroll — the record uses it to fade its
    *  name into the title row only once the hero has left the screen. */
@@ -61,6 +68,7 @@ export default function Sheet({
   // lower content (composer, submit button) would sit under the keys without
   // this pad.
   const kbInset = useKeyboardInset();
+  const visible = useVisibleViewport(fitViewport);
   const titleId = useId();
   // Dialog semantics: focus moves in on open, Tab stays inside, and the
   // trigger gets focus back on close.
@@ -206,6 +214,18 @@ export default function Sheet({
     <div
       ref={scrimRef}
       className="ph-scrim"
+      style={
+        visible
+          ? {
+              // The scrim IS the visible viewport while the keys are up, so the
+              // sheet's bottom edge is the keyboard's top edge.
+              top: visible.top,
+              height: visible.height,
+              bottom: "auto",
+              paddingTop: visible.top > 0 ? 8 : "max(env(safe-area-inset-top, 0px), 8px)",
+            }
+          : undefined
+      }
       onMouseDown={(e) => {
         // Suppress the synthetic mousedown that follows a touch (touchend
         // handles those); real mouse clicks dismiss immediately.
@@ -236,8 +256,10 @@ export default function Sheet({
         // dvh, not vh: with iOS Safari's toolbars shown, 100vh is taller than
         // the visible viewport, so a vh-sized sheet ran off the bottom. The vh
         // pair stays first as the fallback for engines without dvh.
-        className={`ph-sheet sheet-up ${tall ? "sheet-h-tall" : "sheet-h-max"} pb-safe`}
-        style={kbInset ? { paddingBottom: kbInset } : undefined}
+        className={`ph-sheet sheet-up ${tall ? "sheet-h-tall" : "sheet-h-max"} ${visible ? "sheet-h-fit" : "pb-safe"}`}
+        // Fitted to the visible strip, the keyboard is already outside the
+        // box — nothing to pad for, and no home bar to clear above the keys.
+        style={visible ? { paddingBottom: 0 } : kbInset ? { paddingBottom: kbInset } : undefined}
       >
         {/* The grab handle — the primary swipe target, and the dialog's first
             child (the e2e flick test holds it there). Even a `tall` sheet sits

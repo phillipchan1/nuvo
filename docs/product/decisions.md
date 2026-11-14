@@ -8181,3 +8181,31 @@ recents, a date, an acronym, dark mode, and the phone at 375 (48px rows, no over
 row checked at `?rail=frame`. **Not yet driven in the signed-in app** — the only dev server
 reachable from this session had no env — so the `/` key in `AppShell`, the `search` overlay in
 `Planner`, and each target's navigation (`DesktopSearch`) are typechecked but unwalked.*
+
+---
+
+**D-211 · 2026-11-14 · Phone search docks its field at the bottom, and a screen-sized sheet is laid out
+inside the visible viewport.**
+*(Reported by the operator: phone search was "bunched up all the way to the top where I can't even
+see the search bar" — and the suggestion to try the iOS bottom-search pattern.)* Search was the only
+phone sheet that is both `tall` (92dvh, fixed) and raises the keyboard. `Sheet` handled the keyboard
+by padding the panel up from the bottom (`useKeyboardInset`), which only works for a panel shorter
+than what the keys leave; a screen-sized one has its body eaten, and it doesn't follow iOS when it
+pans the page to the focused field — so the field, at the top, scrolled out of view.
+
+→ **The field sits at the bottom, results above it** — Safari, Maps and Mail's pattern. The field is
+what's under the thumb, and the keyboard rises straight into it.
+→ **`Sheet` takes `fitViewport`**: while the keyboard is up the scrim becomes the visual viewport
+(`useVisibleViewport`), so the sheet's bottom edge is the keyboard's top edge and its top follows the
+pan. Opt-in; sheets that hug their content keep the padding path. Never size a screen-tall sheet
+that takes text by padding it.
+
+Ledger: no row moved — this repairs how the recall half of **D6** / **A1** is reached. Strains no
+principle; adds no pool, name, or clean-data dependency.
+
+*Status: built. Pinned in `tests/sheet-fit-viewport.test.tsx` (scrim follows the strip, follows a
+pan, ignores a toolbar, other sheets untouched, search's field after its results). Driven at `?search`
+in Chromium at 390×844 and 320×568 with `visualViewport` faked to a 340px keyboard and to an iOS pan:
+field visible and above the keys in each, no horizontal overflow. **Not driven on a real iPhone** —
+Chromium has no on-screen keyboard, so the keyboard height and the pan are simulated; check on a
+device before calling the iOS behaviour confirmed.*

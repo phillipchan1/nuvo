@@ -3233,6 +3233,10 @@ html:root .yr-day:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var
    Safari whenever the toolbars were showing. */
 .sheet-h-tall { height: 92vh; height: 92dvh; }
 .sheet-h-max { max-height: 88vh; max-height: 88dvh; }
+/* Fitted to the visible viewport (Sheet `fitViewport`, keyboard up): never taller
+   than the scrim, which has shrunk to what the keys left. Declared after the two
+   above so it wins on equal specificity. */
+.sheet-h-fit { max-height: 100%; }
 
 /* The action toast (sonner) — themed onto Warm Paper tokens instead of
    sonner's stock white-card + neon richColors, and tightened down from its

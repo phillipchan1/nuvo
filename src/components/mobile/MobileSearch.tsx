@@ -1,6 +1,9 @@
 // Global search on the phone — one field, reachable from the top bar on every
 // tab. A layout over `useSearch` (D-210): the same ranking, the same date
 // reading and the same recents as the desktop's `/` door, at thumb size.
+// The field is docked at the bottom, above the keyboard, the way iOS does it
+// (Safari, Maps, Mail) — a tall sheet with the field at the top lost it off the
+// top of the screen once the keys rose.
 // Tap a result to jump straight there: vertical items open their detail,
 // tasks open the task sheet, a day or a meeting lands on the Calendar.
 
@@ -68,33 +71,8 @@ export default function MobileSearch({
   );
 
   return (
-    <Sheet onClose={onClose} tall contentClassName="flex flex-col">
-      <div className="shrink-0 px-4 pb-2">
-        <SearchField
-          ref={inputRef}
-          enterKeyHint="search"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search work and your calendar"
-          aria-label="Search"
-          autoCapitalize="none"
-          autoCorrect="off"
-          frameClassName="ph-search"
-          trailing={
-            q ? (
-              <IconButton
-                label="Clear search"
-                size="sm"
-                icon={<Icon name="close" size={16} />}
-                onClick={() => setQ("")}
-                className="tap-icon -mr-1.5 shrink-0"
-              />
-            ) : undefined
-          }
-        />
-      </div>
-
-      <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto pb-4">
+    <Sheet onClose={onClose} tall fitViewport contentClassName="flex flex-col">
+      <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto pb-2">
         {onOpenDate && model.date && (
           <div>
             <PhSection title="Go to" />
@@ -150,6 +128,39 @@ export default function MobileSearch({
           </>
         )}
       </div>
+      {/* Docked at the bottom, the iOS way (Safari, Maps, Mail): the field is
+          the thing under the thumb and the keyboard rises straight into it, so
+          it can never be pushed off the top of a screen-sized sheet. It stops
+          the sheet's swipe-to-dismiss — a thumb resting on the field is
+          placing a caret, not leaving. */}
+      <div
+        className="shrink-0 border-t border-[var(--line-1)] px-4 pb-2 pt-2"
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <SearchField
+          ref={inputRef}
+          enterKeyHint="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search work and your calendar"
+          aria-label="Search"
+          autoCapitalize="none"
+          autoCorrect="off"
+          frameClassName="ph-search"
+          trailing={
+            q ? (
+              <IconButton
+                label="Clear search"
+                size="sm"
+                icon={<Icon name="close" size={16} />}
+                onClick={() => setQ("")}
+                className="tap-icon -mr-1.5 shrink-0"
+              />
+            ) : undefined
+          }
+        />
+      </div>
+
     </Sheet>
   );
 }
