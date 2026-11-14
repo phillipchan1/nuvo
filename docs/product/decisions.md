@@ -8286,3 +8286,23 @@ a rule that exists in two runtimes drifts, and a battery has to drive the code t
 machine has no credentials): the repair is a dry run until someone with `NEON_DATABASE_URL` runs it
 and the Worker is deployed. The recurrence columns on `tasks` were added to `neon.sql` so the
 rehearsal DB matches prod.*
+
+---
+
+**D-215 · 2026-11-14 · The sidebar carries no projects.**
+*(Asked by the operator: "I actually don't want the projects in the spine.")* D-190 put the week's
+committed projects under the floors on every page, as "what am I carrying" for the pages that
+aren't the Schedule. The footer was already crowded (Memory, Search, Theme, Settings, Collapse), and
+the list made the sidebar a second surface for a thing the Schedule's rail crown (`WeekPanel`) already
+says.
+
+→ `SidebarWeek` is gone from `Spine.tsx` with its `.sb-week` / `.sb-count` styles. The sidebar is the
+four floors, the footer, and nothing about the week. The week's slate is still `useWeekCrown`: the
+Schedule's rail crown and the phone's Calendar crown read it, untouched. The same pass dropped the
+`?` row (the list is Settings → Shortcuts; the `?` key still opens it) and added a Theme row (⇧⌘L).
+
+Strains no principle. **Trade:** on Projects, Initiatives and Domains nothing in the chrome says what
+the week is carrying; that answer now lives on the Schedule only, as it did before D-190. If the
+operator misses it on the other pages, bring back one pip line, not a list.
+
+*Status: built 2026-11-14. Verified at `?rail=frame`, expanded and railed.*

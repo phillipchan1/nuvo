@@ -4,9 +4,8 @@ import { getUiScale, useUiScale } from "../hooks/useUiScale";
 import { useVerticalSelector } from "../hooks/useVertical";
 import { readSpine, type SpineState } from "../lib/readiness";
 import { toneColor } from "./floors/ReadinessBanner";
-import { useWeekCrown } from "../hooks/useWeekCrown";
 import { useAppNavigation } from "../hooks/useAppNavigation";
-import { Dot, Kbd, NuvoMark } from "./kit";
+import { Kbd, NuvoMark } from "./kit";
 import { AltitudeIcon, ChevronIcon, SettingsIcon, ThemeIcon } from "./icons";
 import { useToggleTheme } from "../hooks/useSettings";
 import { Icon } from "./Icon";
@@ -370,8 +369,6 @@ const SpineBody = memo(function SpineBody({
           {BUILD.map(renderRung)}
         </nav>
 
-        <SidebarWeek railed={railed} />
-
         <div className="sb-foot">
           {/* First-run reward spine — derived 5-milestone tracker; retires itself
               for established users, always dismissible. */}
@@ -393,52 +390,6 @@ const SpineBody = memo(function SpineBody({
             })}
         </div>
       </div>
-    </div>
-  );
-});
-
-// The week's committed projects, on every page (D-190): the answer to "what am
-// I carrying" no longer lives only on the Schedule. A read of `useWeekCrown`
-// (never re-derived here) in its own component, so only this list — not the
-// sidebar — re-renders when the vertical changes.
-const SidebarWeek = memo(function SidebarWeek({ railed }: { railed: boolean }) {
-  const crown = useWeekCrown();
-  const { openRecord } = useAppNavigation();
-  const rows = crown?.rows ?? [];
-  if (rows.length === 0) return null;
-  const landed = rows.filter((r) => r.state === "landed" || r.state === "shipped").length;
-  return (
-    <div className="sb-week">
-      <div className="sb-group">
-        {!railed && (
-          <>
-            <span className="sb-grow">This week</span>
-            <span className="sb-count">
-              {landed}/{rows.length}
-            </span>
-          </>
-        )}
-      </div>
-      {rows.map((r) => {
-        const done = r.state === "landed" || r.state === "shipped";
-        const count = r.work.total > 0 ? `${r.work.done}/${r.work.total}` : "";
-        return (
-          <button
-            key={r.projectId}
-            className="sb-item"
-            data-landed={done || undefined}
-            onClick={() => openRecord("project", r.projectId)}
-            title={railed ? `${r.title}${count ? ` · ${count}` : ""}` : undefined}
-            aria-label={r.title}
-          >
-            <span className="sb-icon">
-              <Dot color={r.color} shape={done ? "round" : "square"} />
-            </span>
-            <span className="sb-label">{r.title}</span>
-            <span className="sb-trail">{count}</span>
-          </button>
-        );
-      })}
     </div>
   );
 });
