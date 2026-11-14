@@ -39,7 +39,7 @@ function list(v: string | null): string[] {
   return (v ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 }
 
-async function preflight(path: string, origin: string, method: string): Promise<Response> {
+async function preflight(path: string, origin: string, method: string, e: Env = env): Promise<Response> {
   return app.request(
     `https://api.nuvo.day${path}`,
     {
@@ -50,9 +50,27 @@ async function preflight(path: string, origin: string, method: string): Promise<
         "Access-Control-Request-Headers": REQUESTED.join(", "),
       },
     },
-    env,
+    e,
   );
 }
+
+// workers.dev previews: refused in production, echoed only on ENVIRONMENT=preview.
+const PREVIEW_ORIGIN = "https://nuvo-app-preview.nq-morning-briefing.workers.dev";
+const previewEnv = {
+  ...env,
+  BETTER_AUTH_URL: "https://nuvo-preview.nq-morning-briefing.workers.dev",
+  ENVIRONMENT: "preview",
+} as unknown as Env;
+for (const { path, method } of ROUTES) {
+  const prod = await preflight(path, PREVIEW_ORIGIN, method);
+  ok(!prod.headers.has("Access-Control-Allow-Origin"), `${path} prod: preview origin gets no ACAO`);
+  ok(!prod.headers.has("Access-Control-Allow-Credentials"), `${path} prod: preview origin gets no ACAC`);
+  const prev = await preflight(path, PREVIEW_ORIGIN, method, previewEnv);
+  ok(prev.headers.get("Access-Control-Allow-Origin") === PREVIEW_ORIGIN, `${path} preview: ACAO echoes the preview origin`);
+  ok(prev.headers.get("Access-Control-Allow-Credentials") === "true", `${path} preview: ACAC true`);
+}
+ok(allowedApiOrigin(PREVIEW_ORIGIN, env) === null, "allowedApiOrigin prod: preview origin -> null");
+ok(allowedApiOrigin(PREVIEW_ORIGIN, previewEnv) === PREVIEW_ORIGIN, "allowedApiOrigin preview: preview origin ok");
 
 for (const { path, method } of ROUTES) {
   for (const origin of ["tauri://localhost", "https://app.nuvo.day"]) {
