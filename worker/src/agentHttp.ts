@@ -4,26 +4,16 @@ import { createChatClient, runAgentTurn, type ContentPart } from "../../supabase
 import { buildTurnMessages } from "../../supabase/functions/agent/turn.ts";
 import { TOOL_DEFINITIONS, buildPointAtTool, type MarqueeTargetSpec } from "../../supabase/functions/agent/toolDefs.ts";
 import { readPromptVariant, type NavFocus } from "../../supabase/functions/agent/prompt.ts";
-import { getOwned } from "./store.ts";
 import { buildSnapshot, executeOwnedTool, resolveTz } from "./agentExec.ts";
-import { draftOutcome } from "./agentOneShot.ts";
+import { runWorkerOneShot } from "./agentOneShot.ts";
 import { OPEN_CORS, json } from "./cors.ts";
 import type { Env } from "./env.ts";
 import { requireStore, type AppEnv } from "./session.ts";
 
+const NOT_FOUND_RE = /^(project|initiative|task|domain) not found$/i;
+
 function openaiKey(env: Env): string {
   return env.OPENAI_API_KEY?.trim() ?? "";
-}
-
-async function ownedOrMissing(
-  store: Parameters<typeof getOwned>[0],
-  table: "projects" | "domains" | "initiatives" | "tasks",
-  id: unknown,
-): Promise<Response | null> {
-  if (typeof id !== "string" || !id) return json({ error: "not found" }, 404, OPEN_CORS);
-  const row = await getOwned(store, table, id);
-  if (!row) return json({ error: "not found" }, 404, OPEN_CORS);
-  return null;
 }
 
 export async function handleAgent(c: Context<AppEnv>): Promise<Response> {
@@ -63,52 +53,24 @@ export async function handleAgent(c: Context<AppEnv>): Promise<Response> {
     return json({ result }, 200, OPEN_CORS);
   }
 
-  // Ported one-shots run the Supabase agent's code path: same checks, and a
-  // throw is 500 {error: message}, as that function's outer catch returns.
-  if ((body.draftOutcome as { id?: unknown } | undefined)?.id) {
-    try {
-      return json(await draftOutcome(store, c.env, body.draftOutcome as Parameters<typeof draftOutcome>[2]), 200, OPEN_CORS);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error("[agent]", msg);
-      return json({ error: msg }, 500, OPEN_CORS);
-    }
-  }
-
-  const oneShotId =
-    (body.scaffold as { projectId?: unknown } | undefined)?.projectId ??
-    (body.refine as { projectId?: unknown } | undefined)?.projectId ??
-    (body.assess as { id?: unknown } | undefined)?.id ??
-    (body.verify as { id?: unknown } | undefined)?.id ??
-    (body.prepare as { taskId?: unknown } | undefined)?.taskId ??
-    (body.enrichDomain as { domainId?: unknown } | undefined)?.domainId ??
-    (body.enrichInbox as { taskIds?: unknown } | undefined)?.taskIds;
-
-  if (body.scaffold || body.refine || body.assess || body.verify || body.prepare || body.enrichDomain) {
-    const table = body.prepare ? "tasks" : body.enrichDomain ? "domains" : body.assess && (body.assess as { kind?: string }).kind === "initiative" ? "initiatives" : "projects";
-    const id = Array.isArray(oneShotId) ? oneShotId[0] : oneShotId;
-    const missing = await ownedOrMissing(store, table, id);
-    if (missing) return missing;
-    if (!openaiKey(c.env)) return json({ error: "llm unavailable" }, 503, OPEN_CORS);
-  }
-
-  if (body.enrichInbox && Array.isArray((body.enrichInbox as { taskIds?: unknown }).taskIds)) {
-    const ids = ((body.enrichInbox as { taskIds: unknown[] }).taskIds).map(String);
-    for (const id of ids) {
-      const missing = await ownedOrMissing(store, "tasks", id);
-      if (missing) return missing;
-    }
-    if (!openaiKey(c.env)) return json({ error: "llm unavailable" }, 503, OPEN_CORS);
+  // The Supabase agent's one-shots, run as-is (agentOneShot.ts): same routing
+  // order and checks, and a throw is 500 {error: message}, as that function's
+  // outer catch returns.
+  try {
+    const oneShot = await runWorkerOneShot(store, c.env, body);
+    if (oneShot !== undefined) return json(oneShot, 200, OPEN_CORS);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[agent]", msg);
+    // Same {error} body as Supabase. A missing or foreign row ("Task not found",
+    // "project not found", ...) answers 404 instead of Supabase's 500, so a
+    // foreign id and a random id stay indistinguishable and the access gate
+    // (accessHttp.check: denied = 403/404) holds. Everything else is Supabase's 500.
+    return json({ error: msg }, NOT_FOUND_RE.test(msg) ? 404 : 500, OPEN_CORS);
   }
 
   const messages = body.messages as { role: "user" | "assistant"; content: string | ContentPart[] }[] | undefined;
-  if (!messages?.length) {
-    if (body.priorities || body.breakdown || body.clusterInbox || body.nameSlot || body.blueprint || body.scaffoldDraft || body.routeProject || body.narrate || body.reviewFind) {
-      if (!openaiKey(c.env)) return json({ error: "llm unavailable" }, 503, OPEN_CORS);
-      return json({ error: "llm unavailable" }, 503, OPEN_CORS);
-    }
-    return json({ error: "messages required" }, 400, OPEN_CORS);
-  }
+  if (!messages?.length) return json({ error: "messages required" }, 400, OPEN_CORS);
 
   const key = openaiKey(c.env);
   if (!key) return json({ error: "llm unavailable" }, 503, OPEN_CORS);

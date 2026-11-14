@@ -1,9 +1,10 @@
 // The Worker's `draftOutcome` one-shot is the Supabase agent's, ported as-is:
-// same prompt and model call, the same owner check, and the same 500 {error}
-// a throw becomes in the Supabase function's outer catch.
-import { PGlite } from "@electric-sql/pglite";
+// same prompt and model call, the same owner check, and the same {error} body
+// a throw becomes in the Supabase outer catch (500; a missing/foreign row is 404).
+import type { PGlite } from "@electric-sql/pglite";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { applyIsolationSchema } from "../worker/src/isolationDb.ts";
+import { oneShotPg } from "./agent/oneShotPg.ts";
+import { resetRestCatalogForTests } from "../worker/src/rest.ts";
 import { makePgliteSql } from "../worker/src/pgliteSql.ts";
 import { makeStore, type Store } from "../worker/src/store.ts";
 import { draftOutcomePrompt } from "../supabase/functions/agent/draftOutcomePrompt.ts";
@@ -49,10 +50,10 @@ async function call(body: unknown, env: Record<string, string> = { OPENAI_API_KE
 
 let db: PGlite;
 beforeAll(async () => {
-  db = new PGlite();
-  await applyIsolationSchema(db);
-  // Prod Neon has projects.description (copied from Supabase); the rehearsal neon.sql doesn't yet.
-  await db.exec("ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS description TEXT");
+  // The isolation schema plus the prod columns the one-shots read (projects /
+  // initiatives description, ...), which the rehearsal neon.sql lacks.
+  db = await oneShotPg();
+  resetRestCatalogForTests();
   await db.query("UPDATE public.domains SET intention = 'Ship calm work' WHERE id = $1", [A_DOMAIN]);
   currentStore = makeStore(makePgliteSql(db), A);
 });
@@ -93,12 +94,12 @@ describe("Worker agent draftOutcome (ported from the Supabase agent)", () => {
     expect((calls[0].body.messages as { content: string }[])[0].content).toContain("Name: A Initiative");
   });
 
-  it("a non-owner is rejected like a missing id: 500 {error: '<kind> not found'}, no LLM call", async () => {
+  it("a non-owner is rejected like a missing id: 404 {error: '<kind> not found'}, no LLM call", async () => {
     const calls = llmStub(JSON.stringify({ outcome: "never" }));
     const foreign = await call({ draftOutcome: { kind: "project", id: B_PROJECT } });
     const missing = await call({ draftOutcome: { kind: "project", id: RANDOM_ID } });
     const malformed = await call({ draftOutcome: { kind: "project", id: "not-a-uuid" } });
-    expect(foreign).toEqual({ status: 500, body: { error: "project not found" } });
+    expect(foreign).toEqual({ status: 404, body: { error: "project not found" } });
     expect(missing).toEqual(foreign);
     expect(malformed).toEqual(foreign);
     expect(calls).toHaveLength(0);

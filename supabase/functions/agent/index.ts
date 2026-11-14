@@ -1,20 +1,8 @@
 import { handleOptions, json, requireUser, corsHeaders } from "../_shared/admin.ts";
 import { buildContext } from "./context.ts";
 import type { NavFocus } from "./prompt.ts";
-import { scaffoldProject, scaffoldDraft } from "./scaffold.ts";
-import { assessRecord } from "./assess.ts";
-import { refineProject } from "./refine.ts";
-import { blueprintInitiative, draftInitiativeProjects } from "./blueprint.ts";
-import { draftOutcome } from "./draftOutcome.ts";
-import { clusterInbox } from "./clusterInbox.ts";
-import { nameSlot } from "./nameSlot.ts";
-import { enrichInboxBatch, routeProject } from "./enrichInbox.ts";
-import { enrichDomain } from "./enrichDomain.ts";
-import { verifyItem } from "./verify.ts";
-import { parsePriorities, breakdownPriority } from "./priorities.ts";
-import { prepareTask } from "./prepare.ts";
-import { narrate } from "./narrate.ts";
-import { narrateReviewFind } from "./reviewFind.ts";
+import { runOneShot } from "./oneShots.ts";
+import { supabaseDeps } from "./supabaseDeps.ts";
 import { executeTool, FALLBACK_TZ, TOOL_DEFINITIONS, buildPointAtTool, type MarqueeTargetSpec } from "./tools.ts";
 import { llmKey, llmHeaders } from "./llm.ts";
 import { resolveAgentModel } from "./modelChoice.ts";
@@ -65,105 +53,11 @@ Deno.serve(async (req) => {
     const userToken = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
     const body = await req.json();
 
-    // One-shot intelligence endpoints. All of them propose; only `prepare`
-    // writes (to the task's own prework field — never to the plan).
-    if (body.scaffold?.projectId) {
-      return json(await scaffoldProject(user.id, String(body.scaffold.projectId), {
-        guidance: body.scaffold.guidance,
-        draftTitles: Array.isArray(body.scaffold.draftTitles) ? body.scaffold.draftTitles.map(String) : undefined,
-        description: body.scaffold.description ? String(body.scaffold.description) : undefined,
-        redraft: Array.isArray(body.scaffold.redraft) ? body.scaffold.redraft.map(String) : undefined,
-      }));
-    }
-    // Refine an existing backlog: typo/wording fixes + missing steps + a
-    // sensible order, all proposed as a reviewable diff the client applies.
-    if (body.refine?.projectId) {
-      return json(await refineProject(user.id, String(body.refine.projectId)));
-    }
-    // Assess: a world-class coach's pass over a project or initiative, returning
-    // anchored findings the client overlays as inline margin notes (Accept/Dismiss).
-    if (body.assess?.id && (body.assess.kind === "project" || body.assess.kind === "initiative")) {
-      return json(await assessRecord(user.id, body.assess.kind, String(body.assess.id)));
-    }
-    // Tending's "raw → shaped" advance: draft one outcome line for a project /
-    // initiative that has a name but no goal yet.
-    if (body.draftOutcome?.id) {
-      return json(await draftOutcome(user.id, body.draftOutcome));
-    }
-    // Tending's soundness judgment: is this item genuinely ready (outcome, steps,
-    // time, dates), or just structurally filled in?
-    if (body.verify?.id) {
-      return json(await verifyItem(user.id, body.verify));
-    }
-    // The create-moment variant: draft a project's first tasks from typed
-    // context, before the project row exists.
-    if (body.scaffoldDraft) {
-      return json(await scaffoldDraft(user.id, body.scaffoldDraft));
-    }
-    if (body.blueprint) {
-      return json(await blueprintInitiative(user.id, {
-        ...body.blueprint,
-        draftProjectNames: Array.isArray(body.blueprint.draftProjectNames)
-          ? body.blueprint.draftProjectNames.map(String)
-          : undefined,
-      }));
-    }
-    // Draft the projects (D-196): an initiative's missing projects across its
-    // quarter's weeks. Proposal only; the client writes what you hold.
-    if (body.draftProjects?.initiativeId) {
-      return json(await draftInitiativeProjects(user.id, {
-        initiativeId: String(body.draftProjects.initiativeId),
-        weekStarts: Array.isArray(body.draftProjects.weekStarts) ? body.draftProjects.weekStarts.map(String) : [],
-        guidance: body.draftProjects.guidance ? String(body.draftProjects.guidance) : undefined,
-        redraft: Array.isArray(body.draftProjects.redraft) ? body.draftProjects.redraft.map(String) : undefined,
-      }));
-    }
-    // Free-text → the week's priorities (outcomes), inferring each win + the bet
-    // it serves. The client appends the parse to the sprint's big_rocks.
-    if (body.priorities) {
-      return json(await parsePriorities(user.id, body.priorities));
-    }
-    // "What moves this priority?" → propose this week's next actions.
-    if (body.breakdown) {
-      return json(await breakdownPriority(user.id, body.breakdown));
-    }
-    if (body.prepare?.taskId) {
-      return json(await prepareTask(user.id, String(body.prepare.taskId)));
-    }
-    // Plan's "theme the inbox": group loose captures into a few named runs the
-    // client can place as focus blocks across the week's open time.
-    if (body.clusterInbox) {
-      return json(await clusterInbox(user.id, body.clusterInbox));
-    }
-    // The Schedule's "suggest a name": one block, named from what's inside it.
-    // Proposes only — the name lands in the popover's input, not on the row.
-    if (body.nameSlot) {
-      return json(await nameSlot(user.id, body.nameSlot));
-    }
-    // Passive grooming: guess a batch of inbox captures' homes (project/
-    // initiative/domain), duration and energy in one call. Persists
-    // suggestions only — files nothing.
-    if (body.enrichInbox?.taskIds) {
-      const taskIds = Array.isArray(body.enrichInbox.taskIds) ? body.enrichInbox.taskIds.map(String) : [];
-      return json(await enrichInboxBatch(user.id, taskIds));
-    }
-    // Domain refinement: expand a charter blurb into routing context (entities,
-    // keywords, boundary) grooming reads. Proposes only — the domain floor persists it.
-    if (body.enrichDomain?.domainId) {
-      return json(await enrichDomain(user.id, body.enrichDomain));
-    }
-    // Project → domain: the same classifier the Inbox uses. Null = no verdict,
-    // and the Groom wall falls back to its chat-model guess.
-    if (body.routeProject) {
-      return json({ route: await routeProject(user.id, body.routeProject) });
-    }
-    if (body.narrate) {
-      return json(await narrate(body.narrate));
-    }
-    // Weekly Review Find — warm the one pre-selected discovery. Numbers stay client-side.
-    if (body.reviewFind) {
-      return json(await narrateReviewFind(body.reviewFind));
-    }
+    // One-shot intelligence endpoints (oneShots.ts, shared with the Worker).
+    // All of them propose; only `prepare` writes (to the task's own prework
+    // field — never to the plan) and `enrichInbox` (suggestions only).
+    const oneShot = await runOneShot(supabaseDeps, user.id, body);
+    if (oneShot !== undefined) return json(oneShot);
 
     const { messages, rangeStart, rangeEnd, navFocus, marqueeTargets, tz: rawTz } = body as {
       messages: { role: "user" | "assistant"; content: string | ContentPart[] }[];
