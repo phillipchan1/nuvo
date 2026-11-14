@@ -65,6 +65,11 @@ supabase/functions/         edge functions (all server-side logic)
 
 ## Setup
 
+> **Since the Nov 13 2026 cutover, migrations go to Neon prod only** (project `frosty-snow-66931204`, db `neondb`).
+> Supabase `ebibzojtkzkphykznomv` is frozen and read-only, kept only as a fallback: never `supabase db push`,
+> apply migrations, or write there. See the root [`CLAUDE.md`](./CLAUDE.md) § Database migrations.
+> The Supabase steps below are the pre-cutover setup, kept for history.
+
 ### 1. Supabase project
 
 ```sh

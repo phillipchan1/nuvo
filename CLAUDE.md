@@ -521,6 +521,19 @@ enforced instead:
 wall-clock: it is deterministic, it *is* layout thrash, and it is what found every real regression.
 And remember Nuvo.app is **WKWebView** — a Chromium number is a lower bound on what the desktop pays.
 
+## Database migrations — Neon prod only (since the Nov 13 2026 cutover)
+
+Production data lives on **Neon** (project `frosty-snow-66931204`, db `neondb`), served by the
+Cloudflare Worker `nuvo`. **Every migration goes to Neon prod, and only there.**
+
+- Supabase project `ebibzojtkzkphykznomv` is **frozen and read-only**, kept only as a fallback.
+  **Never apply migrations or writes there** — no `supabase db push`, no SQL editor, no MCP
+  `apply_migration`. A change applied to Supabase alone never reaches the app.
+- Keep writing the numbered file in `supabase/migrations/` (the history and the tests read it),
+  **and** add the same idempotent DDL to `worker/schema/neon.sql`. Then apply that SQL to Neon prod.
+- Prod SQL is Phil's call: take a Neon branch snapshot (or a `pg_dump` of the touched table) first,
+  and record the SQL, the backup and the rollback.
+
 ## Stack quick-reference
 
 React 18 + Vite 6 + TypeScript + Tailwind v4 · Supabase (Postgres/RLS/Auth/Edge/Realtime)

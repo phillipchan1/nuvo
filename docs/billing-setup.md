@@ -76,6 +76,11 @@ supabase secrets set \
 
 ## 6. Apply the migration
 
+> **Since the Nov 13 2026 cutover, migrations go to Neon prod only** (project `frosty-snow-66931204`, db `neondb`).
+> Supabase `ebibzojtkzkphykznomv` is frozen and read-only, kept only as a fallback: never `supabase db push`,
+> apply migrations, or write there. See the root [`CLAUDE.md`](../CLAUDE.md) § Database migrations.
+> The `supabase db push` commands in this doc are pre-cutover.
+
 Creates `subscriptions` + `stripe_webhook_events`, adds the `entitled()`
 computed column, and extends `handle_new_user` to grant the 14-day trial.
 **It also backfills a fresh 14-day trial onto every existing account,
