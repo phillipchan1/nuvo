@@ -4,7 +4,7 @@
  * a user-owned parent. `scripts/prove-isolation-mutation.mjs` deletes
  * each of those clauses.
  */
-import type { Sql } from "./db.ts";
+import { jsonParam, type Sql } from "./db.ts";
 import { openAccountRefreshToken } from "./lib/accountTokens.ts";
 import type { Env } from "./env.ts";
 import { ensureTrialSubscription } from "./billing/db.ts";
@@ -956,10 +956,9 @@ export async function updateWeekReviewReport(
   report: unknown,
 ): Promise<Record<string, unknown> | null> {
   const sql = store.sql;
-  const payload = JSON.stringify(report ?? {});
   const rows = await sql`
     UPDATE week_reviews
-    SET report = ${payload}::jsonb
+    SET report = ${jsonParam(sql, report ?? {})}
     WHERE id = ${id}
       AND user_id = ${store.userId}
     RETURNING *

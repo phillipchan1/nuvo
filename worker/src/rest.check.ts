@@ -23,6 +23,7 @@ import { applyIsolationSchema } from "./isolationDb.ts";
 import { makePgliteSql } from "./pgliteSql.ts";
 import { installRequestIoForTests } from "./requestIo.ts";
 import { resetRestCatalogForTests } from "./rest.ts";
+import { updateAccount } from "./calendar/store.ts";
 import { workerRoute } from "../../src/lib/workerRoute.ts";
 import app from "./index.ts";
 
@@ -389,6 +390,37 @@ const stepId = crypto.randomUUID();
   }
   const extraArg = await A.rpc("contacts", { search: "", user_id: b.id });
   ok(extraArg.error?.code === "PGRST202", `rpc with an argument it does not take: PGRST202 (${extraArg.error?.code})`);
+}
+
+// --- jsonb double-encode: string-scalar rows heal on read, writes store arrays ---
+{
+  const acct = crypto.randomUUID();
+  await db.query(
+    `INSERT INTO calendar_accounts (id, user_id, provider, email, calendars)
+     VALUES ($1, $2, 'icloud', 'jsonb-heal@example.test', to_jsonb('[{"id":"a"}]'::text))`,
+    [acct, a.id],
+  );
+  const typeBefore = await db.query<{ t: string }>(`SELECT jsonb_typeof(calendars) AS t FROM calendar_accounts WHERE id = $1`, [acct]);
+  ok(typeBefore.rows[0]?.t === "string", `fixture is a jsonb string scalar (${typeBefore.rows[0]?.t})`);
+  const read = await A.from("calendar_accounts").select("id, calendars").eq("id", acct).single();
+  const cals = read.data?.calendars as unknown;
+  ok(Array.isArray(cals) && cals.length === 1 && (cals[0] as { id?: string }).id === "a", `REST heals string-scalar calendars: ${JSON.stringify(cals ?? read.error)}`);
+
+  const evt = crypto.randomUUID();
+  await db.query(
+    `INSERT INTO external_events (id, user_id, title, start_at, end_at, raw)
+     VALUES ($1, $2, 'heal raw', now(), now(), to_jsonb('{"caldav_href":"/x.ics"}'::text))`,
+    [evt, a.id],
+  );
+  const rawRead = await A.from("external_events").select("id, raw").eq("id", evt).single();
+  ok((rawRead.data?.raw as { caldav_href?: string } | null)?.caldav_href === "/x.ics", `REST heals string-scalar raw: ${JSON.stringify(rawRead.data ?? rawRead.error)}`);
+
+  await updateAccount(sql, acct, a.id, { calendars: [{ id: "a" }, { id: "b" }] });
+  const typeAfter = await db.query<{ t: string; n: number }>(
+    `SELECT jsonb_typeof(calendars) AS t, jsonb_array_length(calendars) AS n FROM calendar_accounts WHERE id = $1`,
+    [acct],
+  );
+  ok(typeAfter.rows[0]?.t === "array" && typeAfter.rows[0]?.n === 2, `updateAccount stores a jsonb array (${JSON.stringify(typeAfter.rows[0])})`);
 }
 
 // --- freeze ------------------------------------------------------------------

@@ -1,3 +1,5 @@
+import { asJsonArray } from "../lib/jsonbShape.ts";
+
 export interface CalendarAccount {
   id: string;
   user_id: string;
@@ -52,7 +54,7 @@ export function mapAccount(row: Record<string, unknown>): CalendarAccount {
     access_token: row.access_token == null ? null : String(row.access_token),
     access_token_expires_at: row.access_token_expires_at == null ? null : String(row.access_token_expires_at),
     sync_direction: String(row.sync_direction ?? "read_only"),
-    calendars: row.calendars ?? [],
+    calendars: asJsonArray(row.calendars),
     delta_link: row.delta_link == null ? null : String(row.delta_link),
     mirror_calendar_id: row.mirror_calendar_id == null ? null : String(row.mirror_calendar_id),
     needs_reconnect: Boolean(row.needs_reconnect),

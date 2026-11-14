@@ -3,7 +3,7 @@
  * (or account.user_id through a join). Cron iterates accounts then
  * scopes each pass by that row's user_id.
  */
-import type { Sql } from "../db.ts";
+import { jsonParam, type Sql } from "../db.ts";
 import type { Env } from "../env.ts";
 import { calendarAccountAad, calendarSyncInterval, markSyncResult as markOwnedSyncResult } from "../google/owned.ts";
 import { redactSecrets } from "../lib/redact.ts";
@@ -192,7 +192,7 @@ export async function upsertAccount(
     )
     VALUES (
       ${userId}, ${row.provider}, ${row.email}, ${row.sync_direction},
-      ${JSON.stringify(row.calendars)}::jsonb,
+      ${jsonParam(sql, row.calendars)},
       ${row.access_token ?? null}, ${row.access_token_expires_at ?? null},
       ${row.delta_link ?? null}, ${row.needs_reconnect ?? false}
     )
@@ -234,7 +234,7 @@ export async function updateAccount(
   if (patch.calendars !== undefined) {
     await sql`
       UPDATE calendar_accounts
-      SET calendars = ${JSON.stringify(patch.calendars)}::jsonb, updated_at = now()
+      SET calendars = ${jsonParam(sql, patch.calendars)}, updated_at = now()
       WHERE id = ${accountId} AND user_id = ${userId}
     `;
   }

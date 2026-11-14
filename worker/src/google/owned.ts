@@ -5,6 +5,7 @@
  */
 import type { Sql } from "../db.ts";
 import { jsonParam } from "../db.ts";
+import { asJsonArray } from "../lib/jsonbShape.ts";
 import type { Env } from "../env.ts";
 import { parseTokenKeyring, sealToken } from "../secrets.ts";
 import type { CalendarEntry, GoogleAccount, GoogleAccountStatus, GoogleEventListItem } from "./types.ts";
@@ -39,16 +40,7 @@ export function makeCalendarStore(sql: Sql, userId: string): CalendarStore {
 }
 
 function asCalendars(value: unknown): CalendarEntry[] {
-  if (Array.isArray(value)) return value as CalendarEntry[];
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value) as unknown;
-      return Array.isArray(parsed) ? (parsed as CalendarEntry[]) : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
+  return asJsonArray(value) as CalendarEntry[];
 }
 
 function mapAccount(row: Record<string, unknown>): GoogleAccount {

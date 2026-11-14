@@ -1,4 +1,4 @@
-import type { Sql } from "../db.ts";
+import { jsonParam, type Sql } from "../db.ts";
 import { isSuspectWipe } from "./sweepSafety.ts";
 
 export interface EventRow {
@@ -180,7 +180,7 @@ export async function reconcileEvents(
       VALUES (
         ${scope.userId}, ${row.account_id}, ${row.provider_event_id}, ${row.calendar_id},
         ${row.title}, ${row.start_at}, ${row.end_at}, ${row.all_day}, ${row.location},
-        ${row.busy}, ${JSON.stringify(row.raw ?? null)}::jsonb, ${row.last_synced_at}, ${row.content_hash ?? null}
+        ${row.busy}, ${row.raw == null ? null : jsonParam(sql, row.raw)}, ${row.last_synced_at}, ${row.content_hash ?? null}
       )
       ON CONFLICT (account_id, calendar_id, provider_event_id) DO UPDATE SET
         title = EXCLUDED.title,
