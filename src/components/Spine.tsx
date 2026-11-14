@@ -269,7 +269,7 @@ const SpineBody = memo(function SpineBody({
         data-teach={`rung-${r.id}`}
         onClick={() => setRung(r.id)}
         aria-current={on}
-        aria-label={`${r.label} (⌘${n})`}
+        aria-label={cue ? `${r.label} (⌘${n}) · ${cue.label}` : `${r.label} (⌘${n})`}
         title={railed ? tip : cue ? cue.label : undefined}
         className="sb-item"
       >
@@ -278,11 +278,12 @@ const SpineBody = memo(function SpineBody({
         </span>
         <span className="sb-label">{r.label}</span>
         <span className="sb-trail">
-          {/* the floor's one cue, in its tone — a calm floor shows its key */}
+          {/* The floor's one cue is a DOT in its tone, not words (D-207 §8.3):
+              the page's crown line already says the fact in a sentence, and a
+              second place saying it is P8's failure. The words ride the
+              tooltip. A calm floor shows its key. */}
           {cue ? (
-            <span className="truncate" style={{ color: cueColor ?? undefined, maxWidth: 84 }}>
-              {cue.label}
-            </span>
+            <span aria-hidden className="sb-cue" style={{ background: cueColor ?? undefined }} />
           ) : (
             <Kbd keys={["⌘", String(n)]} />
           )}

@@ -37,6 +37,8 @@ const PROJECTS: Project[] = [
   proj("p3", "d2", "Rebuild Families Newsletter", "", wk(1)),
   proj("p4", "d2", "Start Treasured Reading Book Project", "", wk(3)),
   proj("p5", "d3", "Cloudflare migration", "The app runs on the Worker", { startDate: iso(addDays(monday, -21)), targetDate: iso(addDays(monday, -10)) }),
+  // a third open project this week — over the default cap, so the stack offers a move
+  proj("p7", "d2", "Fix the volunteer roster", "", wk(0)),
   proj("p6", "d1", "Create Spiritual Gifts Test V1", "A test the staff can take", wk(0), "complete", { shippedAt: iso(addDays(monday, 1)) } as Partial<Project>),
 ];
 

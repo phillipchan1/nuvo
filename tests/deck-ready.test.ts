@@ -41,6 +41,45 @@ describe("the project deck's stack", () => {
   });
 });
 
+describe("the project deck's acts that write (D-207)", () => {
+  it("shows a ✦ outcome draft and writes it only on Set as outcome", () => {
+    const acts = { open: vi.fn(), draftPath: vi.fn(), setOutcome: vi.fn() };
+    const [card] = projectDeckCards([fact({ id: "n", name: "Newsletter", gap: "no outcome", draft: { state: "ready", text: "The relaunch issue reaches every family" } })], acts);
+    expect(card.why).toBe("✦ The relaunch issue reaches every family");
+    expect(card.primary.verb).toBe("Set as outcome");
+    expect(acts.setOutcome).not.toHaveBeenCalled();
+    card.primary.run(null);
+    expect(acts.setOutcome).toHaveBeenCalledWith("n", "The relaunch issue reaches every family", null);
+    expect(card.secondary?.label).toBe("Write my own");
+    // while drafting it says so, and only opens
+    const [loading] = projectDeckCards([fact({ gap: "no outcome", draft: { state: "loading" } })], acts);
+    expect(loading.why).toMatch(/drafting/);
+    expect(loading.primary.verb).toBe("Open");
+  });
+
+  it("offers to move the one project out of a crowded week, ahead of shaping", () => {
+    const acts = { open: vi.fn(), draftPath: vi.fn(), move: vi.fn() };
+    const cards = projectDeckCards(
+      [
+        fact({ id: "g", gap: "no outcome", weekIdx: 0 }),
+        fact({ id: "c", name: "Crowd", weekIdx: 1, crowded: { load: 5, cap: 2 }, moveTo: { label: "In 2 weeks" } }),
+      ],
+      acts,
+    );
+    expect(cards[0]).toMatchObject({ key: "deck:crowd:c", why: "Nov 16 holds 5 · room for 2" });
+    expect(cards[0].primary).toMatchObject({ verb: "Move to", name: "In 2 weeks" });
+    cards[0].primary.run(null);
+    expect(acts.move).toHaveBeenCalledWith("c", null);
+    expect(deckLine(cards, "project")).toMatchObject({ text: "Nov 16 holds 5, room for 2", then: "Project needs shaping" });
+  });
+
+  it("moves a project that won't fit, when a later week has room", () => {
+    const acts = { open: vi.fn(), draftPath: vi.fn(), move: vi.fn() };
+    const [card] = projectDeckCards([fact({ wontFit: true, moveTo: { label: "Next week" } })], acts);
+    expect(card.primary).toMatchObject({ verb: "Move to", name: "Next week" });
+  });
+});
+
 describe("the decks' line", () => {
   it("names one project's gap, or counts several", () => {
     const acts = { open: vi.fn(), draftPath: vi.fn() };

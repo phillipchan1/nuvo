@@ -31,7 +31,7 @@ import { at, span } from "../components/mobile/dayPlan";
 import { parseDateISO } from "./dates";
 import { blocks, lineFrom, type CrownLineData, type LineCard } from "./crownLine";
 
-export type ReadyKind = "repair" | "repairAll" | "hold" | "loose" | "plan" | "file" | "path" | "memory" | "risk" | "shape";
+export type ReadyKind = "repair" | "repairAll" | "hold" | "loose" | "plan" | "file" | "path" | "memory" | "risk" | "shape" | "crowd";
 
 /** At most this many cards show at once (D-206). */
 export const READY_MAX = 5;
@@ -322,6 +322,7 @@ export function scheduleLine(
         return { part: "memory", fact: `Nuvo noticed: ${c.title}`, then: "something Nuvo noticed", tone: "accent" };
       case "risk":
       case "shape":
+      case "crowd":
         // the decks' kinds (lib/deckReady) — they never reach the Schedule's stack
         return { part: "shape", fact: `${c.title}: ${c.why}`, then: c.title, tone: "accent" };
     }

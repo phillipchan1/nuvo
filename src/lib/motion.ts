@@ -218,6 +218,8 @@ export function reachMark(from: Element | null | undefined, to: Element | null |
 /** The key that reaches the WEEK's track instead of a project's row:
  *  `reachToCrown(el, WEEK_REACH_KEY)`. The track holds its Advance for it. */
 export const WEEK_REACH_KEY = "__week";
+/** A deck's own crown (D-207) — what a deck's Get ready card that WRITES reaches. */
+export const DECK_REACH_KEY = "__deck";
 
 /** The crown's visible mark for a project: an open row's track if one is on
  *  screen, else the shut strip's pip, else the row itself. Null when no crown
@@ -225,6 +227,10 @@ export const WEEK_REACH_KEY = "__week";
  *  nothing is scrolled or opened to stage an animation. */
 export function crownTarget(projectId: string): HTMLElement | null {
   if (typeof document === "undefined" || !projectId) return null;
+  if (projectId === DECK_REACH_KEY) {
+    const marks = Array.from(document.querySelectorAll<HTMLElement>("[data-crown-deck]"));
+    return marks.find((el) => onScreen(el)) ?? null;
+  }
   if (projectId === WEEK_REACH_KEY) {
     // The week's own track (D-206) — what a Get ready card that changes the
     // WEEK (not one project) reaches.

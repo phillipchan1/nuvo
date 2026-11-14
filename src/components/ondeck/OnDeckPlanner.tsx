@@ -38,7 +38,9 @@ import { deckWeight } from "../../lib/pace";
 import { PIP_TONE, projectCardStatus, thinWord } from "./deckStatus";
 import GetReadyRail from "../plan/GetReadyRail";
 import { useFloorBar } from "../floors/floorBar";
-import { deckLine, projectDeckCards } from "../../lib/deckReady";
+import { deckLine, projectDeckCards, type OutcomeDraft } from "../../lib/deckReady";
+import { fetchOutcomeDraft } from "../../lib/outcomeDraft";
+import { DECK_REACH_KEY, reachToCrown } from "../../lib/motion";
 import { requestPathDraft } from "../../lib/draftIntent";
 import { PaceTrack } from "../progress/PaceTrack";
 import ThinDoor from "./ThinDoor";
@@ -558,37 +560,92 @@ export default function OnDeckPlanner() {
   const [readyMode, setReadyMode] = useState(false);
   // The page bar, drawn over the grid so the rail owns its corner (D-207 §7).
   const floorBar = useFloorBar();
+  // ✦ outcome drafts for the nearest projects with none — asked for when the
+  // stack opens (your press), never on load; at most three, one each.
+  const [drafts, setDrafts] = useState<Record<string, OutcomeDraft>>({});
+  const open = placed.filter((l) => l.readyTier !== "done" && l.readyTier !== "parked");
+  const startOf = (id: string) => geom.find((g) => g.l.project.id === id)?.start ?? 0;
+  // A crowded week (Q2): more open projects than your per-week cap. The card
+  // offers to move the least-ready one there to the nearest later week with room.
+  const crowdedPick = new Map<string, { load: number; cap: number }>();
+  weekLoad.forEach((load, i) => {
+    if (load <= maxPerWeek) return;
+    // never the overdue one — it has its own card, and moving it later is wrong
+    const inWeek = open.filter((l) => {
+      const g = geom.find((x) => x.l.project.id === l.project.id);
+      return g && i >= g.start && i <= g.end && l.pace.read !== "overdue";
+    });
+    const tierRank = { raw: 0, grooming: 1, ready: 2, done: 3, parked: 4 } as Record<string, number>;
+    const pick = [...inWeek].sort((a, b) => (tierRank[a.readyTier] ?? 9) - (tierRank[b.readyTier] ?? 9))[0];
+    if (pick && !crowdedPick.has(pick.project.id)) crowdedPick.set(pick.project.id, { load, cap: maxPerWeek });
+  });
+  const roomAfter = (idx: number): number | null => {
+    for (let j = idx + 1; j < H; j++) if ((weekLoad[j] ?? 0) < maxPerWeek) return j;
+    return null;
+  };
   const deckCards = useMemo(
     () =>
       projectDeckCards(
-        placed
-          .filter((l) => l.readyTier !== "done" && l.readyTier !== "parked")
-          .map((l) => {
-            // the week the card sits in on the grid — the bar's own start
-            const idx = geom.find((g) => g.l.project.id === l.project.id)?.start ?? 0;
-            const t = thin.get(l.project.id);
-            return {
-              id: l.project.id,
-              name: l.project.name,
-              weekIdx: idx,
-              weekLabel: board.weeks[idx] ? weekName(board.weeks[idx].weekStart) : "",
-              overdueDays: l.pace.read === "overdue" ? l.pace.driftDays : null,
-              thin: t ? thinWord(t) : null,
-              gap: l.gaps[0]?.label ?? null,
-              wontFit: l.axes.fits === false,
-            };
-          }),
+        open.map((l) => {
+          const idx = startOf(l.project.id);
+          const t = thin.get(l.project.id);
+          const to = roomAfter(idx);
+          return {
+            id: l.project.id,
+            name: l.project.name,
+            weekIdx: idx,
+            weekLabel: board.weeks[idx] ? weekName(board.weeks[idx].weekStart) : "",
+            overdueDays: l.pace.read === "overdue" ? l.pace.driftDays : null,
+            thin: t ? thinWord(t) : null,
+            gap: l.gaps[0]?.label ?? null,
+            wontFit: l.axes.fits === false,
+            crowded: crowdedPick.get(l.project.id) ?? null,
+            // a destination is named as the deck names its columns ("Nov 23"), so
+            // "Move to" never reads "Move to In 2 weeks"
+            moveTo: to != null && board.weeks[to] ? { label: format(board.weeks[to].weekStart, "MMM d") } : null,
+            draft: drafts[l.project.id] ?? null,
+          };
+        }),
         {
           open: (id) => openRecord("project", id),
           draftPath: (id) => {
             requestPathDraft(id);
             openRecord("project", id);
           },
+          setOutcome: (id, outcome, from) => {
+            const p = projectById.get(id);
+            if (!p) return;
+            void reachToCrown(from, DECK_REACH_KEY);
+            writeWithUndo((x) => updateProject(p.id, x), p, { outcome }, recordUndo, `Set the outcome of “${p.name}”`, "set the outcome");
+          },
+          move: (id, from) => {
+            const p = projectById.get(id);
+            const to = roomAfter(startOf(id));
+            if (!p || to == null || !board.weeks[to]) return;
+            void reachToCrown(from, DECK_REACH_KEY);
+            moveProject(p, { ...weekSpan(p, board.weeks[to].weekStart), status: "in_progress" }, "Moved");
+          },
         },
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [board, thin, H],
+    [board, thin, H, drafts, maxPerWeek, weekLoad.join(",")],
   );
+  // Ask for the drafts when the stack opens: the nearest three with no outcome.
+  useEffect(() => {
+    if (!readyMode) return;
+    const want = open
+      .filter((l) => l.gaps[0]?.label === "no outcome" && !thin.has(l.project.id) && !drafts[l.project.id])
+      .sort((a, b) => startOf(a.project.id) - startOf(b.project.id))
+      .slice(0, 3);
+    if (!want.length) return;
+    setDrafts((d) => ({ ...d, ...Object.fromEntries(want.map((l) => [l.project.id, { state: "loading" } as OutcomeDraft])) }));
+    for (const l of want)
+      fetchOutcomeDraft("project", l.project.id).then(
+        (text) => setDrafts((d) => ({ ...d, [l.project.id]: { state: "ready", text } })),
+        () => setDrafts((d) => ({ ...d, [l.project.id]: { state: "error" } })),
+      );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readyMode]);
   const line = useMemo(() => deckLine(deckCards, "project"), [deckCards]);
 
   return (
@@ -602,8 +659,11 @@ export default function OnDeckPlanner() {
           width={sharedRailWidth()}
           onClose={() => setReadyMode(false)}
           crown={
-            <span className="shrink-0 text-caption tabular-nums text-muted">
-              {readyN + doneN} of {placed.length} ready
+            // The crown, pinned (rail-modes §2): the deck's track and number —
+            // what a card that writes Reaches (DECK_REACH_KEY).
+            <span className="flex shrink-0 items-center gap-1.5 text-caption tabular-nums text-muted" data-crown-deck="">
+              <PaceTrack done={readyN + doneN} placed={groomN} total={placed.length} color="var(--accent)" width={48} reachKey={DECK_REACH_KEY} />
+              {readyN + doneN} of {placed.length}
             </span>
           }
         />

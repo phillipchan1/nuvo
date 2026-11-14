@@ -121,7 +121,9 @@ const VERTICAL: VerticalData = {
     { id: "d2", name: "Home", color: "#5f8f7a" },
   ],
   initiatives: [],
-  projects: [{ id: "p1", name: "Site relaunch", domainId: "d1" }],
+  // `outcome` and `status` are required by the readiness reads the sidebar runs
+  // (readSpine → readTending); without them ?rail=frame threw on mount.
+  projects: [{ id: "p1", name: "Site relaunch", domainId: "d1", outcome: "", status: "in_progress", startDate: null, targetDate: null }],
   tasks: [],
   sprint: null,
 } as unknown as VerticalData;

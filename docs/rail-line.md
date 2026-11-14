@@ -5,13 +5,15 @@ heads the Schedule (`WeekPanel`), both decks (`PlannerRail`) and the phone's ope
 `scheduleLine` / `deckLine` over the same compose as the stack (`useReady`, `lib/deckReady`); the
 decks have their own Get ready stacks; the kernel owns `isMissed`; the decks' page bar is drawn over
 the grid (`floors/floorBar`); the domain wall (both shells) carries a Read line (`wallLine`).
-**Deviations:** (1) "Leave it where it is" is still per device: per-account needs a column and a
-migration, not shipped blind. (2) No native iOS haptic: the phone's acts call `haptic("success")`,
-which works on Android; iOS needs a Tauri plugin that couldn't be compiled here. (3) Deck cards open
-the record or Draft the path / Draft the projects; *Set as outcome* (a ✦ outcome draft) and *Move to
-Nov 23* aren't built. (4) Domains got the lighter §8.1 alternative: a line in the wall's head, no
-rail. (5) The phone's SHUT strip keeps its pips (D-123); the line shows when the crown is open.
-(6) The Spine's cue words (§8.3) are untouched. **Not driven on a signed-in account** (no dev login
+**Finished the same day:** "Leave it where it is" per account (`user_settings.repairs_left`,
+migration 95 + `worker/schema/neon.sql`; **apply both** — until then each device keeps its own list,
+and the app never writes the missing column); the project deck's *Set as outcome* (a ✦ draft from the
+agent's `draftOutcome`, asked for when the stack opens, three at most) and *Move to Nov 22* (a crowded
+week, or a project that won't fit — the drag's own write); the Spine's cue words became dots (§8.3,
+words in the tooltip and label). **Deviations that stand:** (1) No native iOS haptic — dropped by Phil;
+`haptic("success")` fires on Android. (2) Domains got the lighter §8.1 alternative: a line in the
+wall's head, no rail. (3) The phone's SHUT strip keeps its pips (D-123); the line shows when the crown
+is open. **Not driven on a signed-in account** (no dev login
 in this checkout): verified at `?kit`, `?weekcrown`, `?domains` and the new `?decks`; `npm run perf`
 not run. Anchor pass run the same day (Ledger
 A2 · D4 · W2 · W3 · Q3 · Q4; strains P9 and P8; four no's clear except a Domains rail, which is

@@ -305,6 +305,10 @@ export interface UserSettings {
    *  94). ABSENT on the row until that migration has run, and never written
    *  until it's there. Shape: `MemoryState` in lib/memory.ts. */
   memory?: import("./memory").MemoryState;
+  /** Repairs you answered "Leave it where it is" (migration 95, D-207): keys
+   *  `task:<id>@<start_time>`. Absent until the migration runs — the client
+   *  keeps localStorage until then and never writes a missing column. */
+  repairs_left?: string[];
   theme: "system" | "light" | "dark";
   day_start_hour: number;
   day_end_hour: number;

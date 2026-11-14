@@ -6869,9 +6869,11 @@ compose as the stack (`useReady`), so the line is always the first card; deck st
 (`lib/deckReady`: overdue · thin · gap · won't fit; at risk → Draft the projects · OKRs); `isMissed`
 in the kernel, read by Repair and Overdue (Overdue's grace drops from 1h to 15m); the decks' page
 bar over the grid; a Read line on the domain wall, both shells; a success haptic on writing acts.
-**Not built:** per-account "Leave it" (needs a migration), the native iOS haptic, *Set as outcome* /
-*Move to <week>* deck acts, a Domains rail (the lighter line was built instead), the Spine's cue
-words. Tests: `missed-rule`, `crown-line`, `deck-ready`; `rail-offers` and `get-ready-rail` updated.
+**Finished the same day** (Phil: "finishing everything else"): per-account "Leave it"
+(`repairs_left`, migration 95 and `neon.sql` — apply both; the client falls back to the device until
+the column exists); *Set as outcome* (✦ `draftOutcome`) and *Move to <week>* on the project deck; the
+Spine's cue words became dots. **Dropped:** the native iOS haptic (Phil: "dont need ios haptics").
+**Not built, on purpose:** a Domains rail (the lighter line was built instead). Tests: `missed-rule`, `crown-line`, `deck-ready`; `rail-offers` and `get-ready-rail` updated.
 **Not driven on a signed-in account**; `npm run perf` not run (no dev login in the build checkout).*
 
 **D-206 · 2026-11-13 · The week is one track, and Get ready turns the rail into a stack of cards

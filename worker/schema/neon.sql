@@ -218,6 +218,8 @@ ALTER TABLE public.domains ADD COLUMN IF NOT EXISTS icon TEXT;
 ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS work_start_minutes INTEGER NOT NULL DEFAULT 480;
 ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS work_end_minutes INTEGER NOT NULL DEFAULT 990;
 ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS hidden_events JSONB NOT NULL DEFAULT '[]'::jsonb;
+-- "Leave it where it is", per account (supabase/migrations/00000000000095_repairs_left.sql, D-207).
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS repairs_left JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 ALTER TABLE public.event_domain_routing ADD COLUMN IF NOT EXISTS confidence NUMERIC;
 ALTER TABLE public.event_domain_routing ADD COLUMN IF NOT EXISTS routed_at TIMESTAMPTZ;

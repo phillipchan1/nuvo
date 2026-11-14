@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Repair } from "../../hooks/useWeekRepair";
 import { useDial } from "../../lib/planDial";
+import { useSettings } from "../../hooks/useSettings";
 import { instantAt, whereSpan } from "./destinations";
 
 export const instantOf = instantAt;
@@ -20,9 +21,10 @@ const readLeft = (): Set<string> => {
     return new Set();
   }
 };
+const LEFT_MAX = 300;
 const writeLeft = (s: Set<string>) => {
   try {
-    localStorage.setItem(LEFT_KEY, JSON.stringify([...s].slice(-300)));
+    localStorage.setItem(LEFT_KEY, JSON.stringify([...s].slice(-LEFT_MAX)));
   } catch {
     /* forgetting a "leave it" only means it may be asked again */
   }
@@ -41,7 +43,15 @@ export type RepairState = ReturnType<typeof useRepairs>;
 /** Which repairs show, and the acts. One instance per shell, owned by the host. */
 export function useRepairs(repairs: Repair[], acts: RepairActs) {
   const [dial] = useDial();
-  const [left, setLeft] = useState<Set<string>>(readLeft);
+  // "Leave it where it is" is remembered per ACCOUNT (D-207): the settings row's
+  // `repairs_left`, so the phone doesn't ask what the Mac was told. Until
+  // migration 95 runs the column is absent and this device's list is used —
+  // never a write to a missing column (it would park the outbox op).
+  const { settings, update } = useSettings();
+  const synced = Boolean(settings && "repairs_left" in settings);
+  const accountLeft = settings?.repairs_left;
+  const [local, setLocal] = useState<Set<string>>(readLeft);
+  const left = useMemo(() => new Set([...local, ...(accountLeft ?? [])]), [local, accountLeft]);
   const [asked, setAsked] = useState(false);
   const [ix, setIx] = useState<Record<string, number>>({});
   const [applied, setApplied] = useState<{ key: string; label: string; undo: () => void }[]>([]);
@@ -78,8 +88,9 @@ export function useRepairs(repairs: Repair[], acts: RepairActs) {
   const leave = (r: Repair) => {
     const next = new Set(left);
     next.add(r.key);
-    setLeft(next);
+    setLocal(next);
     writeLeft(next);
+    if (synced) update({ repairs_left: [...next].slice(-LEFT_MAX) });
   };
   const cycle = (r: Repair, d: number) =>
     setIx((prev) => ({ ...prev, [r.key]: (((prev[r.key] ?? 0) + d) % r.options.length + r.options.length) % r.options.length }));

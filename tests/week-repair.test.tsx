@@ -79,7 +79,7 @@ describe("the week, repaired in place", () => {
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { useState } from "react";
-import { vi } from "vitest";
+import { beforeEach, vi } from "vitest";
 import RepairRail from "../src/components/plan/RepairRail";
 
 vi.mock("../src/hooks/useWeekCrown", () => ({
@@ -97,6 +97,15 @@ vi.mock("../src/hooks/useWeekCrown", () => ({
 }));
 import RepairLine from "../src/components/plan/RepairLine";
 import { useRepairs, type RepairActs } from "../src/components/plan/repairActs";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+// useRepairs reads the settings row (D-207: "Leave it" per account). The row is
+// seeded, never fetched; `repairs_left` absent = migration 95 hasn't run.
+let qc = new QueryClient();
+const seedSettings = (row: Record<string, unknown> = {}) => {
+  qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  qc.setQueryData(["settings"], { user_id: "u", work_start_minutes: 480, work_end_minutes: 990, ...row });
+};
 import type { Repair } from "../src/hooks/useWeekRepair";
 
 const memStore = () => {
@@ -110,7 +119,15 @@ const memStore = () => {
 };
 
 /** The Planner's wiring, in miniature: one useRepairs, the line at rest, the rail on a press. */
-function Host({
+function Host(props: Parameters<typeof HostInner>[0]) {
+  return (
+    <QueryClientProvider client={qc}>
+      <HostInner {...props} />
+    </QueryClientProvider>
+  );
+}
+
+function HostInner({
   repairs,
   acts,
   onOverlay = () => {},
@@ -150,6 +167,7 @@ function Host({
 const broken = () => run([task("Pricing", iso(11, 14), 90)], [meeting("Call with Dana", iso(11, 14), iso(11, 15))]);
 
 describe("repair — a rail mode, not a floating bar (D-204)", () => {
+  beforeEach(() => seedSettings());
   it("rests as one --warn line in the rail; nothing opens repair by itself", () => {
     vi.stubGlobal("localStorage", memStore());
     const apply = vi.fn(() => () => {});
