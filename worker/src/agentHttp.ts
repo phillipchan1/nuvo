@@ -6,6 +6,7 @@ import { TOOL_DEFINITIONS, buildPointAtTool, type MarqueeTargetSpec } from "../.
 import { readPromptVariant, type NavFocus } from "../../supabase/functions/agent/prompt.ts";
 import { getOwned } from "./store.ts";
 import { buildSnapshot, executeOwnedTool, resolveTz } from "./agentExec.ts";
+import { draftOutcome } from "./agentOneShot.ts";
 import { OPEN_CORS, json } from "./cors.ts";
 import type { Env } from "./env.ts";
 import { requireStore, type AppEnv } from "./session.ts";
@@ -62,17 +63,28 @@ export async function handleAgent(c: Context<AppEnv>): Promise<Response> {
     return json({ result }, 200, OPEN_CORS);
   }
 
+  // Ported one-shots run the Supabase agent's code path: same checks, and a
+  // throw is 500 {error: message}, as that function's outer catch returns.
+  if ((body.draftOutcome as { id?: unknown } | undefined)?.id) {
+    try {
+      return json(await draftOutcome(store, c.env, body.draftOutcome as Parameters<typeof draftOutcome>[2]), 200, OPEN_CORS);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[agent]", msg);
+      return json({ error: msg }, 500, OPEN_CORS);
+    }
+  }
+
   const oneShotId =
     (body.scaffold as { projectId?: unknown } | undefined)?.projectId ??
     (body.refine as { projectId?: unknown } | undefined)?.projectId ??
     (body.assess as { id?: unknown } | undefined)?.id ??
-    (body.draftOutcome as { id?: unknown } | undefined)?.id ??
     (body.verify as { id?: unknown } | undefined)?.id ??
     (body.prepare as { taskId?: unknown } | undefined)?.taskId ??
     (body.enrichDomain as { domainId?: unknown } | undefined)?.domainId ??
     (body.enrichInbox as { taskIds?: unknown } | undefined)?.taskIds;
 
-  if (body.scaffold || body.refine || body.assess || body.draftOutcome || body.verify || body.prepare || body.enrichDomain) {
+  if (body.scaffold || body.refine || body.assess || body.verify || body.prepare || body.enrichDomain) {
     const table = body.prepare ? "tasks" : body.enrichDomain ? "domains" : body.assess && (body.assess as { kind?: string }).kind === "initiative" ? "initiatives" : "projects";
     const id = Array.isArray(oneShotId) ? oneShotId[0] : oneShotId;
     const missing = await ownedOrMissing(store, table, id);
