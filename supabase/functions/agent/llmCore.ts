@@ -71,3 +71,15 @@ export async function completeJSONFrom<T>(get: EnvGet, prompt: string, fetchImpl
     throw new Error("Could not parse the model's JSON response");
   }
 }
+
+/** llm.ts's helper set, bound to one environment — what a ported one-shot calls. */
+export function llmFor(get: EnvGet) {
+  return {
+    llmKey: () => llmKeyFrom(get),
+    llmBaseUrl: () => llmBaseUrlFrom(get),
+    llmModel: (openaiDefault: string, orDefault = openaiDefault) => llmModelFrom(get, openaiDefault, orDefault),
+    llmHeaders: (key: string) => llmHeadersFrom(get, key),
+    completeText: (prompt: string) => completeFrom(get, prompt, false),
+    completeJSON: <T>(prompt: string) => completeJSONFrom<T>(get, prompt),
+  };
+}

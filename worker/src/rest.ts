@@ -1212,6 +1212,37 @@ async function readBody(c: Context<AppEnv>): Promise<unknown> {
   }
 }
 
+/**
+ * The same PostgREST layer without HTTP or a session lookup, for server code
+ * that already holds the session's store and speaks supabase-js (the agent's
+ * one-shots, through agentDb.ts). Same catalog, table policies, owner scope,
+ * owned-FK checks, jsonb handling and error bodies as handleRest. Reads and
+ * updates only. The caller (the /api/agent route) applies the write freeze.
+ */
+export async function restForStore(
+  store: Store,
+  r: { method: "GET" | "PATCH"; table: string; params: URLSearchParams; prefer?: string[]; singular?: boolean; body?: unknown },
+): Promise<Response> {
+  try {
+    const cat = await catalog(store.sql);
+    const req: RestRequest = {
+      method: r.method,
+      table: r.table,
+      params: r.params,
+      prefer: new Set(r.prefer ?? []),
+      singular: r.singular ?? false,
+      body: r.body ?? null,
+    };
+    return r.method === "GET"
+      ? await handleSelect(store.sql, cat, req, store.userId)
+      : await handleUpdate(store.sql, cat, req, store.userId);
+  } catch (err) {
+    const rest = fromPostgres(err);
+    if (rest.status >= 500 && !(err instanceof RestError)) console.error("[rest]", err);
+    return errorResponse(rest);
+  }
+}
+
 export async function handleRest(c: Context<AppEnv>): Promise<Response> {
   try {
     const url = new URL(c.req.url);
