@@ -7,6 +7,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { inboundAddress } from "../../supabase/functions/_shared/inboundEmail.ts";
 import { useSettings } from "../hooks/useSettings";
+import { liveInboundMailDomain } from "../lib/maintenance";
 import { supabase } from "../lib/supabase";
 import { Icon } from "./Icon";
 import { PaneHeader } from "./form";
@@ -28,7 +29,7 @@ export function InboxAddressCard({ rotate = false }: { rotate?: boolean }) {
   const [confirmRotate, setConfirmRotate] = useState(false);
 
   const address = settings?.inbound_token
-    ? inboundAddress(settings.inbound_token, import.meta.env.VITE_INBOUND_MAIL_DOMAIN)
+    ? inboundAddress(settings.inbound_token, liveInboundMailDomain() ?? import.meta.env.VITE_INBOUND_MAIL_DOMAIN)
     : null;
 
   const mint = useMutation({

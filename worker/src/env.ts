@@ -36,6 +36,14 @@ export interface Env {
   /** Direct OpenAI — no AI Gateway. Unset → agent/route-events LLM paths 503; github theme falls back to null. */
   OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;
+  /**
+   * Domain the app shows for inbox addresses (`<token>@…`), served on
+   * GET /api/maintenance as `inbound_mail_domain`. Unset → inbox.nuvo.day.
+   * Set to nuvo.day only once the apex catch-all routes to this Worker.
+   */
+  INBOUND_MAIL_DOMAIN?: string;
+  /** Verified Email Routing destination for unsubscribe@ / hello@ if they reach email(). Unset → logged only. */
+  INBOUND_FORWARD_TO?: string;
   /** Resend inbound-email Svix secret. Unset → inbound-email 500. */
   RESEND_WEBHOOK_SECRET?: string;
   /** Supabase origin for the billing read. Subscriptions stay there. */

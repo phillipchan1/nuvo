@@ -1101,6 +1101,82 @@ const inboundUnknown = await withTimeout(
 ok(inboundUnknown.status === 200, `inbound unknown token: HTTP ${inboundUnknown.status}`);
 ok((await count("inbound_emails", "email_id = $1", ["email-unknown"])) === 0, "inbound unknown token: no row");
 
+// ── Cloudflare Email Routing email() → same ingest ──────────────────────────
+type MailSpy = { rejected: string | null; forwarded: string[] };
+function mailMsg(to: string, raw: string, spy: MailSpy) {
+  return {
+    from: "sender@example.test",
+    to,
+    raw,
+    headers: new Headers(),
+    setReject(reason: string) { spy.rejected = reason; },
+    async forward(rcpt: string) { spy.forwarded.push(rcpt); },
+  };
+}
+function mime(opts: { id?: string; subject: string; text?: string; html?: string; attach?: string; to?: string }): string {
+  const head = [
+    "From: Sender <sender@example.test>",
+    `To: ${opts.to ?? "aaaaaaaaaaaa@inbox.nuvo.day"}`,
+    `Subject: ${opts.subject}`,
+    ...(opts.id ? [`Message-ID: <${opts.id}>`] : []),
+    "MIME-Version: 1.0",
+  ];
+  if (opts.attach) {
+    return [...head, 'Content-Type: multipart/mixed; boundary="b1"', "", "--b1", "Content-Type: text/plain; charset=utf-8", "",
+      opts.text ?? "", "--b1", `Content-Type: application/pdf; name="${opts.attach}"`,
+      `Content-Disposition: attachment; filename="${opts.attach}"`, "Content-Transfer-Encoding: base64", "", "JVBERi0xLjQK", "--b1--", ""].join("\r\n");
+  }
+  if (opts.html !== undefined) return [...head, "Content-Type: text/html; charset=utf-8", "", opts.html, ""].join("\r\n");
+  return [...head, "Content-Type: text/plain; charset=utf-8", "", opts.text ?? "", ""].join("\r\n");
+}
+const mailCtx = { waitUntil(_p: Promise<unknown>) {} };
+const emailHandler = (app as unknown as { email: (m: unknown, e: unknown, c: unknown) => Promise<void> }).email;
+async function deliver(to: string, raw: string, extraEnv: Record<string, string> = {}): Promise<MailSpy> {
+  const spy: MailSpy = { rejected: null, forwarded: [] };
+  await withTimeout(emailHandler(mailMsg(to, raw, spy), { ...env, ...extraEnv }, mailCtx), 8000, `email() to ${to}`);
+  return spy;
+}
+const taskNotes = async (title: string) => (await scalar<string>("SELECT notes FROM tasks WHERE user_id = $1 AND title = $2", [a.id, title])) ?? "";
+
+const mText = await deliver("aaaaaaaaaaaa@inbox.nuvo.day", mime({ id: "m-text@example.test", subject: "cf text only", text: "plain body line" }));
+ok(mText.rejected === null, "email() text: not rejected");
+ok((await count("tasks", "user_id = $1 AND title = $2 AND source = 'email'", [a.id, "cf text only"])) === 1, "email() text: one task on A");
+ok((await taskNotes("cf text only")).includes("plain body line"), "email() text: body in notes");
+ok((await count("inbound_emails", "email_id = $1", ["cf:aaaaaaaaaaaa:m-text@example.test"])) === 1, "email() text: dedupe row cf:<token>:<Message-ID>");
+
+await deliver("aaaaaaaaaaaa@inbox.nuvo.day", mime({ id: "m-html@example.test", subject: "cf html only", html: "<p>html <b>body</b></p>" }));
+ok((await taskNotes("cf html only")).includes("html body"), "email() html-only: html becomes text notes");
+
+await deliver("aaaaaaaaaaaa@inbox.nuvo.day", mime({ id: "m-att@example.test", subject: "cf with file", text: "see file", attach: "w9.pdf" }));
+ok((await taskNotes("cf with file")).includes("Attached: w9.pdf"), "email() attachment: filename in notes");
+
+await deliver("aaaaaaaaaaaa@inbox.nuvo.day", mime({ id: "m-fwd@example.test", subject: "Fwd: Re: cf forwarded thing", text: "fwd" }));
+ok((await count("tasks", "user_id = $1 AND title = $2", [a.id, "cf forwarded thing"])) === 1, "email() Fwd: subject stripped");
+
+const mUnknown = await deliver("ffffffffffff@inbox.nuvo.day", mime({ id: "m-unk@example.test", subject: "cf unknown", text: "x", to: "ffffffffffff@inbox.nuvo.day" }));
+ok(mUnknown.rejected === null && mUnknown.forwarded.length === 0, "email() unknown token: dropped silently");
+ok((await count("tasks", "title = $1", ["cf unknown"])) === 0, "email() unknown token: no task");
+ok((await count("inbound_emails", "email_id LIKE $1", ["cf:ffffffffffff:%"])) === 0, "email() unknown token: no row");
+
+await deliver("aaaaaaaaaaaa@inbox.nuvo.day", mime({ id: "m-text@example.test", subject: "cf text only", text: "plain body line" }));
+ok((await count("tasks", "user_id = $1 AND title = $2", [a.id, "cf text only"])) === 1, "email() duplicate Message-ID: still one task");
+
+await deliver("aaaaaaaaaaaa@nuvo.day", mime({ id: "m-apex@example.test", subject: "cf apex address", text: "apex", to: "aaaaaaaaaaaa@nuvo.day" }));
+ok((await count("tasks", "user_id = $1 AND title = $2", [a.id, "cf apex address"])) === 1, "email() <token>@nuvo.day: lands on A");
+
+const tasksBefore = await count("tasks", "user_id = $1", [a.id]);
+const unsubLog = await deliver("unsubscribe@inbox.nuvo.day", mime({ subject: "unsubscribe", text: "", to: "unsubscribe@inbox.nuvo.day" }));
+ok(unsubLog.forwarded.length === 0 && unsubLog.rejected === null, "email() unsubscribe@ without INBOUND_FORWARD_TO: logged, not forwarded");
+const unsubFwd = await deliver("unsubscribe@inbox.nuvo.day", mime({ subject: "unsubscribe", text: "", to: "unsubscribe@inbox.nuvo.day" }), { INBOUND_FORWARD_TO: "owner@example.test" });
+ok(unsubFwd.forwarded.length === 1 && unsubFwd.forwarded[0] === "owner@example.test", "email() unsubscribe@: forwarded to INBOUND_FORWARD_TO");
+const helloFwd = await deliver("hello@nuvo.day", mime({ subject: "hi", text: "hi", to: "hello@nuvo.day" }), { INBOUND_FORWARD_TO: "owner@example.test" });
+ok(helloFwd.forwarded.length === 1, "email() hello@: forwarded");
+const other = await deliver("random@inbox.nuvo.day", mime({ subject: "spam", text: "spam", to: "random@inbox.nuvo.day" }), { INBOUND_FORWARD_TO: "owner@example.test" });
+ok(other.forwarded.length === 0 && other.rejected === null, "email() other non-token: dropped silently");
+ok((await count("tasks", "user_id = $1", [a.id])) === tasksBefore, "email() plain addresses: no task created");
+const maintCf = (await (await request("/api/maintenance")).json()) as { inbound_mail_domain?: string };
+ok(maintCf.inbound_mail_domain === "inbox.nuvo.day", "maintenance: inbound_mail_domain defaults to inbox.nuvo.day");
+
 const rollB = await withTimeout(request("/api/rollover", { method: "POST", headers: authHeaders(b.token) }), 8000, "B user rollover");
 ok(rollB.status === 200, `B user rollover: HTTP ${rollB.status}`);
 ok((await scalar<string>("SELECT title FROM tasks WHERE id = $1", [A_ROW.tasks])) === "A secret task", "B user rollover: A task unchanged");
