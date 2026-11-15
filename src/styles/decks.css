@@ -944,3 +944,5 @@ html:root .lane-cell:focus-visible { outline: none; background: color-mix(in srg
   color: var(--muted);
 }
 .pw-add { margin-top: 4px; }
+/* Nuvo's outcome draft under an empty outcome field (D-216) */
+.pw-suggest { min-width: 0; display: flex; }

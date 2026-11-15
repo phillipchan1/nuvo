@@ -96,10 +96,13 @@ export function usePlanDraft(home: PlanDraftHome, ask: AskScaffold) {
         // What you touched stays (R12) AND is read as your plan, so the redraft
         // doesn't restate it under another name.
         const keep = before.filter(pinned).map((l) => l.title);
-        const proposals = await ask(homeRef.current.projectId, guidance, redraftTitles(before), keep);
+        // The steer's measurable part goes to the drafter as numbers (so it
+        // cuts the right lines) and is held again here (a small model slips).
+        const limits = steerLimits(guidance, redraftTitles(before).length);
+        const proposals = await ask(homeRef.current.projectId, guidance, redraftTitles(before), keep, limits);
         if (mine !== run.current) return;
         // Hold the measurable part of the steer ourselves (fewer · smaller).
-        const drafted = applySteerLimits(toLines(proposals), steerLimits(guidance, redraftTitles(before).length));
+        const drafted = applySteerLimits(toLines(proposals), limits);
         setLines((ls) => mergeSteer(ls, drafted));
         setPhase("review");
         setMessage(drafted.length ? "Redrafted. What you touched stayed." : "Nothing to add with that.");

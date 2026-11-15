@@ -5,7 +5,7 @@
 // Draft the path's (a faint accent wash, a dashed check, D-193).
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Button, ChipButton, Dest, IconButton, Input, Row } from "../kit";
+import { Button, ChipButton, Dest, IconButton, Input, OfferChip, Row } from "../kit";
 import { Icon } from "../Icon";
 import { fmtMins } from "../../lib/now";
 import { commitLabel, lineMins, readyCounter, sizesSaid, type PlanLine } from "../../lib/planProjects";
@@ -142,7 +142,15 @@ export function TasksPhase({
   existing: { id: string; title: string; mins: number }[];
   draft: PlanDraft;
   /** the outcome line, when the project has none (it can't be Ready without) */
-  outcome?: { value: string; set: (v: string) => void; onDraft: () => void } | null;
+  outcome?: {
+    value: string;
+    set: (v: string) => void;
+    onDraft: () => void;
+    /** Nuvo's proposed outcome line (the agent's `draftOutcome`), shown under
+     *  an empty field — one press puts it in the field, where it stays yours to
+     *  edit; nothing is written until the commit (P3). */
+    suggested?: string | null;
+  } | null;
   onCommit: (from: HTMLElement | null) => void;
   onLater: () => void;
 }) {
@@ -167,6 +175,11 @@ export function TasksPhase({
               if (e.key === "Enter" && outcome.value.trim()) outcome.onDraft();
             }}
           />
+          {!outcome.value.trim() && outcome.suggested && (
+            <div className="pw-suggest">
+              <OfferChip verb="Use" name={`“${outcome.suggested}”`} dest title="Nuvo's draft of the outcome — it lands in the field for you to edit" onPress={() => outcome.set(outcome.suggested!)} />
+            </div>
+          )}
           {draft.phase === "none" && outcome.value.trim() && (
             <div>
               <Button size="xs" kind="ghost" icon={<Icon name="sparkles" size={12} />} onClick={outcome.onDraft}>

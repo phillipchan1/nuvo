@@ -145,6 +145,18 @@ checklist (D-103); "Add 4 steps" would name the wrong object (P11).
 3. **Phase 3 — Plan projects:** ✅ built (§4). The deck walk (tasks, then weeks) on the Draft the path engine.
 4. **Phase 4 — Plan initiatives** ✅ built (§4) on the same walk: shape, then quarter.
 
+### Tuned against a live model (2026-11-14, local Worker + OpenAI)
+
+| Found | Fix |
+|---|---|
+| A steer restated your edited lines (they aren't saved yet, so the drafter couldn't see them) | the walk sends kept lines as `draftTitles` |
+| "Fewer, smaller" was ignored by the small drafter model | `steerLimits` sends `maxCount` / `maxMinutes` to the prompt **and** the walk enforces them; fewer keeps the foundational and finishing steps |
+| First drafts ran 7 tasks, 9–11h, 1–2h each | the scaffold asks for 3–5 sittings, 15–90 min, most 30–45 |
+| Draft the path re-proposed an existing step in new words ("Implement the pricing toggle…" beside "Wire the pricing toggle") | `restates()` in the proposer drops them, for every caller |
+| No outcome → the walk had nothing to offer for it | Nuvo's `draftOutcome` proposes one under the empty field ("Use …"), and the prompt now asks for what's true in the world, not that a document exists |
+
+Initiative drafts (`draftProjects`) were tried and left as they are.
+
 ## 7 · Open
 
 1. Does choosing an alternative teach Memory silently (e.g. "never straight after a meeting")?

@@ -15,11 +15,24 @@
 import { supabase } from "./supabase";
 import type { ProposedStep } from "./pathDraft";
 
-export type AskScaffold = (projectId: string, guidance?: string, redraft?: string[], keep?: string[]) => Promise<ProposedStep[]>;
+export interface ScaffoldLimits {
+  maxCount?: number | null;
+  maxMins?: number | null;
+}
+export type AskScaffold = (projectId: string, guidance?: string, redraft?: string[], keep?: string[], limits?: ScaffoldLimits) => Promise<ProposedStep[]>;
 
-export const askScaffold: AskScaffold = async (projectId, guidance, redraft, keep) => {
+export const askScaffold: AskScaffold = async (projectId, guidance, redraft, keep, limits) => {
   const { data, error } = await supabase.functions.invoke<{ tasks?: ProposedStep[] }>("agent", {
-    body: { scaffold: { projectId, guidance, redraft, draftTitles: keep?.length ? keep : undefined } },
+    body: {
+      scaffold: {
+        projectId,
+        guidance,
+        redraft,
+        draftTitles: keep?.length ? keep : undefined,
+        maxCount: limits?.maxCount ?? undefined,
+        maxMinutes: limits?.maxMins ?? undefined,
+      },
+    },
   });
   if (error) throw error;
   return (data?.tasks ?? []).filter((p) => p && typeof p.title === "string" && p.title.trim());

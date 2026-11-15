@@ -20,6 +20,7 @@ import type { Task } from "../../lib/types";
 import { domainById, resolveDomainId, projectById, type Project, type VerticalData } from "../../lib/vertical";
 import type { OnDeckLane } from "../../lib/onDeck";
 import { askScaffold, type AskScaffold } from "../../lib/scaffoldAsk";
+import { fetchOutcomeDraft } from "../../lib/outcomeDraft";
 import { fmtMins } from "../../lib/now";
 import {
   domainPace,
@@ -54,6 +55,8 @@ export interface PlanProjectsProps {
   cap: number;
   width?: string | number;
   ask?: AskScaffold;
+  /** Nuvo's outcome draft for a project with none (a stand-in in the harness) */
+  draftOutcome?: (projectId: string) => Promise<string>;
   addTasks: AddPlannedTasks;
   /** the deck's own move: start week index + width in weeks */
   place: (project: Project, start: number, weeks: number) => void;
@@ -176,6 +179,7 @@ function TasksStep({
   data,
   project,
   ask = askScaffold,
+  draftOutcome = (id: string) => fetchOutcomeDraft("project", id),
   addTasks,
   onCommitted,
   onLater,
@@ -198,6 +202,25 @@ function TasksStep({
   const noHistory = finished.length === 0;
   const [outcome, setOutcome] = useState("");
   const hasOutcome = project.outcome.trim() !== "";
+  // A project with no outcome can't be Ready: Nuvo proposes one (the deck's
+  // own outcome drafter). A failure is quiet — the field is still yours.
+  const [suggested, setSuggested] = useState<string | null>(null);
+  // The drafter by ref: a default argument is a new function every render,
+  // and the request must run once per project, not once per render.
+  const drafter = useRef(draftOutcome);
+  drafter.current = draftOutcome;
+  useEffect(() => {
+    if (hasOutcome) return;
+    let live = true;
+    setSuggested(null);
+    drafter.current(project.id).then(
+      (t) => live && setSuggested(t),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [project.id, hasOutcome]);
   // No outcome and no history: no draft, just the add line (§4).
   const draft = usePlanDraft({ projectId: project.id, canDraft: hasOutcome || !noHistory, noHistory, finished }, ask);
   return (
@@ -210,7 +233,7 @@ function TasksStep({
         noHistory={noHistory}
         existing={existing}
         draft={draft}
-        outcome={hasOutcome ? null : { value: outcome, set: setOutcome, onDraft: () => void draft.draft(`The outcome: ${outcome.trim()}`) }}
+        outcome={hasOutcome ? null : { value: outcome, set: setOutcome, suggested, onDraft: () => void draft.draft(`The outcome: ${outcome.trim()}`) }}
         onCommit={() => {
           const lines = draft.lines;
           const typed = !hasOutcome && outcome.trim() ? outcome.trim() : null;

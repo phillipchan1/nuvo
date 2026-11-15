@@ -30,6 +30,8 @@ export async function runOneShot(deps: AgentDeps, userId: string, body: any): Pr
       draftTitles: Array.isArray(body.scaffold.draftTitles) ? body.scaffold.draftTitles.map(String) : undefined,
       description: body.scaffold.description ? String(body.scaffold.description) : undefined,
       redraft: Array.isArray(body.scaffold.redraft) ? body.scaffold.redraft.map(String) : undefined,
+      maxCount: Number(body.scaffold.maxCount) > 0 ? Math.min(10, Math.floor(Number(body.scaffold.maxCount))) : undefined,
+      maxMinutes: Number(body.scaffold.maxMinutes) > 0 ? Math.min(240, Math.floor(Number(body.scaffold.maxMinutes))) : undefined,
     });
   }
   // Refine an existing backlog: typo/wording fixes + missing steps + a

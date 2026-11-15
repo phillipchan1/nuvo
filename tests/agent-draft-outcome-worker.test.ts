@@ -132,6 +132,9 @@ Notes: Boxes everywhere
 
 
 Write ONE crisp outcome line — what "done" looks like, concrete and verifiable, in the person's own voice. No preamble, no surrounding quotes, under 18 words.
+Say what is TRUE in the world when it's done (who can now do what, or what changed, by when if it matters) — not that a document or deliverable exists, and never just the name restated.
+  Weak: "I wrote a full plan for the canoe trip."
+  Strong: "Four of us paddle the river in June with every permit and campsite booked."
 
 Respond with JSON only: {"outcome": string}`,
     );
