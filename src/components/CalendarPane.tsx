@@ -65,6 +65,7 @@ import {
   type GridBlock,
 } from "./calendar/blockKeys";
 import { createGestureCancel, type GestureCancel } from "./calendar/gestureCancel";
+import { DRAG_MIRROR_ATTR, selectionLost, sweepStrayGhosts } from "./calendar/strayGhosts";
 // One rule for "how big is this block", shared with the chat's `create_slot`.
 import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
 import { skipWhenAsleep } from "./KeepAlive";
@@ -2161,6 +2162,47 @@ function CalendarPane({
     syncCalendarEvents(api, gridEvents as CalendarBlockInput[]);
   }, [gridEvents]);
 
+  // What a gesture leaves behind (see strayGhosts.ts): once the grid has synced
+  // and nothing is in hand, put away any "in hand" leftover and drop a selection
+  // whose block was just deleted. Reload used to be the only cure.
+  const pressedRef = useRef(false);
+  useEffect(() => {
+    const down = () => {
+      pressedRef.current = true;
+    };
+    const up = () => {
+      pressedRef.current = false;
+    };
+    document.addEventListener("pointerdown", down, true);
+    document.addEventListener("pointerup", up, true);
+    document.addEventListener("pointercancel", up, true);
+    return () => {
+      document.removeEventListener("pointerdown", down, true);
+      document.removeEventListener("pointerup", up, true);
+      document.removeEventListener("pointercancel", up, true);
+    };
+  }, []);
+  const gridIdsRef = useRef<ReadonlySet<string>>(new Set());
+  useLayoutEffect(() => {
+    const next = new Set((gridEvents as { id?: string }[]).map((e) => String(e.id)));
+    const prev = gridIdsRef.current;
+    gridIdsRef.current = next;
+    if (selectionLost(prev, next, gridSelRef.current.cursor)) clearGridSelection();
+    const sweep = () => {
+      const root = wrapRef.current;
+      if (!root || pressedRef.current || gridSyncPausedRef.current || gestureRef.current?.live) return;
+      if (document.body.classList.contains("cal-dragging")) return;
+      sweepStrayGhosts(root);
+    };
+    const raf = requestAnimationFrame(sweep);
+    const late = window.setTimeout(sweep, 400);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(late);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gridEvents]);
+
   const findTask = (id: string) => tasksRef.current.find((t) => t.id === id);
   const findEvent = (id: string) => eventsRef.current.find((e) => e.id === id);
   const findSlot = (id: string) => slotsRef.current.find((s) => s.id === id);
@@ -2222,6 +2264,9 @@ function CalendarPane({
     // The plan's draft and its ghosts belong to the plan, not the selection,
     // the context menus or the drag-to-rail watch.
     if (kind === "plan" || kind === "planghost") return;
+    // A mirror of a REAL block is "in hand"; FullCalendar's select-mirror (the
+    // composer's ghost, no kind) is not — only the first is ever swept away.
+    if (arg.isMirror && kind) arg.el.setAttribute(DRAG_MIRROR_ATTR, "");
     // LAND (D-187): a block you just placed may be redrawn as a fresh element
     // once the optimistic write lands — whichever element draws it first takes
     // the mark and settles. Only a drop marks; a refetch never lands anything.

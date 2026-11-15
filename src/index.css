@@ -2370,6 +2370,11 @@ html:root .nuvo-cal-host .fc .fc-timegrid-event-harness {
   pointer-events: none;
 }
 
+/* A mirror still on the grid after every gesture ended (strayGhosts.ts). */
+.fc-event[data-stray] {
+  display: none !important;
+}
+
 /* ── Where it lands ────────────────────────────────────────────────────────
    Only the cell under the pointer lights up (`.anytime-drop-target`, from the
    drag hit-test) — never a wash on every cell at drag start. */
