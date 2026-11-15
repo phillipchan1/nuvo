@@ -10,7 +10,7 @@
 import WeekSetMoment from "./WeekSetMoment";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useWeekDraft, placementKey } from "../../hooks/useWeekDraft";
+import { useWeekDraft, placementKey, type OnWeekItem } from "../../hooks/useWeekDraft";
 import type { Placement } from "../../lib/compose";
 import { parseDateISO, planSessionWeekStartISO, planningWeekStartISO, toDateISO } from "../../lib/dates";
 import { useSettings } from "../../hooks/useSettings";
@@ -193,7 +193,7 @@ function PlanRailWeek({
 }) {
   // Deterministic runs by kind of action — the AI theming is not run on arrival
   // here: "the groupings weren't good" is where trust broke (ⓟ, 2026-11-06).
-  const d = useWeekDraft({ autoTheme: false, weekStartISO, rules: memory.rules });
+  const d = useWeekDraft({ autoTheme: false, weekStartISO, rules: memory.rules, saveAsYouGo: true });
   const record = useCallback(
     (sig: PlanSignal) => setMemory((m) => ({ ...m, signals: [...m.signals, { ...sig, at: new Date().toISOString() }] })),
     [setMemory],
@@ -202,6 +202,7 @@ function PlanRailWeek({
   const [paint, setPaint] = useState<{ dayISO: string; startMin: number; endMin: number } | null>(null);
   const [dayMenu, setDayMenu] = useState<string | null>(null);
   const [showKept, setShowKept] = useState(false);
+  const [showOnWeek, setShowOnWeek] = useState(true);
   const { openRecord, nav } = useAppNavigation();
   const recordOpen = nav.overlay === "project-record" || nav.overlay === "initiative-record";
   const { data, placements, slotById } = d;
@@ -220,7 +221,6 @@ function PlanRailWeek({
   const [changes, setChanges] = useState(0);
   const [done, setDone] = useState<{ things: number; blocks: number; secs: number; changes: number } | null>(null);
   /** Asked to leave with work in the draft — the footer asks before throwing it away. */
-  const [leaving, setLeaving] = useState(false);
   const t0 = useRef(Date.now());
 
   // land on the week being planned
@@ -246,6 +246,14 @@ function PlanRailWeek({
       });
     },
     [slotById, d.taskById],
+  );
+  /** a saved block's hue: the sitting's own, else its domain's */
+  const onWeekColor = useCallback(
+    (it: OnWeekItem): string | null => {
+      if (it.kind === "slot") return it.slot.color ?? domainById(data, it.slot.domain_id ?? null)?.color ?? null;
+      return domainById(data, resolveDomainId(data, it.task))?.color ?? null;
+    },
+    [data],
   );
   const colorOf = useCallback(
     (p: Placement): string | null => {
@@ -504,8 +512,8 @@ function PlanRailWeek({
         noLabel: "Leave in inbox",
         yes: () => {
           d.remember();
-          d.setKept((prev) => new Set([...prev, ...inboxIds]));
-          return `${inboxIds.length} captures into runs`;
+          void d.addToWeek(inboxIds);
+          return `${inboxIds.length} captures added to the week`;
         },
       });
     }
@@ -583,7 +591,7 @@ function PlanRailWeek({
     if (d.applying || done) return;
     try {
       await d.commit();
-      setDone({ things, blocks: placements.length, secs: Math.round((Date.now() - t0.current) / 1000), changes });
+      setDone({ things: things + d.placedLog.reduce((n, r) => n + r.taskIds.length, 0), blocks: placements.length + d.placedLog.length, secs: Math.round((Date.now() - t0.current) / 1000), changes });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't commit the week");
     }
@@ -876,17 +884,15 @@ function PlanRailWeek({
   };
 
   // ── keys ───────────────────────────────────────────────────────────────
-  // What leaving would throw away: your own edits, plus every block you said
-  // "looks good" to. Nothing is written until Commit, so with none of either
-  // the plan simply closes.
-  const invested = changes + reviewed;
+  // Leaving never asks (D-217): every block you decided is already on the
+  // calendar, so the only thing left behind is what Nuvo proposed and you
+  // didn't answer — and it proposes that again next time.
+  const placedCount = d.placedLog.length;
   /** The one way out — Esc and the ✕ both come through here. */
   const requestClose = useCallback(() => {
-    if (done || invested === 0 || leaving) onClose();
-    else setLeaving(true);
-  }, [done, invested, leaving, onClose]);
-  // any new work while the question is up answers it: you're still planning
-  useEffect(() => setLeaving(false), [invested]);
+    if (!done && placedCount > 0) toast(`${placedCount} block${placedCount === 1 ? " is" : "s are"} on your week — pick up where you left off any time`);
+    onClose();
+  }, [done, placedCount, onClose]);
 
   const keyState = useRef({ sel, focus, stack, order, altIx, placing, recordOpen });
   keyState.current = { sel, focus, stack, order, altIx, placing, recordOpen };
@@ -1142,7 +1148,7 @@ function PlanRailWeek({
             {/* the walk — one group at a time */}
             {order.length > 0 && (
               <div className="grid gap-2">
-                <SectionHeader title={selP ? `Block ${order.indexOf(sel!) + 1} of ${order.length}` : "Nuvo's draft"} count={`${reviewed}/${order.length} accepted`} className="!px-0" />
+                <SectionHeader title={selP ? `Block ${order.indexOf(sel!) + 1} of ${order.length}` : "Nuvo's draft"} count={`${order.length} to go`} className="!px-0" />
                 {/* one pip per block, in time order — filled once accepted; tap one to look at it */}
                 <div className="flex flex-wrap gap-[3px]" role="group" aria-label="Blocks in the draft">
                   {order.map((k) => {
@@ -1281,6 +1287,15 @@ function PlanRailWeek({
                   </>
                 )}
               </Card>
+            ) : placedCount > 0 ? (
+              <Card>
+                <div className="flex items-center gap-2 text-body">
+                  <span className="f-tick" data-done="">
+                    <Icon name="check" size={10} strokeWidth={2.6} />
+                  </span>
+                  Every block is placed.
+                </div>
+              </Card>
             ) : (
               <EmptyState>Nothing to place yet</EmptyState>
             )}
@@ -1360,6 +1375,38 @@ function PlanRailWeek({
               </div>
             </section>
 
+            {/* what's already on the week — saved as you decided it, and yours
+                to take back (D-217) */}
+            {d.onWeek.length > 0 && (
+              <section className="f-section">
+                <SectionHeader title="On the week" count={d.onWeek.length} collapsed={!showOnWeek} onToggle={() => setShowOnWeek((x) => !x)} className="!px-0" />
+                {showOnWeek && (
+                  <div className="f-rows">
+                    {d.onWeek.map((it) => (
+                      <Row
+                        key={`${it.kind}:${it.id}`}
+                        leading={<Dot color={onWeekColor(it) ?? "var(--accent)"} />}
+                        title={it.title}
+                        meta={where(it as { dayISO: string; startMin: number; durationMin: number })}
+                        trailing={
+                          <Button
+                            size="xs"
+                            kind="ghost"
+                            onClick={() => {
+                              d.takeBack(it.kind === "slot" ? { slot: it.slot } : { task: it.task });
+                              toast(`${it.title} has no time again`);
+                            }}
+                          >
+                            Take it back
+                          </Button>
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
             {keptRules.length > 0 && (
               <section className="f-section">
                 <SectionHeader title="Nuvo keeps" count={keptRules.length} collapsed={!showKept} onToggle={() => setShowKept((x) => !x)} className="!px-0" />
@@ -1383,29 +1430,15 @@ function PlanRailWeek({
 
           </div>
 
-          {leaving ? (
-            <div className="f-foot">
-              {/* the count rides the act it's about — a question beside a
-                  "Discard" button said "discard" twice and had no room */}
-              <div className="f-sum" aria-hidden />
-              <Button kind="ghost" size="md" onClick={() => setLeaving(false)}>
-                Keep planning
-              </Button>
-              <Button kind="danger" size="md" shortcut="Esc" onClick={onClose}>
-                Discard {invested} change{invested === 1 ? "" : "s"}
-              </Button>
+          <div className="f-foot">
+            <div className="f-sum">
+              {/* what's saved is said once, here; the button is only the rest */}
+              <b>{d.onWeek.length}</b> on the week
             </div>
-          ) : (
-            <div className="f-foot">
-              <div className="f-sum">
-                {/* the button already says how many things — this says the rest, once */}
-                <b>{placements.length}</b> block{placements.length === 1 ? "" : "s"}
-              </div>
-              <Button kind="primary" size="md" shortcut={["⌘", "↵"]} onClick={() => void commit()} disabled={d.applying || placements.length === 0}>
-                {d.applying ? "Committing…" : `Commit ${things} things`}
-              </Button>
-            </div>
-          )}
+            <Button kind="primary" size="md" shortcut={["⌘", "↵"]} onClick={() => void commit()} disabled={d.applying}>
+              {d.applying ? "Placing…" : order.length ? `Accept the rest (${order.length})` : "Finish the week"}
+            </Button>
+          </div>
         </>
       )}
     </div>

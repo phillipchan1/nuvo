@@ -175,7 +175,7 @@ export interface VerticalStore {
   applySlots: (
     slots: { title: string; doDateISO: string; startISO: string; durationMins: number; domainId: string | null; color: string | null; projectId?: string | null; existingSlotId?: string | null; taskIds: string[] }[],
     opts?: { sprintId?: string | null },
-  ) => Promise<void>;
+  ) => Promise<string[]>;
   /** Standing-slot routing (docs/standing-slots.md): move already-committed tasks
    *  INTO pre-existing recurring slots as children — slot_id set, do_date = the
    *  slot's day, start_time cleared, status planned. The plan's "layer 0". */
@@ -199,6 +199,10 @@ export interface VerticalStore {
       splitChild?: { title: string };
     }[];
     goal: string;
+    /** false: write the work only — a block saved the moment you accept it
+     *  (D-217) must not stamp the week reviewed or overwrite its goal. The
+     *  plan's finish stamps it. Default true. */
+    stamp?: boolean;
   }) => Promise<void>;
   /** The Blueprint's accept: create a whole initiative subtree (KRs,
    *  projects, ordered backlog tasks) and return the initiative id. */
@@ -1403,11 +1407,13 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       },
 
       applySlots: async (specs, opts) => {
-        if (!specs.length) return;
+        const ids: string[] = [];
+        if (!specs.length) return ids;
         for (const s of specs) {
           // The slot id is minted here when the sitting is new, so the tasks
           // that ride it can reference it without waiting for a round-trip.
           const slotId = s.existingSlotId ?? crypto.randomUUID();
+          ids.push(slotId);
 
           if (s.existingSlotId) {
             // Top up: the block keeps the day and time it already holds — the
@@ -1470,6 +1476,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         }
         invalidateWhenSafe(qc, "slots", ["slots"]);
         settleWrite(qc, "tasks", ["tasks"]);
+        return ids;
       },
 
       assignToStanding: async (specs, opts) => {
@@ -1487,7 +1494,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         invalidateWhenSafe(qc, "slots", ["slots"]);
       },
 
-      planWeek: async ({ commitTaskIds, placements, goal }) => {
+      planWeek: async ({ commitTaskIds, placements, goal, stamp = true }) => {
         const sprint = await ensureSprint();
 
         // 1 · every kept candidate becomes a week commitment (the funnel),
@@ -1557,9 +1564,11 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
 
         // 3 · stamp the week: goal + reviewed (focus/contexts persist live as
         //     they're toggled, so they're already on the row)
-        const rowPatch = { goal, reviewed_at: new Date().toISOString() };
-        qc.setQueryData<Sprint | null>(["sprint", weekStart], (old) => (old ? { ...old, ...rowPatch } : old));
-        await queueWrite(makeOp("sprints", "update", weekStart, rowPatch));
+        if (stamp) {
+          const rowPatch = { goal, reviewed_at: new Date().toISOString() };
+          qc.setQueryData<Sprint | null>(["sprint", weekStart], (old) => (old ? { ...old, ...rowPatch } : old));
+          await queueWrite(makeOp("sprints", "update", weekStart, rowPatch));
+        }
 
         settleWrite(qc, "tasks", ["tasks"]);
         invalidateWhenSafe(qc, "sprints", ["sprint"]);
