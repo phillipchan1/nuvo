@@ -12,6 +12,7 @@ const acts = (): ReadyActs => ({
   repairAll: vi.fn(),
   hold: vi.fn(),
   holdLoose: vi.fn(),
+  placeAt: vi.fn(),
   planWeek: vi.fn(),
   file: vi.fn(),
   draftPath: vi.fn(),

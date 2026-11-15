@@ -31,6 +31,7 @@ export function useHarnessReadyCards(say: (s: string) => void) {
       repairAll: () => say("→ Repair mode"),
       hold: (id) => (say(`held ${id}`), gone(`hold:${id}`)),
       holdLoose: (id) => (say(`held ${id} (into the week)`), gone(`loose:${id}`)),
+      placeAt: (id, at, _from, slate) => (say(`held ${id} at ${at.dayISO} ${at.startMin}m${slate ? " (into the week)" : ""}`), gone(`${slate ? "loose" : "hold"}:${id}`)),
       planWeek: () => say("→ Plan the week"),
       file: (id) => (say(`filed ${id}`), gone(`file:${id}`)),
       draftPath: (id) => (say(`draft the path · ${id}`), gone(`path:${id}`)),

@@ -31,6 +31,9 @@ import type { Placement } from "../../lib/compose";
 import type { Task } from "../../lib/types";
 import type { useTaskMutations } from "../../hooks/useTasks";
 import { notNow, useSnoozed } from "./offerSnooze";
+import { OtherTimes } from "./OtherTimes";
+import { whenLabel } from "../../lib/readyCards";
+import { instantAt } from "../plan/destinations";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 
@@ -136,7 +139,16 @@ export function HoldOffer({ task, placement, mutations, phone = false }: { task:
   const today = todayISO();
   const when = holdWhen(placement, today);
   const later = placement.dayISO !== today;
+  // The chip's own act, at any place — the first answer, or one chosen in
+  // Other times (D-216, R13).
+  const holdAt = (at: { dayISO: string; startMin: number; durationMin: number }, el: HTMLElement | null) => {
+    if (phone) haptic("light");
+    const label = whenLabel(at, today);
+    if (task.project_id && el) void reachToCrown(el, task.project_id);
+    mutations.block(task, instantAt(at.dayISO, at.startMin), at.durationMin, { undo: "toast", label: `Held ${label} — ${task.title}` });
+  };
   return (
+    <span className="offer-pair">
     <OfferChip
       verb="Schedule"
       name={when}
@@ -158,6 +170,15 @@ export function HoldOffer({ task, placement, mutations, phone = false }: { task:
         notNow(offerKey("hold", task.id));
       }}
     />
+    <OtherTimes
+      task={task}
+      first={placement}
+      onHold={holdAt}
+      phone={phone}
+      compact
+      noes={[{ label: "Not now · two weeks", run: () => notNow(offerKey("hold", task.id)) }]}
+    />
+    </span>
   );
 }
 

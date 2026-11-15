@@ -3623,6 +3623,11 @@ function CalendarPane({
       setDraft({ start, end: inclusiveEnd, kind, point: { x: je?.clientX ?? 0, y: je?.clientY ?? 0 }, allDay: true });
     } else {
       clearGridSelection();
+      if (planRef.current?.onPickTime) {
+        calRef.current?.getApi().unselect();
+        planRef.current.onPickTime(arg.start);
+        return;
+      }
       // While planning, a drag across empty time asks to keep it clear — the
       // plan's act, not a new block (docs/plan-the-week-v2.md §4).
       if (planRef.current?.onPaint) {
@@ -3652,6 +3657,12 @@ function CalendarPane({
     // (a separate system reacting to the same physical click) — that click
     // was a dismiss, not a request to also start a new draft.
     if (consumeCalendarClickHandled()) return;
+    // Other times is asking for a time (D-216): this click is the answer, not
+    // a new block.
+    if (planRef.current?.onPickTime && !isMonth && !arg.allDay) {
+      planRef.current.onPickTime(arg.date);
+      return;
+    }
     clearGridSelection(); // clicking empty space moves on from the selection
     if (draft) return;
     if (isMonth || arg.allDay) {

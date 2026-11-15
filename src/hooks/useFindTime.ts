@@ -25,9 +25,10 @@ import { useAllTasks, useScheduledTasks } from "./useTasks";
 import { useSlots } from "./useSlots";
 import { parseDateISO, toDateISO, todayISO } from "../lib/dates";
 import { isPlacedInWeek } from "../lib/priorities";
-import { asBusyBlock, composeWeek, slotsAsBusy, type Placement } from "../lib/compose";
+import { alternativesFor, asBusyBlock, composeWeek, slotsAsBusy, type ComposeInput, type Placement } from "../lib/compose";
 import { isEventHidden } from "../lib/now";
 import type { Task } from "../lib/types";
+import type { BusyItem } from "../lib/offerChoices";
 
 const WORK_START_DEFAULT = 480;
 const WORK_END_DEFAULT = 990;
@@ -199,16 +200,13 @@ export function useFindTime(weekStartISO: string) {
  *  shows three offers at most, so asking about more is work nobody sees. */
 export const HOLDS_CAP = 6;
 
-/** Find time for today's tasks with no time (D-205 · "Hold <time>"): where
- *  each would go today — or, when today has no room for it, the next open time
- *  later THIS week (D-206: "Hold Mon 9–9:30am"). The same composer, the same
- *  busy read and working hours as `useFindTime`: today first, then the rest of
- *  the week's working days with today's holds already counted as busy, so two
- *  offers never claim the same half hour. Proposes, never writes (P3). A task
- *  with no fit this week gets no entry, and so no chip.
- *
- *  Mount it only where the offers can show: it reads the week's calendar. */
-export function useTodayHolds(tasks: readonly Task[], now: Date): Map<string, Placement> {
+/** The week's composer, as an offer asks it (D-205, D-216): the same busy read
+ *  (timed tasks, slots, visible events) and working hours as Find time, bound
+ *  to `now`. `compose(tasks, days, held)` places `tasks` on those weekdays with
+ *  `held` counted as busy; `laterDays` are the working days after today up to
+ *  Sunday; `busy` is the same busy time as names and minutes, for the words
+ *  ("Right before Kid date night"). Proposes, never writes (P3). */
+export function useWeekComposer(now: Date) {
   const { settings } = useSettings();
   const [workingDays] = useWorkingDays();
   const today = todayISO(now);
@@ -224,27 +222,65 @@ export function useTodayHolds(tasks: readonly Task[], now: Date): Map<string, Pl
   const nowKey = Math.floor(now.getTime() / 60_000);
 
   return useMemo(() => {
-    const pool = tasks.slice(0, HOLDS_CAP);
-    if (!pool.length) return new Map<string, Placement>();
     const hiddenCals = new Set(settings?.hidden_calendar_ids ?? []);
     const hiddenKeys = new Set((settings?.hidden_events ?? []).map((h) => h.key));
     const visible = events.filter((e) => !hiddenCals.has(e.calendar_id) && !isEventHidden(e, hiddenKeys));
     const at = new Date(nowKey * 60_000);
-    const busy = [...timed, ...slotsAsBusy(slots)];
-    const compose = (pending: Task[], days: number[], held: Task[]) =>
-      composeWeek({
-        weekStartISO: range.weekStartISO,
-        todayISO: today,
-        now: at,
-        tasks: pending,
-        events: visible,
-        blocks: [...busy, ...held],
-        workStartMin: settings?.work_start_minutes ?? WORK_START_DEFAULT,
-        workEndMin: settings?.work_end_minutes ?? WORK_END_DEFAULT,
-        focusInitiativeIds: [],
-        workingDays: days,
-        weeklyBudgetMins: null,
-      });
+    const busyBlocks = [...timed, ...slotsAsBusy(slots)];
+    const inputFor = (pending: Task[], days: number[], held: Task[]): ComposeInput => ({
+      weekStartISO: range.weekStartISO,
+      todayISO: today,
+      now: at,
+      tasks: pending,
+      events: visible,
+      blocks: [...busyBlocks, ...held],
+      workStartMin: settings?.work_start_minutes ?? WORK_START_DEFAULT,
+      workEndMin: settings?.work_end_minutes ?? WORK_END_DEFAULT,
+      focusInitiativeIds: [],
+      workingDays: days,
+      weeklyBudgetMins: null,
+    });
+    const compose = (pending: Task[], days: number[], held: Task[]) => composeWeek(inputFor(pending, days, held));
+    /** The composer asked again for the same task, its first answer held off
+     *  (compose.ts `alternativesFor`) — the raw candidates Other times names. */
+    const alternatives = (task: Task, current: { dayISO: string; startMin: number; durationMin: number }, days: number[]) =>
+      alternativesFor(inputFor([], days, []), task, current, 4);
+    const later: number[] = [];
+    const sunday = addDays(parseDateISO(range.weekStartISO), 6);
+    for (let d = addDays(parseDateISO(today), 1); d <= sunday; d = addDays(d, 1)) if (workingDays.includes(d.getDay())) later.push(d.getDay());
+    const toItem = (title: string, s: Date, e: Date): BusyItem => ({
+      title,
+      dayISO: toDateISO(s),
+      startMin: s.getHours() * 60 + s.getMinutes(),
+      endMin: toDateISO(e) === toDateISO(s) ? e.getHours() * 60 + e.getMinutes() : 24 * 60,
+    });
+    const busy: BusyItem[] = [
+      ...visible.filter((e) => !e.all_day).map((e) => toItem(e.title, new Date(e.start_at), new Date(e.end_at))),
+      ...busyBlocks
+        .filter((t) => t.start_time)
+        .map((t) => {
+          const s = new Date(t.start_time!);
+          return toItem(t.title, s, new Date(s.getTime() + (t.duration_minutes ?? 30) * 60_000));
+        }),
+    ];
+    return { compose, alternatives, today, weekStartISO: range.weekStartISO, laterDays: later, busy, now: at };
+  }, [timed, slots, events, settings, range.weekStartISO, today, nowKey, workingDays]);
+}
+
+/** Find time for today's tasks with no time (D-205 · "Hold <time>"): where
+ *  each would go today — or, when today has no room for it, the next open time
+ *  later THIS week (D-206: "Hold Mon 9–9:30am"). The same composer, the same
+ *  busy read and working hours as `useFindTime`: today first, then the rest of
+ *  the week's working days with today's holds already counted as busy, so two
+ *  offers never claim the same half hour. Proposes, never writes (P3). A task
+ *  with no fit this week gets no entry, and so no chip.
+ *
+ *  Mount it only where the offers can show: it reads the week's calendar. */
+export function useTodayHolds(tasks: readonly Task[], now: Date): Map<string, Placement> {
+  const { compose, today, laterDays } = useWeekComposer(now);
+  return useMemo(() => {
+    const pool = tasks.slice(0, HOLDS_CAP);
+    if (!pool.length) return new Map<string, Placement>();
     // Today first: the task is already dated today, so today is where a hold
     // belongs when it fits.
     const out = new Map<string, Placement>();
@@ -254,17 +290,11 @@ export function useTodayHolds(tasks: readonly Task[], now: Date): Map<string, Pl
     // days after today up to Sunday that you work. Today's holds ride as busy,
     // so nothing is claimed twice. Pressing it moves the task's day too.
     const rest = pool.filter((t) => !out.has(t.id)) as Task[];
-    if (rest.length) {
-      const later: number[] = [];
-      const sunday = addDays(parseDateISO(range.weekStartISO), 6);
-      for (let d = addDays(parseDateISO(today), 1); d <= sunday; d = addDays(d, 1))
-        if (workingDays.includes(d.getDay())) later.push(d.getDay());
-      if (later.length) {
-        const held = [...out.values()].map((p) => asBusyBlock(`hold-${p.task.id}`, p.task.title, p.dayISO, p.startMin, p.durationMin));
-        for (const p of compose(rest, later, held).placements)
-          if (p.dayISO > today && !p.parts && !out.has(p.task.id)) out.set(p.task.id, p);
-      }
+    if (rest.length && laterDays.length) {
+      const held = [...out.values()].map((p) => asBusyBlock(`hold-${p.task.id}`, p.task.title, p.dayISO, p.startMin, p.durationMin));
+      for (const p of compose(rest, laterDays, held).placements)
+        if (p.dayISO > today && !p.parts && !out.has(p.task.id)) out.set(p.task.id, p);
     }
     return out;
-  }, [tasks, timed, slots, events, settings, range.weekStartISO, today, nowKey, workingDays]);
+  }, [tasks, compose, today, laterDays]);
 }

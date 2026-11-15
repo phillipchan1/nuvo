@@ -7,7 +7,7 @@ import { composeReadyCards, scheduleLine, type ReadyActs, type ReadyInput } from
 import { lineFrom } from "../src/lib/crownLine";
 
 const noop = () => {};
-const acts: ReadyActs = { move: noop, leave: noop, repairAll: noop, hold: noop, holdLoose: noop, planWeek: noop, file: noop, draftPath: noop, keep: noop, notNow: noop };
+const acts: ReadyActs = { move: noop, leave: noop, repairAll: noop, hold: noop, holdLoose: noop, placeAt: noop, planWeek: noop, file: noop, draftPath: noop, keep: noop, notNow: noop };
 const today = "2026-11-10";
 const at = (dayISO: string, startMin: number, durationMin = 30) => ({ dayISO, startMin, durationMin });
 const line = (input: Partial<ReadyInput>, afterHours = false) => {

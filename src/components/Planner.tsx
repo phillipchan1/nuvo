@@ -38,7 +38,7 @@ import { useWeekRepair, type Repair } from "../hooks/useWeekRepair";
 import { useRepairs } from "./plan/repairActs";
 import { repairLineText } from "./plan/RepairLine";
 import { useReady } from "./plan/useReadyCards";
-import { useOfferPreview } from "../lib/offerPreview";
+import { useOfferChoice, useOfferPreview } from "../lib/offerPreview";
 import { readDay } from "../lib/marks";
 import type { CrownLineData } from "../lib/crownLine";
 import { useWorkingDays } from "../hooks/useWorkingDays";
@@ -561,9 +561,35 @@ export default function Planner({
   // and dims the rest of the week (R3) — through the plan overlay the pane
   // already draws, so it is the same picture planning shows.
   const offerPreview = useOfferPreview();
+  const offerChoice = useOfferChoice();
   const previewOverlay = useMemo<PlanOverlay | null>(
     () =>
-      offerPreview
+      // Other times open (R13): every option at once, numbered — the one
+      // pointed at solid, the rest ghosts you can click; empty time painted is
+      // your own pick.
+      offerChoice
+        ? {
+            blocks: offerChoice.options
+              .filter((o) => o.key === offerChoice.strong)
+              .map((o) => ({
+                key: `offer-choice:${o.key}`,
+                title: `${o.num} · ${o.label}`,
+                start: o.start.toISOString(),
+                end: o.end.toISOString(),
+                color: null,
+                held: false,
+                selected: true,
+              })),
+            ghosts: offerChoice.options
+              .filter((o) => o.key !== offerChoice.strong)
+              .map((o) => ({ id: o.key, start: o.start.toISOString(), end: o.end.toISOString(), label: String(o.num), kind: "alt" as const })),
+            onSelect: () => {},
+            onMove: () => {},
+            onPickGhost: (id) => offerChoice.onPick(id),
+            onPickTime: offerChoice.onPickTime,
+            dimCalendar: true,
+          }
+        : offerPreview
         ? {
             blocks: [
               {
@@ -583,7 +609,7 @@ export default function Planner({
             dimCalendar: true,
           }
         : null,
-    [offerPreview],
+    [offerPreview, offerChoice],
   );
 
   // Anything droppable that the render set doesn't hold. The week crown offers a

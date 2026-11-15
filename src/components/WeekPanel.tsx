@@ -57,8 +57,12 @@ import { useSettings } from "../hooks/useSettings";
 import { taskDomainColor } from "../lib/vertical";
 import type { Task } from "../lib/types";
 import type { CrownLineData } from "../lib/crownLine";
-import type { ReadyCard } from "../lib/readyCards";
+import { readyKey, type ReadyCard } from "../lib/readyCards";
+import { notNow } from "./nuvo/offerSnooze";
 import { instantAt } from "./plan/destinations";
+import { OtherTimes } from "./nuvo/OtherTimes";
+import { useWeekComposer } from "../hooks/useFindTime";
+import { costFor } from "../lib/offerChoices";
 
 /** The week door's lifecycle, owned by Planner and worn by this header. */
 export interface WeekDoor {
@@ -546,8 +550,13 @@ function ProjectStackRow({
             </span>
           )}
         </div>
-        {!done && !pathOffer && timeOffer && <TimeOfferLine card={timeOffer} />}
       </div>
+
+      {/* Its time offer (D-216): a line of its own under the row, never inside
+          the one-line row (which would wrap its weight and chevron). */}
+      {!done && !pathOffer && timeOffer && (
+        <TimeOfferLine card={timeOffer} task={loose.find((t) => t.id === timeOffer.taskId) ?? null} projectName={row.title} />
+      )}
 
       {/* Its work — ONE grammar. These are `TaskRow`s: the same check, the
           same context menu, the same drag as the day list below. Placed pieces
@@ -624,14 +633,18 @@ function TimeChip({ startISO, slotTitle }: { startISO: string; slotTitle: string
  *  then the act with its day — "Write the runbook · Schedule Today 4:15–5pm".
  *  Pointing at the chip draws the block on the Schedule and dims the rest (R3);
  *  the evidence and the project ride its tooltip. Right-click / ⌫ is Not now. */
-function TimeOfferLine({ card }: { card: ReadyCard }) {
+function TimeOfferLine({ card, task, projectName }: { card: ReadyCard; task: Task | null; projectName: string }) {
   const at = card.at!;
+  // What it costs (R5), read off the same busy time the composer used.
+  const { busy } = useWeekComposer(new Date());
+  const cost = costFor(at, busy);
   const start = instantAt(at.dayISO, at.startMin);
   const end = instantAt(at.dayISO, at.startMin + at.durationMin);
   return (
     <div className="crown-offer-line" data-tauri-drag-region="false">
-      <span className="crown-offer-task" title={card.title}>
+      <span className="crown-offer-task" title={cost ? `${card.title} · ${cost}` : card.title}>
         {card.title}
+        {cost && <span className="crown-offer-cost"> · {cost}</span>}
       </span>
       <OfferChip
         verb={card.primary.verb}
@@ -642,6 +655,19 @@ function TimeOfferLine({ card }: { card: ReadyCard }) {
         onPress={(el) => card.primary.run(el)}
         onDismiss={card.secondary ? () => card.secondary!.run() : undefined}
       />
+      {task && card.placeAt && (
+        <OtherTimes
+          task={task}
+          first={at}
+          onHold={card.placeAt}
+          noes={[
+            ...(card.secondary ? [{ label: "Not now · two weeks", run: card.secondary.run }] : []),
+            ...(card.projectId
+              ? [{ label: `No time offers for ${projectName} · two weeks`, run: () => notNow(readyKey.times(card.projectId!)) }]
+              : []),
+          ]}
+        />
+      )}
     </div>
   );
 }

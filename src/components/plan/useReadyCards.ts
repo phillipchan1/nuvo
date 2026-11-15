@@ -30,7 +30,7 @@ import { projectById } from "../../lib/vertical";
 import { thinChip } from "../../lib/thinPath";
 import { requestPathDraft } from "../../lib/draftIntent";
 import { reachToCrown, WEEK_REACH_KEY } from "../../lib/motion";
-import { composeReadyCards, scheduleLine, whenLabel, type ReadyCard, type ReadyInput } from "../../lib/readyCards";
+import { composeReadyCards, scheduleLine, whenLabel, type ReadyCard, type ReadyInput, type Where } from "../../lib/readyCards";
 import type { CrownLineData } from "../../lib/crownLine";
 import { useSettings } from "../../hooks/useSettings";
 import { fileGuess, filePatch, holdable } from "../nuvo/RailOffers";
@@ -127,10 +127,11 @@ export function useReady({
 
   return useMemo(() => {
     const L = () => live.current;
-    const placeTask = (taskId: string, from: HTMLElement | null, slate: boolean) => {
+    const placeTask = (taskId: string, from: HTMLElement | null, slate: boolean, chosen?: Where) => {
       const { holds: hs, pool: ps, mutations: m } = L();
       const t = ps.find((x) => x.id === taskId);
-      const p = hs.get(taskId);
+      // A time chosen in Other times (D-216) goes through the very same write.
+      const p = chosen ?? hs.get(taskId);
       if (!t || !p) return;
       reachFromCard(from, t.project_id);
       // The Week gate (P2): slate work joins the week in the same gesture that
@@ -192,6 +193,7 @@ export function useReady({
         repairAll: () => L().onRepair?.(),
         hold: (id, from) => placeTask(id, from, false),
         holdLoose: (id, from) => placeTask(id, from, true),
+        placeAt: (id, at, from, slate) => placeTask(id, from, slate, at),
         planWeek: () => L().onPlanWeek(),
         file: (id, from) => {
           const { inbox: ib, mutations: m, vertical: v } = L();
