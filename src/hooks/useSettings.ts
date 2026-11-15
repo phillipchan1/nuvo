@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
-import { invalidateWhenSafe, makeOp, OWNER_ROW, queueWrite } from "../lib/sync";
+import { holdFetchesBehindWrite, invalidateWhenSafe, makeOp, OWNER_ROW, queueWrite } from "../lib/sync";
 import type { UserSettings } from "../lib/types";
 import { DEFAULT_MEET_PREFERENCE, normalizeMeetPreference } from "../../supabase/functions/_shared/conferencing.ts";
 import { DEFAULT_REMINDER_PREFS, normalizeReminderPrefs } from "../../supabase/functions/_shared/reminderRules.ts";
@@ -13,6 +13,10 @@ export const SETTINGS_KEY = KEY;
  *  outbox after. `useSettings().update` is this; so is anything that must write
  *  a setting without subscribing to settings (Memory's grading, at the shell). */
 export function patchSettings(qc: QueryClient, patch: Partial<UserSettings>) {
+  // A read already in flight describes the world before this edit and would
+  // land on top of it — cancel it and run it again behind the write.
+  holdFetchesBehindWrite(qc, "user_settings", KEY);
+  if (patch.theme) chooseTheme(patch.theme);
   const prev = qc.getQueryData<UserSettings>(KEY);
   if (prev) qc.setQueryData(KEY, { ...prev, ...patch });
   void queueWrite(makeOp("user_settings", "update", OWNER_ROW, patch as Record<string, unknown>));
@@ -131,9 +135,46 @@ export function useSettings() {
   return { settings: query.data, isLoading: query.isLoading, update };
 }
 
-/** The theme actually showing for a setting — "system" resolves to the OS's. */
+/** The theme a setting resolves to — "system" is the OS's. */
 function resolveTheme(theme: UserSettings["theme"] | undefined, systemDark: boolean): "light" | "dark" {
   return !theme || theme === "system" ? (systemDark ? "dark" : "light") : theme;
+}
+
+/**
+ * The theme the user's hand just picked, held until the settings row says the
+ * same. A theme is the one setting whose every wrong frame is seen: a stale read,
+ * an echo of an earlier write or a lagging replica repainting the old row for a
+ * moment made the page flip back to the previous theme and then forward again.
+ * So the page paints the choice itself, and the cache only gets a say once it
+ * agrees (or after `CHOICE_TTL_MS`, if the server never does — a write that is
+ * parked must not pin the page to a theme the account doesn't have).
+ */
+const CHOICE_TTL_MS = 15_000;
+let choice: { theme: "light" | "dark" | "system"; at: number } | null = null;
+
+function chooseTheme(theme: "light" | "dark" | "system") {
+  choice = { theme, at: Date.now() };
+}
+
+/** The pending choice, if there is a live one. */
+export function chosenTheme(): "light" | "dark" | "system" | null {
+  if (choice && Date.now() - choice.at > CHOICE_TTL_MS) choice = null;
+  return choice?.theme ?? null;
+}
+
+/** Drop the pending choice. */
+export function settleChosenTheme() {
+  choice = null;
+}
+
+/** The cache has caught up with the choice — retire it. */
+export function reconcileChosenTheme(cached: UserSettings["theme"] | undefined) {
+  if (choice && (cached === choice.theme || chosenTheme() === null)) choice = null;
+}
+
+/** The theme actually showing: the pending choice wins over the cache. Pure. */
+export function effectiveTheme(cached: UserSettings["theme"] | undefined, systemDark: boolean): "light" | "dark" {
+  return resolveTheme(chosenTheme() ?? cached, systemDark);
 }
 
 /**
@@ -144,7 +185,7 @@ function resolveTheme(theme: UserSettings["theme"] | undefined, systemDark: bool
  */
 export function useToggleTheme() {
   const { settings, update } = useSettings();
-  const showing = resolveTheme(settings?.theme, window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ?? false);
+  const showing = effectiveTheme(settings?.theme, window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ?? false);
   const next = showing === "dark" ? "light" : "dark";
   return { next, toggle: () => update({ theme: next }) };
 }
@@ -154,11 +195,16 @@ export function useApplyTheme(theme: UserSettings["theme"] | undefined) {
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const apply = () => {
-      const effective = resolveTheme(theme, mq.matches);
-      document.documentElement.dataset.theme = effective;
+      document.documentElement.dataset.theme = effectiveTheme(theme, mq.matches);
     };
+    reconcileChosenTheme(theme);
     apply();
     mq.addEventListener("change", apply);
-    return () => mq.removeEventListener("change", apply);
+    // A choice the server never confirmed lapses on its own; look again then.
+    const lapse = choice ? setTimeout(() => { reconcileChosenTheme(theme); apply(); }, CHOICE_TTL_MS + 50) : undefined;
+    return () => {
+      mq.removeEventListener("change", apply);
+      if (lapse) clearTimeout(lapse);
+    };
   }, [theme]);
 }
