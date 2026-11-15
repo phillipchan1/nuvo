@@ -25,6 +25,7 @@ import { startOfDay } from "date-fns";
 import LeftRail, { type RailTab } from "./LeftRail";
 import { useOfferPreview } from "../lib/offerPreview";
 import { useHarnessReadyCards } from "./plan/ReadyHarness";
+import { composeReadyCards, type ReadyActs } from "../lib/readyCards";
 import ReadyHarness from "./plan/ReadyHarness";
 import Spine from "./Spine";
 import { AgentProvider } from "../hooks/useAgentContext";
@@ -41,7 +42,7 @@ import { toggleGroup } from "../lib/selection";
 import type { Slot, Task } from "../lib/types";
 import type { VerticalData } from "../lib/vertical";
 import type { useTaskMutations } from "../hooks/useTasks";
-import { OFFERS_NOW, OFFERS_SLOTS, OFFERS_VERTICAL, offersClient, offersInbox, offersToday } from "./nuvo/OffersFixture";
+import { OFFERS_NOW, OFFERS_SLOTS, OFFERS_TODAY, OFFERS_VERTICAL, offersClient, offersInbox, offersToday } from "./nuvo/OffersFixture";
 
 /** `?rail=offers` / `?rail=offers-phone`: the busy rail (D-205) — every offer
  *  budget overflowing, to see what the rail says when Nuvo has more to say
@@ -169,6 +170,21 @@ function PopoverStandIn({ tasks }: { tasks: Task[] }) {
   );
 }
 
+/** `?rail=offers`: a time offer riding a shaped project's row (D-216 R6), so
+ *  the line under the row can be measured at every rail width. */
+function useCrownTimeOffer(on: boolean, log: (s: string) => void) {
+  return useMemo(() => {
+    if (!on) return undefined;
+    const say = (s: string) => () => log(s);
+    const acts = new Proxy({} as ReadyActs, { get: (_t, k) => (...a: unknown[]) => say(`${String(k)} ${a.filter((x) => typeof x === "string").join(" ")}`)() });
+    return composeReadyCards({
+      todayISO: OFFERS_TODAY,
+      acts,
+      loose: [{ taskId: "v1", title: "File the estimate with the county assessor", projectId: "p3", projectName: "Quarterly taxes", at: { dayISO: OFFERS_TODAY, startMin: 15 * 60 + 30, durationMin: 90 } }],
+    });
+  }, [on, log]);
+}
+
 function Desktop({ embedded = false, bar, fx = BASE, withDeck = false }: { embedded?: boolean; bar?: ReactNode; fx?: Fixture; withDeck?: boolean }) {
   const [tasks, setTasks] = useState(() => [...fx.seed(), ...fx.inbox()]);
   const [tab, setTab] = useState<RailTab>("today");
@@ -190,6 +206,7 @@ function Desktop({ embedded = false, bar, fx = BASE, withDeck = false }: { embed
   // `?rail=deck`: the Get ready fixture stack. At rest its time cards ride
   // their project rows as chips (D-216); pointing at one is logged below.
   const { cards } = useHarnessReadyCards(log);
+  const crownCards = useCrownTimeOffer(fx === BUSY, log);
   const preview = useOfferPreview();
 
   return (
@@ -208,7 +225,7 @@ function Desktop({ embedded = false, bar, fx = BASE, withDeck = false }: { embed
         slots={fx.slots}
         slotTitle={slotTitle}
         onOpenSlot={(s, anchor) => openOverlay("slot", s.id, anchor)}
-        rowCards={withDeck ? cards : undefined}
+        rowCards={withDeck ? cards : crownCards}
         onCrownLine={withDeck ? () => log("→ Get ready") : undefined}
       />
       {/* The bar is NOT here: as in Planner, it spans the rail and the grid

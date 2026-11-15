@@ -244,7 +244,7 @@ describe("Plan the week — the way out", () => {
     act(() => void fireEvent.keyDown(window, { key: "Enter" })); // accept block 1
     esc();
     expect(onClose).not.toHaveBeenCalled();
-    expect(screen.getByText(/Discard/, { selector: ".f-sum" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Discard 1 change/ })).toBeTruthy();
     esc();
     expect(onClose).toHaveBeenCalledTimes(1);
   });

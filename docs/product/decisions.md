@@ -8342,5 +8342,12 @@ outcome at a named 30m default. The UI says *tasks*, since a **Step** is a check
 row; held by R6 and R11) and **P10** (another walk; held by it being Plan mode on another
 surface). New names: *Other times*, *Plan projects*, *Plan initiatives*. Closes rail-modes §8.2.
 
-*Status: built 2026-11-14 on `claude/offer-rules` (all four phases; see the spec's status for what
-was driven and what wasn't). Not merged to master.*
+*Status: shipped 2026-11-14 (PR #159, master `d4d69fb8`; Worker deployed). Fit pass the same day on
+`claude/offer-polish`: a project's offer — "Suggest tasks" or a time — rides a line of its own
+under the crown's one-line row instead of a slot inside it (this retires D-205's "takes the
+weight's place" for the path offer: in the row it squeezed the name to a few letters and spilled
+past the rail); the time, its ⋯ and its cost share that line; a task row's offer wraps under the
+title when the title would get under 64px; the crown's track is the 56px D-209 meant (an inline
+120px had overridden it); Other times' menu gives each option a second line (kit `MenuItem
+detail`); "pick a time yourself" says so in a float, not in the row. Swept for overflow at rail
+widths 240–560 and at 320/375 on the phone.*

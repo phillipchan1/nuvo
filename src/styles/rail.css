@@ -345,6 +345,8 @@ html:root .slot-run-open:focus-visible { outline: none; box-shadow: inset 0 -2px
 /* ── The rail (LeftRail) ───────────────────────────────────────────────── */
 .rail-inner {
   border-right: 1px solid var(--line-1);
+  /* the rail is the one container its rows ask about — you drag it 240–560px */
+  container: rail / inline-size;
 }
 .rail-resize {
   position: absolute;
@@ -1027,8 +1029,8 @@ html:root .rest-deck-all:focus-visible { outline: none; box-shadow: 0 0 0 2px va
 .crown-offer-line {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 2px 8px;
   min-width: 0;
   padding: 0 8px 4px 30px;
 }
@@ -1067,8 +1069,32 @@ html:root .rest-deck-all:focus-visible { outline: none; box-shadow: 0 0 0 2px va
 /* Other times (D-216, R13): always beside a time offer, quiet — the second
    answer is available, not advertised. It is the kit's ghost button, unstyled
    here; on a crowded task row it is a ⋯ whose name and tooltip say "Other times". */
-.offer-pair { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
-.crown-offer-line .offer-other { flex: none; }
+/* The pair never shrinks: the row's title yields first (D-206), so the day and
+   time are always whole and the ⋯ never spills past the row. */
+.offer-pair { display: inline-flex; flex: none; align-items: center; gap: 2px; }
+/* When the title would get less than 64px beside a whole time, the offer
+   wraps to a line of its own, still at the row's right edge where every other
+   row's offer stands — never a title cut to three letters, never a time cut. */
+.task-row-body:has(> .offer-pair) { flex-wrap: wrap; row-gap: 0; }
+.task-row-body:has(> .offer-pair) > .task-row-title { flex: 1 1 64px; }
+/* …and it is always the row's last thing: the place and its hue stay with the
+   title, so a wrapped offer never drags the project's square onto its line */
+.task-row-body > .offer-pair { order: 1; margin-left: auto; }
+@container rail (max-width: 319px) {
+  /* the one-line project row: the drawing yields before the name does */
+  .crown-oneline .crown-proj-marks .pace-track { display: none; }
+  .crown-week-sub { display: none; }
+  /* three readings in ~60px each: the count drops under its word rather than
+     cutting it to "REA…" */
+  .crown-week .k-markset-cols .k-mark-head { flex-wrap: wrap; row-gap: 1px; }
+  .crown-week .k-markset-cols .k-mark-k { flex: none; }
+  .crown-week .k-markset-cols .k-mark-v { margin-left: 0; }
+}
+@container rail (max-width: 279px) {
+  /* on its own line, under the title, in accent ink, the time IS the offer;
+     the chip's name and tooltip still say "Schedule" */
+  .offer-pair .k-dest-verb { display: none; }
+}
 /* the chooser's numbers — the same 1 · 2 · 3 the Schedule draws */
 .offer-num {
   display: inline-grid;
@@ -1082,5 +1108,16 @@ html:root .rest-deck-all:focus-visible { outline: none; box-shadow: 0 0 0 2px va
   font-variant-numeric: tabular-nums;
 }
 .offer-num[data-on] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.offer-picking { flex: 1 0 100%; order: 9; font: 450 12px/1.3 var(--font-sans); color: var(--accent); }
-.crown-offer-cost { color: var(--warn); }
+.offer-picking.k-pop { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 6px 6px 10px; font: 450 12px/1.3 var(--font-sans); color: var(--ink-2); }
+/* the title takes the line's first row whole; the time, its ⋯ and its cost
+   share the next, the cost yielding to an ellipsis (its tooltip says it all) */
+.crown-offer-line > .crown-offer-task { flex-basis: 100%; }
+.crown-offer-cost {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 450 12px/1.3 var(--font-sans);
+  color: var(--warn);
+}

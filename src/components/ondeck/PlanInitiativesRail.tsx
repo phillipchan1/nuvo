@@ -17,8 +17,7 @@ import type { Initiative, VerticalData } from "../../lib/vertical";
 import { domainById } from "../../lib/vertical";
 import type { InitiativeLane, QuarterColumn } from "../../lib/initiativeDeck";
 import { lookLast, quarterOffers, type QuarterOccupant } from "../../lib/planProjects";
-import { Button, Dest, Dot, Input } from "../kit";
-import { Icon } from "../Icon";
+import { Button, Dest, Dot, Input, OfferChip } from "../kit";
 import { FlowHead } from "../rituals/FlowShell";
 import { SpanChoice, WalkFinished, WalkShell } from "./PlanWalk";
 
@@ -159,22 +158,19 @@ function ShapeStep({
           {bet.keyResults.length} key result{bet.keyResults.length === 1 ? "" : "s"}
         </p>
       )}
-      <div className="grid gap-1.5">
-        <p className="pw-said">{projects === 0 ? "No projects under it yet." : `${projects} project${projects === 1 ? "" : "s"} under it.`}</p>
+      {/* Nuvo's offer reads like every other one (D-205): accent ink after
+          the fact it answers, flush with it — not a ghost button indented by
+          its own padding. */}
+      <p className="pw-said flex flex-wrap items-baseline gap-x-2">
+        <span>{projects === 0 ? "No projects under it yet." : `${projects} project${projects === 1 ? "" : "s"} under it.`}</span>
         {draftProjects && canDraft(lane) && (
-          <div>
-            <Button
-              size="xs"
-              kind="ghost"
-              icon={<Icon name="sparkles" size={12} />}
-              onClick={(e) => draftProjects(lane, (e.currentTarget as HTMLElement).getBoundingClientRect())}
-              title="Nuvo drafts the projects this outcome is missing, across the quarter. Nothing is added until you hold it."
-            >
-              Suggest projects
-            </Button>
-          </div>
+          <OfferChip
+            verb="Suggest projects"
+            title="Nuvo drafts the projects this outcome is missing, across the quarter. Nothing is added until you hold it."
+            onPress={(el) => draftProjects(lane, el.getBoundingClientRect())}
+          />
         )}
-      </div>
+      </p>
       <div className="grid gap-1.5">
         <Button
           kind={verb ? "primary" : "secondary"}

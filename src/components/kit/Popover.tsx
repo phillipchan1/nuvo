@@ -205,6 +205,7 @@ export function MenuItem({
   children,
   shortcut,
   hint,
+  detail,
   checked,
   danger,
   disabled,
@@ -217,6 +218,10 @@ export function MenuItem({
   shortcut?: string | readonly string[];
   /** quiet trailing text — a count, a current value */
   hint?: ReactNode;
+  /** a quiet second line under the label — for an item whose why is longer
+   *  than a hint can carry beside it (a reason · a cost) without cutting the
+   *  label itself */
+  detail?: ReactNode;
   /** a checkable item: shows a check when true */
   checked?: boolean;
   danger?: boolean;
@@ -237,6 +242,7 @@ export function MenuItem({
       aria-checked={checked}
       data-label={label}
       data-danger={danger || undefined}
+      data-detail={detail != null || undefined}
       disabled={disabled}
       tabIndex={-1}
       className="k-mi"
@@ -246,7 +252,14 @@ export function MenuItem({
       }}
     >
       {icon}
-      <span className="k-mi-label">{children}</span>
+      {detail != null ? (
+        <span className="k-mi-text">
+          <span className="k-mi-label">{children}</span>
+          <span className="k-mi-detail">{detail}</span>
+        </span>
+      ) : (
+        <span className="k-mi-label">{children}</span>
+      )}
       {hint != null && <span className="k-mi-hint">{hint}</span>}
       {shortcut != null && <Kbd keys={shortcut} />}
       {checked && <Icon name="check" size={14} className="k-mi-check" />}

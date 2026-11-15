@@ -174,10 +174,13 @@ describe("Draft the path on the week crown's project row", () => {
     expect(rowOf("Launch pricing page").querySelector(".k-offer")).not.toBeNull();
     expect(rowOf("Garage studio").querySelector(".k-offer")).not.toBeNull();
     expect(rowOf("Quarterly taxes").querySelector(".k-offer")).toBeNull();
-    // It names its evidence, and it takes the weight's place (no second mark).
+    // It names its evidence, and rides a line of its own under the one-line
+    // row (D-216 R6) — the row keeps its weight and its name keeps its room.
     const chip = rowOf("Launch pricing page").querySelector(".k-offer") as HTMLElement;
     expect(chip.getAttribute("title")).toMatch(/3h held · 20m of work/);
-    expect(rowOf("Launch pricing page").querySelector(".crown-proj-top .crown-meta")).toBeNull();
+    expect(chip.closest(".crown-offer-line")).not.toBeNull();
+    expect(chip.closest(".crown-proj-row")).toBeNull();
+    expect(rowOf("Launch pricing page").querySelector(".crown-proj-top .crown-meta")).not.toBeNull();
   });
 
   it("starts the draft through the path the panel's offer took", async () => {

@@ -503,9 +503,6 @@ function ProjectStackRow({
             >
               Ship
             </Button>
-          ) : pathOffer ? (
-            // The offer takes the weight's place — never a second mark (D-205).
-            <PathOffer thin={pathOffer} onOpenProject={onOpenProject} />
           ) : (
             weight && <span className="crown-meta" title={`${weight} of work left`}>{weight}</span>
           )}
@@ -534,7 +531,8 @@ function ProjectStackRow({
               placed={done ? 0 : placed.length}
               color={color}
               elapsed={row.elapsed}
-              width={120}
+              // the one-line row's track (D-209): 56px, so the name keeps the room
+              width={56}
               reachKey={row.projectId}
             />
           ) : (
@@ -552,8 +550,14 @@ function ProjectStackRow({
         </div>
       </div>
 
-      {/* Its time offer (D-216): a line of its own under the row, never inside
-          the one-line row (which would wrap its weight and chevron). */}
+      {/* A project's offer (D-216 R6) — the path or a time — takes a line of its
+          own under the row, never a slot inside the one-line row: there it
+          squeezed the name to a few letters and spilled past the rail. */}
+      {!done && !shipped && !looksDone && pathOffer && (
+        <div className="crown-offer-line" data-tauri-drag-region="false">
+          <PathOffer thin={pathOffer} onOpenProject={onOpenProject} />
+        </div>
+      )}
       {!done && !pathOffer && timeOffer && (
         <TimeOfferLine card={timeOffer} task={loose.find((t) => t.id === timeOffer.taskId) ?? null} projectName={row.title} />
       )}
@@ -642,31 +646,41 @@ function TimeOfferLine({ card, task, projectName }: { card: ReadyCard; task: Tas
   const end = instantAt(at.dayISO, at.startMin + at.durationMin);
   return (
     <div className="crown-offer-line" data-tauri-drag-region="false">
-      <span className="crown-offer-task" title={cost ? `${card.title} · ${cost}` : card.title}>
+      <span className="crown-offer-task" title={card.title}>
         {card.title}
-        {cost && <span className="crown-offer-cost"> · {cost}</span>}
       </span>
-      <OfferChip
-        verb={card.primary.verb}
-        name={card.primary.name}
-        whole
-        title={`${card.title} · ${card.why}`}
-        preview={{ label: card.title, start, end }}
-        onPress={(el) => card.primary.run(el)}
-        onDismiss={card.secondary ? () => card.secondary!.run() : undefined}
-      />
-      {task && card.placeAt && (
-        <OtherTimes
-          task={task}
-          first={at}
-          onHold={card.placeAt}
-          noes={[
-            ...(card.secondary ? [{ label: "Not now · two weeks", run: card.secondary.run }] : []),
-            ...(card.projectId
-              ? [{ label: `No time offers for ${projectName} · two weeks`, run: () => notNow(readyKey.times(card.projectId!)) }]
-              : []),
-          ]}
+      {/* the chip and its second answer travel together — the same pair, the
+          same ⋯, as a task row's offer (one look for Other times on the rail) */}
+      <span className="offer-pair">
+        <OfferChip
+          verb={card.primary.verb}
+          name={card.primary.name}
+          whole
+          title={`${card.title} · ${card.why}`}
+          preview={{ label: card.title, start, end }}
+          onPress={(el) => card.primary.run(el)}
+          onDismiss={card.secondary ? () => card.secondary!.run() : undefined}
         />
+        {task && card.placeAt && (
+          <OtherTimes
+            task={task}
+            first={at}
+            compact
+            onHold={card.placeAt}
+            noes={[
+              ...(card.secondary ? [{ label: "Not now · two weeks", run: card.secondary.run }] : []),
+              ...(card.projectId
+                ? [{ label: `No time offers for ${projectName} · two weeks`, run: () => notNow(readyKey.times(card.projectId!)) }]
+                : []),
+            ]}
+          />
+        )}
+      </span>
+      {/* what the time costs (R5) stands beside the time, not the title */}
+      {cost && (
+        <span className="crown-offer-cost" title={cost}>
+          {cost}
+        </span>
       )}
     </div>
   );

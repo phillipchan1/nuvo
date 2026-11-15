@@ -602,6 +602,12 @@ button.k-chip { padding-right: 4px; }
 .k-mi > svg { color: var(--muted); flex: none; }
 .k-mi > .k-mi-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .k-mi > .k-mi-hint { color: var(--faint); font-size: 12px; }
+/* two lines: the label whole on top, its why underneath */
+.k-mi[data-detail] { height: auto; min-height: var(--h-sm); padding-block: 6px; }
+.k-mi > .k-mi-text { display: grid; flex: 1; gap: 3px; min-width: 0; }
+.k-mi-text > .k-mi-label,
+.k-mi-text > .k-mi-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k-mi-text > .k-mi-detail { color: var(--faint); font-size: 12px; line-height: 1.25; }
 .k-mi > .k-mi-check { color: var(--accent); }
 html:root .k-mi:focus-visible,
 .k-mi:focus { outline: none; background: var(--hover); }
@@ -759,6 +765,7 @@ html:root [data-sonner-toaster] [data-sonner-toast] [data-button] {
   .k-switch::after { width: 22px; height: 22px; }
   .k-switch[aria-checked="true"]::after { transform: translateX(18px); }
   .k-mi { height: 44px; font-size: 15px; }
+  .k-mi[data-detail] { min-height: 52px; }
   .k-tabs button { min-height: 44px; }
 }
 
