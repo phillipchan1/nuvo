@@ -186,3 +186,67 @@ export function deckLine(cards: readonly ReadyCard[], altitude: "project" | "ini
 
 const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 const lower = (s: string) => (s ? s[0].toLowerCase() + s.slice(1) : s);
+
+// ── the deck at rest (D-216, docs/offer-rules.md R6) ─────────────────────────
+// The stack no longer stands above the list. A card about one project (or bet)
+// rides that project's own card on the deck as a quiet chip — but only when its
+// act names somewhere to go (*Move to Nov 23*, *Suggest tasks*): an *Open* is
+// what pressing the card already does, so it's no offer at all (R1), and those
+// stay in the stack, behind the crown's line (R11 — silence is fine).
+
+/** The record a deck card is about: its project, or the id its key ends in. */
+export const subjectOf = (c: ReadyCard): string => c.projectId ?? c.key.slice(c.key.lastIndexOf(":") + 1);
+
+/** At most this many chips on a deck at once — the rail's own budget (D-205). */
+export const DECK_CHIPS_MAX = 3;
+
+/** One chip per row, worst first, nothing past the budget, never an Open. */
+export function rowOffers(cards: readonly ReadyCard[], max = DECK_CHIPS_MAX): Map<string, ReadyCard> {
+  const out = new Map<string, ReadyCard>();
+  for (const c of cards) {
+    if (out.size >= max) break;
+    if (c.opensMode || c.primary.verb === "Open" || c.kind === "plan") continue;
+    const id = subjectOf(c);
+    if (!out.has(id)) out.set(id, c);
+  }
+  return out;
+}
+
+/** The walk's door in the stack: *Plan projects* / *Plan initiatives*, last,
+ *  only while something on the deck isn't Ready. It opens the mode (R9). */
+export function planCard(notReady: number, altitude: "project" | "initiative", open: () => void): ReadyCard | null {
+  if (notReady <= 0) return null;
+  const verb = altitude === "project" ? "Plan projects" : "Plan initiatives";
+  return {
+    key: `deck:plan:${altitude}`,
+    kind: "plan",
+    title: verb,
+    why: `${notReady} not Ready`,
+    primary: { verb, run: () => open() },
+    projectId: null,
+    opensMode: "plan",
+  };
+}
+
+/**
+ * The deck's line, with the walk in it. When the worst thing on the deck is
+ * shaping (not a project overdue, not a crowded week), the line is the walk's
+ * door: "2 not Ready · Plan projects ›". Otherwise it stays the stack's line
+ * (Get ready), and the walk is one card inside it. `opens` says which.
+ */
+export function deckPlanLine(
+  cards: readonly ReadyCard[],
+  notReady: number,
+  altitude: "project" | "initiative",
+): { line: CrownLineData | null; opens: "plan" | "ready" } {
+  const work = cards.filter((c) => c.kind !== "plan");
+  const lead = work[0];
+  if (notReady > 0 && (!lead || lead.kind === "shape" || lead.kind === "path")) {
+    return {
+      line: { tone: "accent", glyph: null, text: `${notReady} not Ready`, act: altitude === "project" ? "Plan projects" : "Plan initiatives", then: null },
+      opens: "plan",
+    };
+  }
+  const line = deckLine(work, altitude);
+  return { line: line && notReady > 0 && !line.then ? { ...line, then: `${notReady} not Ready` } : line, opens: "ready" };
+}

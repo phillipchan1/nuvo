@@ -50,6 +50,10 @@ export interface PlanOverlay {
   clears?: { id: string; start: string; end: string; label: string }[];
   /** a drag across empty grid while planning: "keep this clear?" */
   onPaint?: (start: Date, end: Date) => void;
+  /** a click (or drag) on empty timed grid names a time — Other times' "pick
+   *  a time yourself" (D-216). Takes precedence over `onPaint` and over the
+   *  quick-create card while set. */
+  onPickTime?: (start: Date) => void;
   /** fade what's already on the calendar so only the net-new reads at a glance */
   dimCalendar?: boolean;
 }

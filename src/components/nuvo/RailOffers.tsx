@@ -31,6 +31,9 @@ import type { Placement } from "../../lib/compose";
 import type { Task } from "../../lib/types";
 import type { useTaskMutations } from "../../hooks/useTasks";
 import { notNow, useSnoozed } from "./offerSnooze";
+import { OtherTimes } from "./OtherTimes";
+import { whenLabel } from "../../lib/readyCards";
+import { instantAt } from "../plan/destinations";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 
@@ -98,10 +101,10 @@ export function holdSpan(p: Placement): string {
   return span(start, new Date(start.getTime() + p.durationMin * 60_000));
 }
 
-/** "2–2:30pm" today, "Mon 9–9:30am" on a later day (D-206) — the day word,
- *  then the span; never a second time format. */
+/** "Today 2–2:30pm", "Mon 9–9:30am" on a later day (D-206, D-216 R2) — the
+ *  day word, then the span; never a second time format, never a bare time. */
 export function holdWhen(p: Placement, today: string): string {
-  if (p.dayISO === today) return holdSpan(p);
+  if (p.dayISO === today) return `Today ${holdSpan(p)}`;
   return `${parseDateISO(p.dayISO).toLocaleDateString("en-US", { weekday: "short" })} ${holdSpan(p)}`;
 }
 
@@ -136,7 +139,16 @@ export function HoldOffer({ task, placement, mutations, phone = false }: { task:
   const today = todayISO();
   const when = holdWhen(placement, today);
   const later = placement.dayISO !== today;
+  // The chip's own act, at any place — the first answer, or one chosen in
+  // Other times (D-216, R13).
+  const holdAt = (at: { dayISO: string; startMin: number; durationMin: number }, el: HTMLElement | null) => {
+    if (phone) haptic("light");
+    const label = whenLabel(at, today);
+    if (task.project_id && el) void reachToCrown(el, task.project_id);
+    mutations.block(task, instantAt(at.dayISO, at.startMin), at.durationMin, { undo: "toast", label: `Held ${label} — ${task.title}` });
+  };
   return (
+    <span className="offer-pair">
     <OfferChip
       verb="Schedule"
       name={when}
@@ -144,8 +156,9 @@ export function HoldOffer({ task, placement, mutations, phone = false }: { task:
       title={
         later
           ? `Schedule ${when} for ${task.title} — today is full; this is the next time that fits this week`
-          : `Schedule ${when} today for ${task.title} — the first time that fits`
+          : `Schedule ${when} for ${task.title} — the first time that fits`
       }
+      preview={{ label: task.title, start: holdStart(placement), end: new Date(holdStart(placement).getTime() + placement.durationMin * 60_000) }}
       onPress={(el) => {
         if (phone) haptic("light");
         // Reach first: the chip is about to leave the row it stands in.
@@ -157,6 +170,15 @@ export function HoldOffer({ task, placement, mutations, phone = false }: { task:
         notNow(offerKey("hold", task.id));
       }}
     />
+    <OtherTimes
+      task={task}
+      first={placement}
+      onHold={holdAt}
+      phone={phone}
+      compact
+      noes={[{ label: "Not now · two weeks", run: () => notNow(offerKey("hold", task.id)) }]}
+    />
+    </span>
   );
 }
 

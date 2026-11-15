@@ -292,7 +292,7 @@ describe("Hold <time> on a today task with no time", () => {
     expect(holdSpan(p)).toBe("2–2:30pm");
     const { m, calls } = stubMutations();
     render(<HoldOffer task={t} placement={p} mutations={m} />);
-    const chip = screen.getByRole("button", { name: /^Schedule 2–2:30pm/ });
+    const chip = screen.getByRole("button", { name: /^Schedule Today 2–2:30pm/ });
     fireEvent.click(chip);
     expect(calls.block).toHaveLength(1);
     const [task, start, mins, opts] = calls.block[0] as [Task, Date, number, { undo: string }];
@@ -329,7 +329,7 @@ describe("Hold falls back to later this week when today is full (D-206)", () => 
   it("says the day word, then the span — one time format", () => {
     const t = offersToday()[0];
     const p: Placement = { task: t, dayISO: "2026-11-16", startMin: 9 * 60, durationMin: 30, reason: "" };
-    expect(holdWhen(p, "2026-11-16")).toBe("9–9:30am");
+    expect(holdWhen(p, "2026-11-16")).toBe("Today 9–9:30am");
     expect(holdWhen(p, "2026-11-13")).toBe("Mon 9–9:30am");
   });
 

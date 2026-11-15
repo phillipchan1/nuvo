@@ -1021,6 +1021,27 @@ html:root .rest-deck-all:focus-visible { outline: none; box-shadow: 0 0 0 2px va
 .crown-oneline .crown-proj-top > :nth-child(n + 3) { order: 4; }
 .crown-oneline .crown-proj-top > :last-child { order: 5; }
 
+/* A project's time offer (D-216, R6): its own line under the row — the piece's
+   name, quiet, then the act with its day. Never a card above the list. It sits
+   under the one-line row, indented to the name. */
+.crown-offer-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 8px 4px 30px;
+}
+.crown-offer-task {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 450 12px/1.3 var(--font-sans);
+  color: var(--faint);
+}
+
 /* The tray (D-209): Today and Inbox fold to their tab strip above Capture and
    open into the rail's lower part. The day's blocks are already on the grid. */
 .rail-tray-shut .rail-list { display: none; }
@@ -1042,3 +1063,24 @@ html:root .rest-deck-all:focus-visible { outline: none; box-shadow: 0 0 0 2px va
   text-transform: uppercase;
   font-style: normal;
 }
+
+/* Other times (D-216, R13): always beside a time offer, quiet — the second
+   answer is available, not advertised. It is the kit's ghost button, unstyled
+   here; on a crowded task row it is a ⋯ whose name and tooltip say "Other times". */
+.offer-pair { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
+.crown-offer-line .offer-other { flex: none; }
+/* the chooser's numbers — the same 1 · 2 · 3 the Schedule draws */
+.offer-num {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1.5px solid var(--accent-ring);
+  color: var(--accent);
+  font: 650 10px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+.offer-num[data-on] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.offer-picking { flex: 1 0 100%; order: 9; font: 450 12px/1.3 var(--font-sans); color: var(--accent); }
+.crown-offer-cost { color: var(--warn); }

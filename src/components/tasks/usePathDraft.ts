@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { supabase } from "../../lib/supabase";
+import { askScaffold } from "../../lib/scaffoldAsk";
 import type { Task } from "../../lib/types";
 import type { useTaskMutations } from "../../hooks/useTasks";
 import { useAllTasks } from "../../hooks/useTasks";
@@ -38,7 +38,6 @@ import {
   sortOrderAt,
   toSteps,
   type DraftStep,
-  type ProposedStep,
 } from "../../lib/pathDraft";
 
 export type DraftPhase = "idle" | "reading" | "streaming" | "review" | "done";
@@ -163,13 +162,9 @@ export function usePathDraft(home: PathDraftHome | null, tasks: Task[], mutation
   const ask = useCallback(
     async (guidance?: string, redraft?: string[]) => {
       if (!home) return null;
-      const { data, error } = await supabase.functions.invoke<{ tasks?: ProposedStep[] }>("agent", {
-        body: { scaffold: { projectId: home.projectId, guidance, redraft } },
-      });
-      if (error) throw error;
-      return (data?.tasks ?? []).filter((p) => p && typeof p.title === "string" && p.title.trim());
+      return askScaffold(home.projectId, guidance, redraft);
     },
-    [home, tasks],
+    [home],
   );
 
   const start = useCallback(async () => {

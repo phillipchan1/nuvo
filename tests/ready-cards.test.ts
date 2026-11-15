@@ -12,6 +12,7 @@ const acts = (): ReadyActs => ({
   repairAll: vi.fn(),
   hold: vi.fn(),
   holdLoose: vi.fn(),
+  placeAt: vi.fn(),
   planWeek: vi.fn(),
   file: vi.fn(),
   draftPath: vi.fn(),
@@ -52,7 +53,7 @@ describe("Get ready — composeReadyCards", () => {
     expect(cards[0].secondary?.label).toBe("Keep it there");
     expect(cards[0].why).toMatch(/^Design sync landed on it · was Wed 10/);
     // today's hold is spelled in the clock vocabulary, no day; the week's names its day
-    expect(cards[1].primary).toMatchObject({ verb: "Schedule", name: "2–2:30pm" });
+    expect(cards[1].primary).toMatchObject({ verb: "Schedule", name: "Today 2–2:30pm" });
     expect(cards[2].primary).toMatchObject({ verb: "Schedule", name: "Thu 10–11am" });
     expect(cards[2].why).toBe("Pricing · no time this week");
     expect(cards[4]).toMatchObject({ title: "Launch site", why: "3h held · 20m of work", primary: { verb: "Suggest tasks" } });

@@ -38,7 +38,7 @@ import { useWeekRepair, type Repair } from "../hooks/useWeekRepair";
 import { useRepairs } from "./plan/repairActs";
 import { repairLineText } from "./plan/RepairLine";
 import { useReady } from "./plan/useReadyCards";
-import RestDeck from "./plan/RestDeck";
+import { useOfferChoice, useOfferPreview } from "../lib/offerPreview";
 import { readDay } from "../lib/marks";
 import type { CrownLineData } from "../lib/crownLine";
 import { useWorkingDays } from "../hooks/useWorkingDays";
@@ -553,11 +553,63 @@ export default function Planner({
   }, [ready.line, repairState.open, repairState.applied, repairState.dial]);
   const crownLine = ready.line ?? handled;
   const onCrownLine = handled ? openRepair : openGetReady;
-  // The deck at rest (D-209): the same cards, the top one shown under the
-  // crown. Under Handle with nothing else to say, the Review line stands alone.
-  const restDeck = useMemo(
-    () => (ready.cards.length > 0 ? <RestDeck cards={ready.cards} onAll={openGetReady} /> : null),
-    [ready.cards, openGetReady],
+  // At rest the cards don't stand under the crown any more (D-216, amending
+  // D-209's deck first): each one that gives work a time rides its project's
+  // row as a chip, and the whole stack stays behind the crown's line.
+  //
+  // Pointing at an offer chip anywhere in the rail draws where it would land
+  // and dims the rest of the week (R3) — through the plan overlay the pane
+  // already draws, so it is the same picture planning shows.
+  const offerPreview = useOfferPreview();
+  const offerChoice = useOfferChoice();
+  const previewOverlay = useMemo<PlanOverlay | null>(
+    () =>
+      // Other times open (R13): every option at once, numbered — the one
+      // pointed at solid, the rest ghosts you can click; empty time painted is
+      // your own pick.
+      offerChoice
+        ? {
+            blocks: offerChoice.options
+              .filter((o) => o.key === offerChoice.strong)
+              .map((o) => ({
+                key: `offer-choice:${o.key}`,
+                title: `${o.num} · ${o.label}`,
+                start: o.start.toISOString(),
+                end: o.end.toISOString(),
+                color: null,
+                held: false,
+                selected: true,
+              })),
+            ghosts: offerChoice.options
+              .filter((o) => o.key !== offerChoice.strong)
+              .map((o) => ({ id: o.key, start: o.start.toISOString(), end: o.end.toISOString(), label: String(o.num), kind: "alt" as const })),
+            onSelect: () => {},
+            onMove: () => {},
+            onPickGhost: (id) => offerChoice.onPick(id),
+            onPickTime: offerChoice.onPickTime,
+            dimCalendar: true,
+          }
+        : offerPreview
+        ? {
+            blocks: [
+              {
+                key: `offer-preview:${offerPreview.id}`,
+                title: offerPreview.label,
+                start: offerPreview.start.toISOString(),
+                end: offerPreview.end.toISOString(),
+                color: null,
+                held: false,
+                selected: true,
+              },
+            ],
+            ghosts: [],
+            onSelect: () => {},
+            onMove: () => {},
+            onPickGhost: () => {},
+            dimCalendar: true,
+          }
+        : null,
+    [offerPreview, offerChoice],
   );
 
   // Anything droppable that the render set doesn't hold. The week crown offers a
@@ -753,7 +805,7 @@ export default function Planner({
           onOpenSlot={openSlotAt}
           crownLine={onSchedule ? crownLine : null}
           onCrownLine={onCrownLine}
-          deck={onSchedule ? restDeck : null}
+          rowCards={onSchedule ? ready.cards : undefined}
         />
         )}
         {/* min-w: 280 was the old floor and it was too low to be a floor at
@@ -779,7 +831,7 @@ export default function Planner({
             hotkeysEnabled={!gridCovered && onSchedule && !planning}
             barSlot={barSlot}
             live={onSchedule}
-            plan={planning ? planOverlay : repairing ? repairOverlay : null}
+            plan={planning ? planOverlay : repairing ? repairOverlay : onSchedule ? previewOverlay : null}
             tasks={allTasksArray}
             events={events}
             slots={slots}

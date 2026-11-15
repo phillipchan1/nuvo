@@ -899,3 +899,50 @@ html:root .lane-cell:focus-visible { outline: none; background: color-mix(in srg
 @media (prefers-reduced-motion: reduce) {
   .pdm-card[data-ghost] { animation: none; }
 }
+
+/* ── Plan projects / Plan initiatives — the deck walk (D-216) ───────────────
+   A drafted line wears Draft the path's look (D-193): a faint accent wash and
+   a dashed check. A line you touched or typed is yours — the wash goes, the
+   check turns solid — and a steer leaves it alone (R12). */
+.pw-line { gap: 8px; border-radius: var(--r-ctl); padding-inline: 6px; }
+.pw-line[data-draft] { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+.pw-line[data-draft] .pw-line-name { color: var(--ink-2); }
+.pw-check {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px dashed var(--accent-ring);
+}
+.pw-line[data-pinned] .pw-check { border-style: solid; border-color: var(--line-2); }
+.pw-check[data-real] { border-style: solid; border-color: var(--line-2); }
+.pw-have { gap: 8px; padding-inline: 6px; color: var(--muted); }
+.pw-line-name {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pw-said { margin: 0; font: 450 12px/1.45 var(--font-sans); color: var(--muted); }
+.pw-said[data-cost] { color: var(--warn); }
+.pw-removed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding-inline: 6px;
+  font: 450 12px/1.4 var(--font-sans);
+  color: var(--muted);
+}
+.pw-add { margin-top: 4px; }
+/* Nuvo's outcome draft under an empty outcome field (D-216) */
+.pw-suggest { min-width: 0; display: flex; }

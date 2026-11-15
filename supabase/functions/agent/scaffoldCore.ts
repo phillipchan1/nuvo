@@ -14,6 +14,35 @@ import { llmFor } from "./llmCore.ts";
 
 const ENERGIES = new Set(["deep", "decide", "delegate", "quick"]);
 
+// Words that say nothing about WHICH work a title is.
+const FILLER = new Set(
+  "a an the and or of to for in on with by at from into as is be it its this that your my our their them new first final draft write create make build implement wire do set up add define review update finish complete correctly properly".split(" "),
+);
+const contentWords = (t: string) =>
+  new Set(
+    t
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, " ")
+      .split(/\s+/)
+      .map((w) => w.replace(/s$/, ""))
+      .filter((w) => w.length > 2 && !FILLER.has(w)),
+  );
+
+/** A proposal restates one of the person's steps when the shorter title's
+ *  content words are almost all in the other ("Implement the pricing toggle to
+ *  switch Annual vs Monthly" vs "Wire the pricing toggle"). The prompt asks the
+ *  model not to; a small model still does, so the proposer drops them (D-216). */
+export function restates(proposal: string, own: string): boolean {
+  const a = contentWords(proposal);
+  const b = contentWords(own);
+  const small = a.size <= b.size ? a : b;
+  const big = small === a ? b : a;
+  if (small.size < 2) return false;
+  let shared = 0;
+  for (const w of small) if (big.has(w)) shared++;
+  return shared >= 2 && shared / small.size >= 0.75;
+}
+
 export interface ScaffoldDraft {
   title: string;
   energy: "deep" | "decide" | "delegate" | "quick" | null;
@@ -40,6 +69,10 @@ interface ScaffoldInput {
   /** Steps Nuvo proposed that the person hasn't kept yet, being redrafted by
    *  `guidance`. Replace these; don't repeat them unless the steer keeps them. */
   redraft?: string[];
+  /** A steer's measurable part, held by the client too (D-216): at most this
+   *  many tasks, each at most this many minutes. */
+  maxCount?: number;
+  maxMinutes?: number;
 }
 
 /** The shared proposer — grounds the LLM in the project's place in the
@@ -58,12 +91,14 @@ ${input.domain ? `Life domain: ${input.domain.name}. Standing intention: ${input
 The person's own steps so far (their plan — do NOT duplicate or restate these):
 ${existing.length ? existing.map((t) => `- [${t.status}] ${t.title}`).join("\n") : "(none yet)"}
 ${input.redraft?.length ? `\nYour previous proposal, which the person is reshaping (replace it, don't append to it):\n${input.redraft.map((t) => `- ${t}`).join("\n")}` : ""}
-${input.guidance ? `\nThe person redirected: "${input.guidance}". Honor this redirection.` : ""}
+${input.guidance ? `\nThe person redirected: "${input.guidance}". Honor this redirection.${input.redraft?.length ? ` Measure it against your previous proposal: "fewer" means clearly fewer items than it had (about half); "smaller" means every item under 45 minutes; never restate one of the person's own steps under another name.` : ""}` : ""}
 
 Propose ONLY the tasks their plan is missing to reach the outcome — fill the gaps, don't rewrite their work.
 Rules:
-- If they already have steps, add just the genuine gaps (0–6). If the list is empty, propose 3 to 8 to get started. Always in execution order (a → b → c); the first should be startable today.
-- Each task is one sitting of work: concrete verb-first title, 15–120 minutes.
+- If they already have steps, add just the genuine gaps (0–5). If the list is empty, propose 3 to 5 to get started — the first sittings that make real progress, not every task the project will ever need. Always in execution order (a → b → c); the first should be startable today.
+- Each task is one sitting of work: concrete verb-first title, 15–90 minutes; most are 30–45.${input.maxCount ? `
+- Return AT MOST ${input.maxCount} tasks. Keep the foundational steps that must come first and the one that finishes the outcome; drop the nice-to-haves.` : ""}${input.maxMinutes ? `
+- Every task is at most ${input.maxMinutes} minutes — split anything bigger.` : ""}
 - energy is one of: "deep" (focused maker work), "decide" (judgment call), "delegate" (hand off / follow up), "quick" (low-friction win).
 - rationale: one plain sentence, max 12 words, on why the outcome needs it. No "this ensures".
 - after: where it belongs among THEIR steps — the exact title of their step it comes straight after, or "START" if it comes before all of them. Omit it when it simply follows your previous proposal. With no steps of theirs, omit it.
@@ -111,6 +146,7 @@ Respond with JSON only: {"tasks":[{"title":string,"energy":string,"duration_minu
         : undefined,
     }))
     .filter((t) => t.title.length > 0)
+    .filter((t) => !existing.some((e) => restates(t.title, e.title)))
     .slice(0, 10);
 
   return { tasks };
@@ -131,6 +167,8 @@ export async function scaffoldProject(
     description?: string;
     /** Unkept proposals a steer is reshaping (Draft the path). */
     redraft?: string[];
+    maxCount?: number;
+    maxMinutes?: number;
   } = {},
 ): Promise<{ tasks: ScaffoldDraft[] }> {
   const admin = deps.db;
@@ -175,6 +213,8 @@ export async function scaffoldProject(
     existing: [...saved, ...drafts],
     guidance: opts.guidance,
     redraft: opts.redraft,
+    maxCount: opts.maxCount,
+    maxMinutes: opts.maxMinutes,
   });
 }
 

@@ -50,13 +50,19 @@ import { deckWeight } from "../lib/pace";
 import { ProjectShipAssess } from "./record/ShipAssess";
 import type { EmblemSpec } from "../lib/weekEmblem";
 import { PaceTrack } from "./progress/PaceTrack";
-import { Button, Chip, CrownLine, DayCrown, IconButton, MarkLabel, MarkSet, SectionHeader, Stop } from "./kit";
+import { Button, Chip, CrownLine, DayCrown, IconButton, MarkLabel, MarkSet, OfferChip, SectionHeader, Stop } from "./kit";
 import { dayPieces, marksReady, movingIds, readDay, weekMarks } from "../lib/marks";
 import { WEEK_REACH_KEY } from "../lib/motion";
 import { useSettings } from "../hooks/useSettings";
 import { taskDomainColor } from "../lib/vertical";
 import type { Task } from "../lib/types";
 import type { CrownLineData } from "../lib/crownLine";
+import { readyKey, type ReadyCard } from "../lib/readyCards";
+import { notNow } from "./nuvo/offerSnooze";
+import { instantAt } from "./plan/destinations";
+import { OtherTimes } from "./nuvo/OtherTimes";
+import { useWeekComposer } from "../hooks/useFindTime";
+import { costFor } from "../lib/offerChoices";
 
 /** The week door's lifecycle, owned by Planner and worn by this header. */
 export interface WeekDoor {
@@ -92,6 +98,7 @@ export default function WeekPanel({
   onPathCandidates,
   today,
   deck,
+  rowCards,
 }: {
   door?: WeekDoor;
   renderTask: RenderCrownTask;
@@ -115,6 +122,10 @@ export default function WeekPanel({
    *  present it stands where the line would; the line still speaks when
    *  there's no card to show (Handle's "Nuvo moved N · Review"). */
   deck?: ReactNode;
+  /** The Get ready cards. Each "loose" card — a project's work with no time
+   *  this week, and the composer's fit for it — rides its project's row as a
+   *  chip instead of a card above the list (D-216, R6). */
+  rowCards?: readonly ReadyCard[];
 }) {
   const { data, togglePushLanded } = useVertical();
   const { openFlow, openRecord, nav } = useAppNavigation();
@@ -141,6 +152,13 @@ export default function WeekPanel({
   // Draft the path's candidates (D-205): open, unlanded rows with a thin path.
   // Reported up; the rail's budget decides which, if any, show.
   const thin = useThinPaths();
+  // One time offer per project row: the first "loose" card for it (the cards
+  // arrive worst first, and the composer already kept two cards off one slot).
+  const timeOffers = useMemo(() => {
+    const m = new Map<string, ReadyCard>();
+    for (const c of rowCards ?? []) if (c.kind === "loose" && c.projectId && c.at && !m.has(c.projectId)) m.set(c.projectId, c);
+    return m;
+  }, [rowCards]);
   const pathCands =
     onPathCandidates && crown && listOpen
       ? pathCandidates(
@@ -286,6 +304,7 @@ export default function WeekPanel({
                   onContextMenu={recordMenu.onContextMenu("project", row.projectId)}
                   canPlace={canPlaceProjects}
                   pathOffer={offers?.get(row.projectId)?.kind === "path" ? thin.get(row.projectId) ?? null : null}
+                  timeOffer={timeOffers.get(row.projectId) ?? null}
                   onOpenProject={(id) => openRecord("project", id)}
                   expanded={openIds.has(row.rock.id)}
                   onExpand={() =>
@@ -366,6 +385,7 @@ function ProjectStackRow({
   onContextMenu,
   canPlace,
   pathOffer,
+  timeOffer,
   onOpenProject,
   expanded,
   onExpand,
@@ -380,6 +400,9 @@ function ProjectStackRow({
   canPlace: boolean;
   /** Draft the path, when the rail's budget gave this row the offer (D-205). */
   pathOffer: ThinPath | null;
+  /** A time for this project's next loose piece (D-216): "Schedule Today
+   *  4:15–5pm". Never beside a path offer — one offer per row (R6). */
+  timeOffer: ReadyCard | null;
   onOpenProject: (projectId: string) => void;
   expanded: boolean;
   onExpand: () => void;
@@ -529,6 +552,12 @@ function ProjectStackRow({
         </div>
       </div>
 
+      {/* Its time offer (D-216): a line of its own under the row, never inside
+          the one-line row (which would wrap its weight and chevron). */}
+      {!done && !pathOffer && timeOffer && (
+        <TimeOfferLine card={timeOffer} task={loose.find((t) => t.id === timeOffer.taskId) ?? null} projectName={row.title} />
+      )}
+
       {/* Its work — ONE grammar. These are `TaskRow`s: the same check, the
           same context menu, the same drag as the day list below. Placed pieces
           first (the clock orders them), then what has no time. Each row says
@@ -597,5 +626,48 @@ function TimeChip({ startISO, slotTitle }: { startISO: string; slotTitle: string
       {label}
       <span aria-hidden>↗</span>
     </button>
+  );
+}
+
+/** A project's next loose piece and where it would go (D-216): the piece's name,
+ *  then the act with its day — "Write the runbook · Schedule Today 4:15–5pm".
+ *  Pointing at the chip draws the block on the Schedule and dims the rest (R3);
+ *  the evidence and the project ride its tooltip. Right-click / ⌫ is Not now. */
+function TimeOfferLine({ card, task, projectName }: { card: ReadyCard; task: Task | null; projectName: string }) {
+  const at = card.at!;
+  // What it costs (R5), read off the same busy time the composer used.
+  const { busy } = useWeekComposer(new Date());
+  const cost = costFor(at, busy);
+  const start = instantAt(at.dayISO, at.startMin);
+  const end = instantAt(at.dayISO, at.startMin + at.durationMin);
+  return (
+    <div className="crown-offer-line" data-tauri-drag-region="false">
+      <span className="crown-offer-task" title={cost ? `${card.title} · ${cost}` : card.title}>
+        {card.title}
+        {cost && <span className="crown-offer-cost"> · {cost}</span>}
+      </span>
+      <OfferChip
+        verb={card.primary.verb}
+        name={card.primary.name}
+        whole
+        title={`${card.title} · ${card.why}`}
+        preview={{ label: card.title, start, end }}
+        onPress={(el) => card.primary.run(el)}
+        onDismiss={card.secondary ? () => card.secondary!.run() : undefined}
+      />
+      {task && card.placeAt && (
+        <OtherTimes
+          task={task}
+          first={at}
+          onHold={card.placeAt}
+          noes={[
+            ...(card.secondary ? [{ label: "Not now · two weeks", run: card.secondary.run }] : []),
+            ...(card.projectId
+              ? [{ label: `No time offers for ${projectName} · two weeks`, run: () => notNow(readyKey.times(card.projectId!)) }]
+              : []),
+          ]}
+        />
+      )}
+    </div>
   );
 }
