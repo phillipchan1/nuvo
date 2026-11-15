@@ -234,6 +234,6 @@ describe("repair — a rail mode, not a floating bar (D-204)", () => {
     const src = readFileSync("src/components/Planner.tsx", "utf8");
     expect(src).not.toMatch(/RepairBar/);
     expect(src).toMatch(/<RepairRail/);
-    expect(src).toMatch(/repairing \? repairOverlay : null/);
+    expect(src).toMatch(/repairing \? repairOverlay : /);
   });
 });

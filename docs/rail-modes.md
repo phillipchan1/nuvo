@@ -140,6 +140,6 @@ a tap that opens the walk). Inline chips are taps, 44px.
 
 1. **"Ask me Thursday."** A resurfacing date is a new mechanism and leans on N-07. Worth its own
    anchor pass if "Look at it last" and "Back to <project>" don't cover the need.
-2. **A deck walk for projects** (one project at a time to Ready, the same grammar). It adds a
+2. ~~**A deck walk for projects**~~ *Settled 2026-11-14 (D-216): **Plan projects** and **Plan initiatives**, specced in [`offer-rules.md`](./offer-rules.md) §4.* (one project at a time to Ready, the same grammar). It adds a
    ritual (P10's tax); Summit already walks initiatives quarterly. Its own anchor pass.
 3. ~~Repair's dial.~~ *Settled 2026-11-13:* Settings → Schedule only.

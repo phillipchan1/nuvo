@@ -8306,3 +8306,42 @@ the week is carrying; that answer now lives on the Schedule only, as it did befo
 operator misses it on the other pages, bring back one pip line, not a list.
 
 *Status: built 2026-11-14. Verified at `?rail=frame`, expanded and railed.*
+
+**D-216 · 2026-11-14 · Offers keep thirteen rules: say where (with the day), show where, say why
+and what it costs, ride their row, and always have a second answer. Plan mode reaches the decks as
+Plan projects and Plan initiatives.** *(Asked by the operator: "if we put intelligence in and it's
+not trustworthy, people are not going to use it… it's not immediately clear which day this is
+happening on… a hover interaction where it shows exactly where on the calendar it goes… what if I
+want an alternative to the suggestion, what recourse do we have?" Spec:
+[`offer-rules.md`](../offer-rules.md). Prototype:
+[Nuvo Offer Rules](https://claude.ai/artifact/7oumBYorD2Zk7bAbxZgetX).)*
+
+→ **Amends D-209's "deck first" and D-213's labels.** At rest the Get ready card gives way to
+chips on the rows; the stack stays behind the crown's line (D-207). D-213's verbs stay, and the
+name gains the day: *Schedule Today 4:15–5pm*, never *Schedule 4:15–5pm*.
+
+→ **Why the card goes at rest.** Its label had no day, it sat above the list in the loudest frame
+on the screen, and it was about a project that was already a row below it. An offer is a chip on
+the row it changes, its label the destination *with the day*, its why and cost one muted line.
+
+→ **Hover shows the spot and dims the rest.** The grid's other blocks fall to ~20% while a
+suggestion is pointed at; the target day takes the accent. The appearance alone was too subtle.
+
+→ **Always a second answer (R13).** *Other times* is always shown beside the chip, not revealed
+on hover, and alternatives are **not** drawn on hover (Phil, the same day). Opening it shows up to
+two alternatives that each name why they differ and what they cost, numbered on the grid, plus
+placing it yourself by clicking open time, checked for overlap and the past.
+
+→ **Plan projects / Plan initiatives**, not "Plan the deck": the rail's Plan mode on each planner
+surface, the same act at three clock speeds. Plan projects drafts a project's missing tasks with
+you (edit, resize, remove, add, steer in plain language; a steer never rewrites what you touched,
+R12), then turns their hours into a span with its collision named. No history: drafts from the
+outcome at a named 30m default. The UI says *tasks*, since a **Step** is a checklist line (D-103).
+
+→ **Anchor.** W2 · W3 · Q1 · Q2 · Q4 · A4. Strains **P9** (an offer is always present on its
+row; held by R6 and R11) and **P10** (another walk; held by it being Plan mode on another
+surface). New names: *Other times*, *Plan projects*, *Plan initiatives*. Closes rail-modes §8.2.
+
+*Status: accepted. Phase 1 built 2026-11-14 on `claude/offer-rules`, desktop Schedule only, driven
+at `?rail=deck`, not yet on a signed-in Schedule. Other times, Plan projects and Plan initiatives
+not built; the decks still show the card at rest.*

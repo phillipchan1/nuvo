@@ -23,7 +23,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useApplyTheme, useSettings } from "../hooks/useSettings";
 import { startOfDay } from "date-fns";
 import LeftRail, { type RailTab } from "./LeftRail";
-import RestDeck from "./plan/RestDeck";
+import { useOfferPreview } from "../lib/offerPreview";
 import { useHarnessReadyCards } from "./plan/ReadyHarness";
 import ReadyHarness from "./plan/ReadyHarness";
 import Spine from "./Spine";
@@ -187,8 +187,10 @@ function Desktop({ embedded = false, bar, fx = BASE, withDeck = false }: { embed
       .map((t) => (t.slot_id && byId.get(t.slot_id) ? { ...t, start_time: byId.get(t.slot_id)!.start_time } : t));
   }, [tasks, fx.slots]);
   const slotTitle = useCallback((s: Slot, kids: Task[]) => deriveSlotTitle(s, kids, fx.vertical), [fx.vertical]);
-  // `?rail=deck` (D-209): the deck at rest, over the Get ready fixture stack.
+  // `?rail=deck`: the Get ready fixture stack. At rest its time cards ride
+  // their project rows as chips (D-216); pointing at one is logged below.
   const { cards } = useHarnessReadyCards(log);
+  const preview = useOfferPreview();
 
   return (
     <div className={embedded ? "flex min-h-0 flex-1" : "flex h-screen gap-6 p-0"}>
@@ -206,7 +208,7 @@ function Desktop({ embedded = false, bar, fx = BASE, withDeck = false }: { embed
         slots={fx.slots}
         slotTitle={slotTitle}
         onOpenSlot={(s, anchor) => openOverlay("slot", s.id, anchor)}
-        deck={withDeck && cards.length > 0 ? <RestDeck cards={cards} onAll={() => log("→ Get ready (all)")} /> : undefined}
+        rowCards={withDeck ? cards : undefined}
         onCrownLine={withDeck ? () => log("→ Get ready") : undefined}
       />
       {/* The bar is NOT here: as in Planner, it spans the rail and the grid
@@ -217,6 +219,9 @@ function Desktop({ embedded = false, bar, fx = BASE, withDeck = false }: { embed
       <div className="flex flex-col gap-4 p-6">
         <PopoverStandIn tasks={tasks} />
         {nav.overlay === "none" && <div className="text-caption text-muted">no popover open</div>}
+        <div className="text-caption text-muted" data-offer-preview={preview ? "" : undefined}>
+          {preview ? `previewing: ${preview.label} · ${preview.start.toString().slice(0, 21)}–${preview.end.toTimeString().slice(0, 5)}` : "no offer previewed"}
+        </div>
         <div className="text-meta text-muted">
           <div className="section-label !p-0">last writes</div>
           {lines.map((l, i) => (

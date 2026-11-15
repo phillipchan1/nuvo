@@ -1021,6 +1021,29 @@ html:root .rest-deck-all:focus-visible { outline: none; box-shadow: 0 0 0 2px va
 .crown-oneline .crown-proj-top > :nth-child(n + 3) { order: 4; }
 .crown-oneline .crown-proj-top > :last-child { order: 5; }
 
+/* A project's time offer (D-216, R6): its own line under the row — the piece's
+   name, quiet, then the act with its day. Never a card above the list. The row
+   wraps so the line takes the full width, indented to the name. */
+.crown-oneline .crown-proj-row { flex-wrap: wrap; }
+.crown-offer-line {
+  order: 6;
+  flex: 1 0 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding-left: 22px;
+}
+.crown-offer-task {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 450 12px/1.3 var(--font-sans);
+  color: var(--faint);
+}
+
 /* The tray (D-209): Today and Inbox fold to their tab strip above Capture and
    open into the rail's lower part. The day's blocks are already on the grid. */
 .rail-tray-shut .rail-list { display: none; }

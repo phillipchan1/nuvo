@@ -25,6 +25,7 @@ import ReminderSelect from "./ReminderSelect";
 import type { ReminderAnchorKind } from "../../supabase/functions/_shared/reminderRules.ts";
 import TaskRow, { type TaskMeta, type TaskRowHandle } from "./TaskRow";
 import type { CrownLineData } from "../lib/crownLine";
+import type { ReadyCard } from "../lib/readyCards";
 import WeekPanel, { type WeekDoor } from "./WeekPanel";
 import {
   FileOffer,
@@ -84,6 +85,7 @@ function LeftRail({
   crownLine,
   onCrownLine,
   deck,
+  rowCards,
 }: {
   tab: RailTab;
   setTab: (t: RailTab) => void;
@@ -123,6 +125,9 @@ function LeftRail({
   onCrownLine?: () => void;
   /** The deck at rest (D-209): the Get ready stack's top card, under the crown. */
   deck?: React.ReactNode;
+  /** The Get ready cards, handed down so each one that gives a project's work a
+   *  time can ride that project's row as a chip (D-216). */
+  rowCards?: readonly ReadyCard[];
 }) {
   // The directory, not the whole vertical: the rail labels its rows (project,
   // domain, hue) and offers pickers; it shows no progress. Reading the whole
@@ -994,6 +999,7 @@ function LeftRail({
           onPathCandidates={setPathCands}
           today={today}
           deck={deck}
+          rowCards={rowCards}
         />
       </div>
       {/* The tray (D-209): Today and Inbox fold to this strip above Capture —

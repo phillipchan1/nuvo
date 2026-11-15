@@ -1,5 +1,6 @@
-import { forwardRef, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { forwardRef, useEffect, useId, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { cx } from "./cx";
+import { clearOfferPreview, showOfferPreview } from "../../lib/offerPreview";
 
 // Button · IconButton · Kbd — the kit's controls (D-190, styles/kit.css).
 //
@@ -103,6 +104,7 @@ export function OfferChip({
   whole = false,
   dest = false,
   said: saidAs,
+  preview,
   onPress,
   onDismiss,
 }: {
@@ -117,10 +119,22 @@ export function OfferChip({
   dest?: boolean;
   /** What a screen reader hears, when the visible verb is a glyph ("→"). */
   said?: string;
+  /** Where the act would land (D-216, R3): pointing at the chip — a mouse
+   *  over it, or keyboard focus — draws this on the Schedule and dims the rest.
+   *  Nothing is written. */
+  preview?: { label: string; start: Date; end: Date } | null;
   onPress: (el: HTMLButtonElement) => void;
   onDismiss?: () => void;
 }) {
   const hold = useRef<{ timer: number; x: number; y: number; fired: boolean } | null>(null);
+  const previewId = useId();
+  const show = () => {
+    if (preview) showOfferPreview({ id: previewId, ...preview });
+  };
+  const hide = () => clearOfferPreview(previewId);
+  // A chip that leaves the row (pressed, dismissed, re-rendered away) takes its
+  // picture with it.
+  useEffect(() => () => clearOfferPreview(previewId), [previewId]);
   const cancel = () => {
     if (hold.current) window.clearTimeout(hold.current.timer);
   };
@@ -141,9 +155,18 @@ export function OfferChip({
           hold.current = null;
           return;
         }
+        hide();
         onPress(e.currentTarget);
       }}
       onDoubleClick={(e) => e.stopPropagation()}
+      onPointerEnter={(e) => {
+        if (e.pointerType === "mouse") show();
+      }}
+      onPointerLeave={hide}
+      onFocus={(e) => {
+        if (e.currentTarget.matches(":focus-visible")) show();
+      }}
+      onBlur={hide}
       onPointerDown={(e) => {
         e.stopPropagation();
         if (!onDismiss || e.pointerType !== "touch") return;

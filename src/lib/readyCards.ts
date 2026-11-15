@@ -70,6 +70,9 @@ export interface ReadyCard {
   projectId: string | null;
   /** a card that opens a mode instead of writing */
   opensMode?: "plan" | "repair";
+  /** where the act lands, for a card that gives work a time — what pointing
+   *  at it draws on the Schedule (D-216, R3) */
+  at?: Where;
 }
 
 export interface ReadyActs {
@@ -128,10 +131,11 @@ export const readyKey = {
 
 const NOT_NOW = "Not now";
 
-/** "2–2:30pm" today, "Tue 10–11am" any other day — the clock vocabulary. */
+/** "Today 2–2:30pm", "Tue 10–11am" any other day — the clock vocabulary, and
+ *  always the day (D-216, R2): a bare time made you work out which day. */
 export function whenLabel(p: Where, todayISO: string): string {
   if (p.dayISO !== todayISO) return whereSpan(p);
-  return span(instantAt(p.dayISO, p.startMin), instantAt(p.dayISO, p.startMin + p.durationMin));
+  return `Today ${span(instantAt(p.dayISO, p.startMin), instantAt(p.dayISO, p.startMin + p.durationMin))}`;
 }
 
 /** Every card, worst first. Surfaces show the first `READY_MAX`. */
@@ -151,6 +155,7 @@ export function composeReadyCards(input: ReadyInput): ReadyCard[] {
       title: r.title,
       why: `${r.why === "missed" ? "Missed" : `${r.event || "A meeting"} landed on it`} · was ${whereSpan(r.from)}`,
       primary: { verb: "Move to", name: whereSpan(r.to), run: (el) => acts.move(r.key, el) },
+      at: r.to,
       secondary: { label: "Keep it there", run: () => acts.leave(r.key) },
       projectId: r.projectId,
     });
@@ -178,6 +183,7 @@ export function composeReadyCards(input: ReadyInput): ReadyCard[] {
       title: h.title,
       why: h.at.dayISO === todayISO ? "Today · no time yet" : "Today · no time left today",
       primary: { verb: "Schedule", name: whenLabel(h.at, todayISO), run: (el) => acts.hold(h.taskId, el) },
+      at: h.at,
       secondary: notNow(readyKey.hold(h.taskId)),
       projectId: h.projectId,
     });
@@ -196,6 +202,7 @@ export function composeReadyCards(input: ReadyInput): ReadyCard[] {
       title: l.title,
       why: `${l.projectName} · no time this week`,
       primary: { verb: "Schedule", name: whenLabel(l.at, todayISO), run: (el) => acts.holdLoose(l.taskId, el) },
+      at: l.at,
       secondary: notNow(readyKey.loose(l.taskId)),
       projectId: l.projectId,
     });
