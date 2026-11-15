@@ -21,7 +21,6 @@ import { useDeferProject } from "../../hooks/useProjectTime";
 import { useCapacity } from "../../hooks/useCapacity";
 import { projectDeckMarks } from "../../lib/marks";
 import { demandByWeekDetailed } from "../../lib/pace";
-import RestDeck from "../plan/RestDeck";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { useMaxPerWeek, useCoverageHidden, useCoverageCollapsed, useDeckByDomain } from "../../hooks/usePlannerPrefs";
 import { useRecordContextMenu } from "../RecordContextMenu";
@@ -41,16 +40,19 @@ import GroomingSessionAction from "../floors/GroomingSessionAction";
 import { deckWeight } from "../../lib/pace";
 import { PIP_TONE, projectCardStatus, thinWord } from "./deckStatus";
 import GetReadyRail from "../plan/GetReadyRail";
-import { deckLine, projectDeckCards, type OutcomeDraft } from "../../lib/deckReady";
+import { deckPlanLine, planCard, projectDeckCards, rowOffers, type OutcomeDraft } from "../../lib/deckReady";
+import type { ReadyCard } from "../../lib/readyCards";
+import { occupantSpan, walkOrder, type Occupant } from "../../lib/planProjects";
+import type { AskScaffold } from "../../lib/scaffoldAsk";
+import PlanProjectsRail, { LivePlanProjectsRail, type AddPlannedTasks } from "./PlanProjectsRail";
 import { fetchOutcomeDraft } from "../../lib/outcomeDraft";
 import { DECK_REACH_KEY, reachToCrown } from "../../lib/motion";
 import { requestPathDraft } from "../../lib/draftIntent";
 import { PaceTrack } from "../progress/PaceTrack";
-import ThinDoor from "./ThinDoor";
 import { useThinPaths } from "../../hooks/useThinPaths";
 import { SlotCreateHint } from "./SlotCreateButton";
 import { pressable } from "../../lib/a11y";
-import { Dot, EmptyState } from "../kit";
+import { Dot, EmptyState, OfferChip } from "../kit";
 
 // A planning surface wants runway — show more weeks than the compact hub and let
 // it scroll. More than this many projects committed to one week is a red flag.
@@ -84,7 +86,15 @@ const weekSpan = sprintSpanFor;
 
 type Preview = { id: string; start: number; end: number } | null;
 
-export default function OnDeckPlanner() {
+export default function OnDeckPlanner({
+  planDeps,
+  startIn,
+}: {
+  /** a harness's drafter and writer (`?decks=plan`); live otherwise */
+  planDeps?: { ask?: AskScaffold; addTasks?: AddPlannedTasks };
+  /** open in a mode — a harness's way in; the app always starts at rest (R9) */
+  startIn?: "plan";
+} = {}) {
   const { data, updateProject, addProject } = useVertical();
   const defer = useDeferProject();
   const { onContextMenu, menu } = useRecordContextMenu();
@@ -230,7 +240,7 @@ export default function OnDeckPlanner() {
   });
   const effGeom = geom.map((g) =>
     preview && preview.id === g.l.project.id
-      ? { ...g, start: clampIdx(preview.start, H), end: clampIdx(preview.end, H), beyond: false }
+      ? { ...g, start: clampIdx(preview.start, H), end: clampIdx(preview.end, H), beyond: preview.end >= H }
       : g,
   );
   // Projects committed to each week (live under the drag) — the overload gauge.
@@ -282,7 +292,7 @@ export default function OnDeckPlanner() {
     : [];
   const effOf = (g: Geom) =>
     preview && preview.id === g.l.project.id
-      ? { start: clampIdx(preview.start, H), end: clampIdx(preview.end, H), beyond: false }
+      ? { start: clampIdx(preview.start, H), end: clampIdx(preview.end, H), beyond: preview.end >= H }
       : { start: g.start, end: g.end, beyond: g.beyond };
 
   // Where the inline composer slots in for the week being composed: the first row
@@ -324,6 +334,7 @@ export default function OnDeckPlanner() {
     const dragging = preview?.id === l.project.id;
     const done = l.readyTier === "done";
     const weight = done ? null : deckWeight(l.pace.remainingMins);
+    const offer = chips.get(l.project.id) ?? null;
     return (
       <DeckCard
         key={l.project.id}
@@ -345,9 +356,13 @@ export default function OnDeckPlanner() {
         status={projectCardStatus(l, thin.get(l.project.id))}
         pips={done ? undefined : [l.axes.defined, l.axes.planned, l.axes.fits === true]}
         pipTone={PIP_TONE[l.readyTier]}
-        dim={l.readyTier === "parked"}
+        // the walk points at a span: everything else recedes (R3)
+        dim={l.readyTier === "parked" || (walkId != null && preview != null && preview.id !== l.project.id)}
+        selected={walkId === l.project.id}
         shipped={done}
-        footer={thin.has(l.project.id) ? <ThinDoor projectId={l.project.id} onOpen={(id) => openRecord("project", id)} /> : undefined}
+        // Nuvo's offer for this project rides its own card (R6) — a quiet chip
+        // that names where it goes; never while a mode owns the rail.
+        footer={offer && !readyMode && !planMode ? <DeckOfferChip card={offer} onHint={(on) => setHintWeek(on ? (hintFor.get(l.project.id) ?? null) : null)} /> : undefined}
       >
         <span data-resize="start" className="absolute inset-y-0 left-0 w-2.5 cursor-ew-resize" aria-hidden />
         <span data-resize="end" className="absolute inset-y-0 right-0 w-2.5 cursor-ew-resize" aria-hidden />
@@ -435,6 +450,8 @@ export default function OnDeckPlanner() {
     const onDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
       const tgt = e.target as HTMLElement;
+      // a control inside the card (an offer chip) handles itself
+      if (tgt?.closest?.("[data-card-control]")) return;
       const el = tgt?.closest?.("[data-project-drag]") as HTMLElement | null;
       if (!el) return;
       const id = el.getAttribute("data-project-drag");
@@ -570,7 +587,7 @@ export default function OnDeckPlanner() {
   // Schedule's today column — and the live drop target wears open time.
   const colState = (i: number) => ({
     "data-now": i === 0 ? "" : undefined,
-    "data-drop": dropWeek === i ? "" : undefined,
+    "data-drop": dropWeek === i || hintWeek === i ? "" : undefined,
   });
 
 
@@ -665,16 +682,94 @@ export default function OnDeckPlanner() {
       );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readyMode]);
-  const line = useMemo(() => deckLine(deckCards, "project"), [deckCards]);
+  // ── Plan projects (D-216, docs/offer-rules.md §4) ─────────────────────────
+  // The walk over the deck's not-Ready projects, rawest first. It opens only
+  // from your press — the line, or its card in the stack (R9).
+  const [planMode, setPlanMode] = useState(false);
+  const [walkOrderIds, setWalkOrderIds] = useState<string[]>([]);
+  const [walkId, setWalkId] = useState<string | null>(null);
+  const notReady = open.filter((l) => l.readyTier === "raw" || l.readyTier === "grooming");
+  const openPlan = () => {
+    setReadyMode(false);
+    setWalkOrderIds(walkOrder(notReady.map((l) => ({ id: l.project.id, name: l.project.name, met: l.readyCount, at: startOf(l.project.id) }))));
+    setPlanMode(true);
+  };
+  // a harness opens straight into the walk — once the lanes are read
+  const harnessOpened = useRef(false);
+  useEffect(() => {
+    if (startIn !== "plan" || harnessOpened.current || notReady.length === 0) return;
+    harnessOpened.current = true;
+    openPlan();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notReady.length]);
+  const closePlan = () => {
+    setPlanMode(false);
+    setPreview(null);
+    setWalkId(null);
+  };
+  const stack = useMemo(() => {
+    const plan = planCard(notReady.length, "project", openPlan);
+    return plan ? [...deckCards, plan] : deckCards;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deckCards, notReady.length]);
+  const { line, opens } = useMemo(() => deckPlanLine(deckCards, notReady.length, "project"), [deckCards, notReady.length]);
+  // At rest, an offer rides its own card (R6): at most three, worst first.
+  const chips = useMemo(() => rowOffers(deckCards), [deckCards]);
+  // Pointing at a *Move to* chip lights the week it would land in (R3).
+  const [hintWeek, setHintWeek] = useState<number | null>(null);
+  const hintFor = new Map<string, number>();
+  for (const [id, c] of chips) {
+    if (c.primary.verb !== "Move to") continue;
+    const to = roomAfter(startOf(id));
+    if (to != null) hintFor.set(id, to);
+  }
+  const base = board.weeks[0]?.weekStart ?? now;
+  const occupants: Occupant[] = data.projects
+    .filter((p) => isOpenStatus(p.status) && p.status !== "waiting" && !p.shippedAt && p.targetDate)
+    .flatMap((p) => {
+      const sp = occupantSpan(base, p.startDate ?? null, p.targetDate ?? null);
+      return sp ? [{ id: p.id, name: p.name, domainId: p.domainId ?? null, ...sp }] : [];
+    });
+  const planProps = {
+    data,
+    lanes: placed,
+    order: walkOrderIds,
+    ready: readyN + doneN,
+    total: placed.length,
+    base,
+    occupants,
+    cap: maxPerWeek,
+    width: RAIL_WIDTH_CSS(),
+    ask: planDeps?.ask,
+    place: (p: Project, start: number, weeks: number) => {
+      void reachToCrown(null, DECK_REACH_KEY);
+      moveProject(p, { ...weekSpan(p, addDays(base, start * 7), weeks), status: "in_progress" }, "Planned");
+    },
+    park: (p: Project) => moveProject(p, { status: "waiting" }, "Parked"),
+    onPreview: (pv: { id: string; start: number; end: number } | null) => setPreview(pv),
+    onWalk: setWalkId,
+    onClose: closePlan,
+  };
 
   return (
     <div className="dk">
       {menu}
       {/* ── the pool — the same rail the Schedule wears, one clock speed up:
           "needs a week" instead of "needs a time". Structure, not a panel. ──── */}
-      {readyMode ? (
+      {planMode ? (
+        planDeps?.addTasks ? (
+          <PlanProjectsRail {...planProps} addTasks={planDeps.addTasks} />
+        ) : (
+          <LivePlanProjectsRail
+            {...planProps}
+            updateOutcome={(p, outcome) =>
+              writeWithUndo((x) => updateProject(p.id, x), p, { outcome }, recordUndo, `Set the outcome of “${p.name}”`, "set the outcome")
+            }
+          />
+        )
+      ) : readyMode ? (
         <GetReadyRail
-          cards={deckCards}
+          cards={stack}
           width={RAIL_WIDTH_CSS()}
           onClose={() => setReadyMode(false)}
           crown={
@@ -706,12 +801,13 @@ export default function OnDeckPlanner() {
               <PaceTrack done={readyN + doneN} placed={groomN} total={placed.length} color="var(--accent)" width={160} />
             ) : undefined,
           // The line (D-207): the deck's Get ready stack, first card in words.
+          // At rest the line is the deck's one door (D-216): the walk when
+          // shaping leads, the stack otherwise; the offers ride their cards.
           line,
-          onLine: () => setReadyMode(true),
-          // The readings (D-209) and the deck at rest.
+          onLine: opens === "plan" ? openPlan : () => setReadyMode(true),
+          // The readings (D-209).
           title: "On Deck",
           marks: placed.length > 0 ? deckMarks : undefined,
-          deck: deckCards.length > 0 ? <RestDeck cards={deckCards} onAll={() => setReadyMode(true)} /> : undefined,
         }}
         poolLabel="Needs a week"
         poolCount={inbox.length}
@@ -929,6 +1025,33 @@ export default function OnDeckPlanner() {
           <div className="deck-ghost-sub">{drag.sub}</div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** An offer on a deck card (D-216, R6): the stack's card, said as a quiet chip
+ *  that names where it goes. Pointing at a *Move to* lights its week. */
+function DeckOfferChip({ card, onHint }: { card: ReadyCard; onHint: (on: boolean) => void }) {
+  return (
+    <div
+      className="flex min-w-0 pt-1"
+      data-card-control=""
+      onPointerEnter={() => onHint(true)}
+      onPointerLeave={() => onHint(false)}
+      onFocus={() => onHint(true)}
+      onBlur={() => onHint(false)}
+    >
+      <OfferChip
+        verb={card.primary.verb}
+        name={card.primary.name}
+        dest={card.primary.name != null}
+        title={card.why}
+        onPress={(el) => {
+          onHint(false);
+          card.primary.run(el);
+        }}
+        onDismiss={card.secondary?.label === "Not now" ? () => card.secondary!.run() : undefined}
+      />
     </div>
   );
 }

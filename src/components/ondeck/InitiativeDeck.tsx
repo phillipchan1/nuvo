@@ -17,7 +17,6 @@ import { initiativeReadinessAxes } from "../../lib/lenses";
 import { initiativeDeckMarks, movingIds } from "../../lib/marks";
 import { weekPushes } from "../../lib/priorities";
 import { planningWeekStartISO } from "../../lib/dates";
-import RestDeck from "../plan/RestDeck";
 import { armDragCancel } from "../../lib/dragCancel";
 import { useOptionalUndoStack } from "../../hooks/useUndoStack";
 import { writeWithUndo } from "../../lib/deckUndo";
@@ -53,12 +52,13 @@ import DeckCard, { type DeckTone } from "./DeckCard";
 import GroomingSessionAction from "../floors/GroomingSessionAction";
 import { initiativeCardStatus, INITIATIVE_STATE_LABEL } from "./deckStatus";
 import GetReadyRail from "../plan/GetReadyRail";
-import { deckLine, initiativeDeckCards } from "../../lib/deckReady";
+import { deckPlanLine, initiativeDeckCards, planCard } from "../../lib/deckReady";
+import { walkOrder, type QuarterOccupant } from "../../lib/planProjects";
+import PlanInitiativesRail from "./PlanInitiativesRail";
 import { PaceTrack } from "../progress/PaceTrack";
 import SlotCreateButton from "./SlotCreateButton";
 import { LANE_LABEL_W, LaneCell, LaneLabel, domainLanes, laneColor, laneName } from "./DomainLanes";
-import { ChipButton, Dot, EmptyState } from "../kit";
-import { Icon } from "../Icon";
+import { ChipButton, Dot, EmptyState, OfferChip } from "../kit";
 import ProjectDraftQuarter from "./ProjectDraftQuarter";
 import { canDraftProjects, quarterWeeks } from "../../lib/projectDraft";
 
@@ -77,8 +77,8 @@ const HORIZON_QUARTERS = 4;
 // stretching into a tall empty box beside a stack of three.
 const SOCKET_H = 54;
 
-export default function InitiativeDeck() {
-  const { data, updateInitiative, updateProject, addInitiative } = useVertical();
+export default function InitiativeDeck({ startIn }: { /** a harness's way into the walk; the app starts at rest (R9) */ startIn?: "plan" } = {}) {
+  const { data, updateInitiative, updateProject, addInitiative, addKeyResult } = useVertical();
   const { openRecord, openFloorModal, setInitiativeView } = useAppNavigation();
   const [maxPerQuarter] = useMaxPerQuarter();
   const [coverageHidden, toggleCoverageHidden] = useCoverageHidden("initiative");
@@ -207,7 +207,7 @@ export default function InitiativeDeck() {
   // wears the faintest ember (now), the live drop target open time.
   const colState = (i: number) => ({
     "data-now": i === 0 ? "" : undefined,
-    "data-drop": dropCol === i ? "" : undefined,
+    "data-drop": dropCol === i || hintCol === i ? "" : undefined,
   });
 
   // ── a quarter's header — the Schedule's day header, two clock speeds up: the
@@ -306,7 +306,7 @@ export default function InitiativeDeck() {
             >
               {cells[q.idx].map((l) => (
                 <div key={l.initiative.id} className="pointer-events-auto">
-                  <InitiativeCard lane={l} data={data} onSetDomain={setDomain} onDraftProjects={onDraftProjects} inLane />
+                  <InitiativeCard lane={l} data={data} onSetDomain={setDomain} onDraftProjects={planMode || readyMode ? undefined : onDraftProjects} inLane walk={walkState(l.initiative.id)} />
                 </div>
               ))}
               {composing && composeCol === q.idx && (
@@ -445,7 +445,61 @@ export default function InitiativeDeck() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [board, data],
   );
-  const line = useMemo(() => deckLine(deckCards, "initiative"), [deckCards]);
+  // ── Plan initiatives (D-216, docs/offer-rules.md §4) ──────────────────────
+  // The walk over the not-Ready bets, rawest first; only from your press (R9).
+  const [planMode, setPlanMode] = useState(false);
+  const [walkOrderIds, setWalkOrderIds] = useState<string[]>([]);
+  const [walkId, setWalkId] = useState<string | null>(null);
+  const [walkPreview, setWalkPreview] = useState<{ id: string; quarter: number } | null>(null);
+  const hintCol = walkPreview?.quarter ?? null;
+  const axesOf = (i: Initiative) => initiativeReadinessAxes(data, i);
+  const isReady = (l: InitiativeLane) => {
+    const a = axesOf(l.initiative);
+    return a.defined && a.planned;
+  };
+  const openLanes = board.lanes.filter((l) => l.state !== "done" && l.state !== "parked");
+  const notReady = openLanes.filter((l) => !isReady(l));
+  const readyBets = board.lanes.filter((l) => l.state === "done" || (l.state !== "parked" && isReady(l))).length;
+  const openPlan = () => {
+    setReadyMode(false);
+    setWalkOrderIds(
+      walkOrder(
+        notReady.map((l) => {
+          const a = axesOf(l.initiative);
+          return { id: l.initiative.id, name: l.initiative.name, met: (a.defined ? 1 : 0) + (a.planned ? 1 : 0), at: l.quarterIdx ?? 0 };
+        }),
+      ),
+    );
+    setPlanMode(true);
+  };
+  const harnessOpened = useRef(false);
+  useEffect(() => {
+    if (startIn !== "plan" || harnessOpened.current || notReady.length === 0) return;
+    harnessOpened.current = true;
+    openPlan();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notReady.length]);
+  const closePlan = () => {
+    setPlanMode(false);
+    setWalkPreview(null);
+    setWalkId(null);
+  };
+  /** How a card reads while the walk is open: the walked one lit, the rest
+   *  receding while a quarter is pointed at (R3). */
+  const walkState = (id: string): "on" | "dim" | undefined =>
+    !planMode ? undefined : walkId === id ? "on" : walkPreview && walkPreview.id !== id ? "dim" : undefined;
+  const stack = useMemo(() => {
+    const plan = planCard(notReady.length, "initiative", openPlan);
+    return plan ? [...deckCards, plan] : deckCards;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deckCards, notReady.length]);
+  const { line, opens } = useMemo(() => deckPlanLine(deckCards, notReady.length, "initiative"), [deckCards, notReady.length]);
+  const occupants: QuarterOccupant[] = openLanes.map((l) => ({
+    id: l.initiative.id,
+    name: l.initiative.name,
+    domainId: l.initiative.domainId ?? null,
+    quarter: l.quarterIdx ?? 0,
+  }));
 
   return (
     <div className="dk">
@@ -463,9 +517,35 @@ export default function InitiativeDeck() {
       )}
       {/* ── the pool — the same rail as the Schedule and the project deck, one
           clock speed up again: a bet needs a QUARTER. ────────────────────────── */}
-      {readyMode ? (
+      {planMode ? (
+        <PlanInitiativesRail
+          data={data}
+          lanes={board.lanes}
+          order={walkOrderIds}
+          ready={readyBets}
+          total={board.lanes.length}
+          quarters={board.quarters}
+          occupants={occupants}
+          cap={maxPerQuarter}
+          width={RAIL_WIDTH_CSS()}
+          shape={(i, typed) => {
+            if (typed.outcome) moveInitiative(i, { outcome: typed.outcome }, "Set the outcome of");
+            if (typed.keyResult) addKeyResult(i.id, { name: typed.keyResult });
+          }}
+          draftProjects={onDraftProjects}
+          canDraft={(l) => canDraftProjects(data, l)}
+          place={(i, q) => {
+            const col = board.quarters[q];
+            if (col) moveInitiative(i, { targetDate: quarterEndISO(col.start), status: "in_progress" }, "Planned");
+          }}
+          park={(i) => moveInitiative(i, { status: "waiting" }, "Parked")}
+          onPreview={setWalkPreview}
+          onWalk={setWalkId}
+          onClose={closePlan}
+        />
+      ) : readyMode ? (
         <GetReadyRail
-          cards={deckCards}
+          cards={stack}
           width={RAIL_WIDTH_CSS()}
           onClose={() => setReadyMode(false)}
           crown={
@@ -491,12 +571,13 @@ export default function InitiativeDeck() {
               <PaceTrack done={onTrack} placed={grooming} total={board.lanes.length} color="var(--accent)" width={160} />
             ) : undefined,
           // The line (D-207): at risk first, then what needs shaping.
+          // At rest the line is the deck's one door (D-216): the walk when
+          // shaping leads, the stack otherwise; offers ride their cards.
           line,
-          onLine: () => setReadyMode(true),
-          // The readings (D-209) and the deck at rest.
+          onLine: opens === "plan" ? openPlan : () => setReadyMode(true),
+          // The readings (D-209).
           title: "This quarter",
           marks: board.lanes.length > 0 ? betMarks : undefined,
-          deck: deckCards.length > 0 ? <RestDeck cards={deckCards} onAll={() => setReadyMode(true)} /> : undefined,
         }}
         poolLabel="Needs a quarter"
         poolCount={board.inbox.length}
@@ -604,7 +685,7 @@ export default function InitiativeDeck() {
                   return (
                     <div key={q.key} data-quarter={q.idx} className="dk-qcol" {...colState(q.idx)}>
                       {lanes.map((l) => (
-                        <InitiativeCard key={l.initiative.id} lane={l} data={data} onSetDomain={setDomain} onDraftProjects={onDraftProjects} />
+                        <InitiativeCard key={l.initiative.id} lane={l} data={data} onSetDomain={setDomain} onDraftProjects={planMode || readyMode ? undefined : onDraftProjects} walk={walkState(l.initiative.id)} />
                       ))}
                       {composing ? (
                         // the draft, right under the cards — the next slot, not pinned
@@ -695,6 +776,7 @@ function InitiativeCard({
   onSetDomain,
   onDraftProjects,
   inLane = false,
+  walk,
 }: {
   lane: InitiativeLane;
   data: VerticalData;
@@ -703,6 +785,8 @@ function InitiativeCard({
   onDraftProjects?: (lane: InitiativeLane, from: DOMRect | null) => void;
   /** By domain: the lane names the area, so the card stops saying it (D-122). */
   inLane?: boolean;
+  /** Plan initiatives is on this bet (lit) or pointing at another (receding). */
+  walk?: "on" | "dim";
 }) {
   const { onContextMenu, menu } = useRecordContextMenu();
   const i = lane.initiative;
@@ -743,7 +827,8 @@ function InitiativeCard({
       status={status}
       pips={done ? undefined : [axes.defined, axes.planned]}
       pipTone={pipTone}
-      dim={lane.state === "parked"}
+      dim={lane.state === "parked" || walk === "dim"}
+      selected={walk === "on"}
       shipped={done}
       footer={
         // auto-link — only when the bet has no domain yet (a placement necessity,
@@ -765,17 +850,13 @@ function InitiativeCard({
         ) : onDraftProjects && canDraftProjects(data, lane) ? (
           // just in time: this quarter or next, an outcome to read, no open
           // project under it — the one moment the bet is missing its projects
+          // An offer on its own card (D-216, R6): a quiet chip, not a card above the list.
           <div data-card-control className="flex pt-1" onPointerDown={(e) => e.stopPropagation()}>
-            <ChipButton
-              icon={<Icon name="sparkles" size={12} />}
-              onClick={(e) => {
-                e.stopPropagation();
-                onDraftProjects(lane, (e.currentTarget.closest(".deck-card") as HTMLElement | null)?.getBoundingClientRect() ?? null);
-              }}
+            <OfferChip
+              verb="Suggest projects"
               title="Nuvo drafts the projects this outcome is missing, across the quarter. Nothing is added until you hold it."
-            >
-              Suggest projects
-            </ChipButton>
+              onPress={(el) => onDraftProjects(lane, (el.closest(".deck-card") as HTMLElement | null)?.getBoundingClientRect() ?? null)}
+            />
           </div>
         ) : null
       }
