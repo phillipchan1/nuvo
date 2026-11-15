@@ -285,3 +285,31 @@ export function quarterOffers(input: {
   for (let q = first + 1; q < input.quarters; q++) if (!costOf(q)) return [soon, { quarter: q, cost: null, reason: "A clear quarter · later" }];
   return [soon];
 }
+
+/**
+ * What a steer asks for that can be held to, not just hoped for (R12's
+ * partner). The drafter is a small, fast model and does not reliably obey
+ * "fewer" or "smaller", so the walk enforces the measurable part itself:
+ *
+ *   "fewer" / "less" / "trim" / "too many" → at most half as many of Nuvo's
+ *                                           lines as it had (at least one)
+ *   "smaller" / "shorter" / "split" / "bite" → every Nuvo line ≤ 45 minutes
+ *
+ * Anything else ("start with a call to Ana") is left to the model.
+ */
+export const SMALL_LINE_MINS = 45;
+export function steerLimits(steer: string, previousNuvoLines: number): { maxCount: number | null; maxMins: number | null } {
+  const s = steer.toLowerCase();
+  const fewer = /\b(fewer|less|trim|too many|cut)\b/.test(s);
+  const smaller = /\b(smaller|shorter|split|bite|bite-sized|quicker)\b/.test(s);
+  return {
+    maxCount: fewer ? Math.max(1, Math.floor(previousNuvoLines / 2)) : null,
+    maxMins: smaller ? SMALL_LINE_MINS : null,
+  };
+}
+
+/** A redraft held to its steer's limits. */
+export function applySteerLimits(lines: PlanLine[], limits: { maxCount: number | null; maxMins: number | null }): PlanLine[] {
+  const capped = limits.maxCount == null ? lines : lines.slice(0, limits.maxCount);
+  return limits.maxMins == null ? capped : capped.map((l) => (l.mins > limits.maxMins! ? { ...l, mins: limits.maxMins! } : l));
+}

@@ -14,7 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { cleanSteer, current, toSteps, type ProposedStep } from "../../lib/pathDraft";
 import { captureTitle, parseCapture } from "../../lib/nlp";
 import type { AskScaffold } from "../../lib/scaffoldAsk";
-import { DEFAULT_LINE_MINS, mergeSteer, nextSize, redraftTitles, type PlanLine } from "../../lib/planProjects";
+import { DEFAULT_LINE_MINS, applySteerLimits, mergeSteer, nextSize, pinned, redraftTitles, steerLimits, type PlanLine } from "../../lib/planProjects";
 
 export type PlanDraftPhase = "drafting" | "review" | "none" | "failed";
 
@@ -93,9 +93,13 @@ export function usePlanDraft(home: PlanDraftHome, ask: AskScaffold) {
       const before = lines;
       setPhase("drafting");
       try {
-        const proposals = await ask(homeRef.current.projectId, guidance, redraftTitles(before));
+        // What you touched stays (R12) AND is read as your plan, so the redraft
+        // doesn't restate it under another name.
+        const keep = before.filter(pinned).map((l) => l.title);
+        const proposals = await ask(homeRef.current.projectId, guidance, redraftTitles(before), keep);
         if (mine !== run.current) return;
-        const drafted = toLines(proposals);
+        // Hold the measurable part of the steer ourselves (fewer · smaller).
+        const drafted = applySteerLimits(toLines(proposals), steerLimits(guidance, redraftTitles(before).length));
         setLines((ls) => mergeSteer(ls, drafted));
         setPhase("review");
         setMessage(drafted.length ? "Redrafted. What you touched stayed." : "Nothing to add with that.");

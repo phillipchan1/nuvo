@@ -58,7 +58,7 @@ ${input.domain ? `Life domain: ${input.domain.name}. Standing intention: ${input
 The person's own steps so far (their plan — do NOT duplicate or restate these):
 ${existing.length ? existing.map((t) => `- [${t.status}] ${t.title}`).join("\n") : "(none yet)"}
 ${input.redraft?.length ? `\nYour previous proposal, which the person is reshaping (replace it, don't append to it):\n${input.redraft.map((t) => `- ${t}`).join("\n")}` : ""}
-${input.guidance ? `\nThe person redirected: "${input.guidance}". Honor this redirection.` : ""}
+${input.guidance ? `\nThe person redirected: "${input.guidance}". Honor this redirection.${input.redraft?.length ? ` Measure it against your previous proposal: "fewer" means clearly fewer items than it had (about half); "smaller" means every item under 45 minutes; never restate one of the person's own steps under another name.` : ""}` : ""}
 
 Propose ONLY the tasks their plan is missing to reach the outcome — fill the gaps, don't rewrite their work.
 Rules:

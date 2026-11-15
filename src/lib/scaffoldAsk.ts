@@ -7,16 +7,19 @@
  * `guidance` steers (a "Tell Nuvo what to change" line); `redraft` names the
  * drafted lines the steer may replace — anything you touched is left out of it
  * by the caller (R12), so the agent never sees it as up for rewriting.
+ * `keep` is the reverse: lines you touched or typed that aren't saved yet. The
+ * agent reads them as part of your plan (its `draftTitles`), so a redraft
+ * fills gaps around them instead of restating them.
  */
 
 import { supabase } from "./supabase";
 import type { ProposedStep } from "./pathDraft";
 
-export type AskScaffold = (projectId: string, guidance?: string, redraft?: string[]) => Promise<ProposedStep[]>;
+export type AskScaffold = (projectId: string, guidance?: string, redraft?: string[], keep?: string[]) => Promise<ProposedStep[]>;
 
-export const askScaffold: AskScaffold = async (projectId, guidance, redraft) => {
+export const askScaffold: AskScaffold = async (projectId, guidance, redraft, keep) => {
   const { data, error } = await supabase.functions.invoke<{ tasks?: ProposedStep[] }>("agent", {
-    body: { scaffold: { projectId, guidance, redraft } },
+    body: { scaffold: { projectId, guidance, redraft, draftTitles: keep?.length ? keep : undefined } },
   });
   if (error) throw error;
   return (data?.tasks ?? []).filter((p) => p && typeof p.title === "string" && p.title.trim());

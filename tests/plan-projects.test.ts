@@ -236,3 +236,18 @@ describe("the wiring", () => {
     expect(src).toMatch(/moveProject\(p, \{ \.\.\.weekSpan\(p, addDays\(base, start \* 7\), weeks\), status: "in_progress" \}, "Planned"\)/);
   });
 });
+
+import { applySteerLimits, steerLimits } from "../src/lib/planProjects";
+
+describe("a steer's measurable part is held, not hoped for", () => {
+  const line = (title: string, mins: number) => ({ key: title, title, mins, from: "nuvo" as const, touched: false });
+  it("fewer keeps at most half of Nuvo's previous lines", () => {
+    const l = steerLimits("fewer, smaller pieces", 5);
+    expect(l).toEqual({ maxCount: 2, maxMins: 45 });
+    const out = applySteerLimits([line("a", 90), line("b", 30), line("c", 60)], l);
+    expect(out.map((x) => [x.title, x.mins])).toEqual([["a", 45], ["b", 30]]);
+  });
+  it("leaves any other steer to the model", () => {
+    expect(steerLimits("start with a call to Ana", 4)).toEqual({ maxCount: null, maxMins: null });
+  });
+});
