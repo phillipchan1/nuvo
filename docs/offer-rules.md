@@ -1,6 +1,6 @@
 # Offers — the rules a suggestion keeps, and Plan projects
 
-**Status: built 2026-11-14 on branch `claude/offer-rules` (D-216; amends D-209's "deck first" and
+**Status: shipped 2026-11-14 (PR #159; fit pass on `claude/offer-polish` — see D-216's status) (D-216; amends D-209's "deck first" and
 D-213's card labels, §5). All four phases. Driven in the local dev app (local Worker + Postgres,
 test account): the Schedule's chip, hover preview, Other times (alternatives, your own pick, the
 hold write), and the project deck's rest state and Plan projects walk (outcome, a typed task, the

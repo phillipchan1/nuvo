@@ -392,6 +392,9 @@ function Column({ theme }: { theme: "light" | "dark" }) {
           <MenuPanel style={{ width: 236 }}>
             <MenuItem icon={<Icon name="arrow-right" size={14} />} shortcut="↵">Open</MenuItem>
             <MenuItem icon={<Icon name="clock" size={14} />} shortcut="S">Schedule…</MenuItem>
+            <MenuItem icon={<Icon name="clock" size={14} />} detail="Keeps today light · Straight after Weekly sync with the whole leadership team">
+              Schedule Wed 11:30am–12:30pm
+            </MenuItem>
             <MenuItem icon={<Icon name="tag" size={14} />} submenu>Labels</MenuItem>
             <MenuItem icon={<Icon name="copy" size={14} />} shortcut={["⌘", "L"]}>Copy link</MenuItem>
             <MenuSeparator />

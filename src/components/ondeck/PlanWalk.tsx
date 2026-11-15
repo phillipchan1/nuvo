@@ -311,7 +311,7 @@ export function SpanChoice({
       <Button kind={primary ? "primary" : "secondary"} size="md" full shortcut={shortcut} onClick={(e) => onPick(e.currentTarget)}>
         <Dest verb={verb} name={name} />
       </Button>
-      <p className="pw-said" data-cost={cost ? "" : undefined}>
+      <p className="pw-said pw-caption" data-cost={cost ? "" : undefined} title={cost ?? reason ?? undefined}>
         {cost ?? reason ?? "Clear weeks"}
       </p>
     </div>

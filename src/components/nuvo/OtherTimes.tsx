@@ -17,7 +17,7 @@
  */
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Button, Menu, MenuItem, MenuLabel, MenuSeparator } from "../kit";
+import { Button, Kbd, Menu, MenuItem, MenuLabel, MenuSeparator, Popover } from "../kit";
 import { PickSheet } from "../mobile/sheetKit";
 import { useWeekComposer } from "../../hooks/useFindTime";
 import { checkPick, costFor, nameAlternatives, snapPick, type Where } from "../../lib/offerChoices";
@@ -55,6 +55,7 @@ function useOptions(task: Task, first: Where, mine: Where | null) {
   return { options, today: w.today };
 }
 
+const noop = () => {};
 const hintOf = (o: Option) => (o.cost ? `${o.reason} · ${o.cost}` : o.reason);
 
 export function OtherTimes({
@@ -232,7 +233,7 @@ function DeskChooser({
           <div key={o.key} onPointerEnter={() => setStrong(o.key)} onFocusCapture={() => setStrong(o.key)}>
             <MenuItem
               icon={<span className="offer-num" data-on={o.key === strong || undefined}>{i + 1}</span>}
-              hint={hintOf(o)}
+              detail={hintOf(o)}
               disabled={o.past}
               onSelect={(e) => onHold(o.at, e.currentTarget)}
             >
@@ -257,11 +258,12 @@ function DeskChooser({
           </MenuItem>
         ))}
       </Menu>
-      {picking && (
-        <span className="offer-picking" role="status">
-          Click a time on the Schedule · Esc to cancel
-        </span>
-      )}
+      {/* A float under the ⋯, never a line in the row (a row has no room for
+          it, and it spilled). Its close is a no-op: a click on the grid IS the
+          pick, and Esc is handled above. */}
+      <Popover anchor={anchor} open={picking} onClose={noop} role="status" label="Picking a time" className="offer-picking">
+        Click a time on the Schedule <Kbd keys="Esc" />
+      </Popover>
     </>
   );
 }
@@ -284,8 +286,19 @@ function PhoneChooser({
     <PickSheet
       title="Other times"
       rows={[
-        ...options.map((o) => ({ id: o.key, name: `Schedule ${whenLabel(o.at, today)}`, sub: hintOf(o) })),
-        ...noes.map((n, i) => ({ id: `no${i}`, name: n.label })),
+        // the same 1 · 2 · 3 the desktop menu and the Schedule draw; a "no"
+        // is not an option among them, so it carries no mark
+        ...options.map((o, i) => ({
+          id: o.key,
+          name: `Schedule ${whenLabel(o.at, today)}`,
+          sub: hintOf(o),
+          lead: (
+            <span className="offer-num" data-on={i === 0 || undefined}>
+              {i + 1}
+            </span>
+          ),
+        })),
+        ...noes.map((n, i) => ({ id: `no${i}`, name: n.label, lead: <span aria-hidden /> })),
       ]}
       value={null}
       onPick={(key) => {

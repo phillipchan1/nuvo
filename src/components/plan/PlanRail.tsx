@@ -1210,11 +1210,13 @@ function PlanRailWeek({
                       </div>
                     </div>
                     {/* Every act names where the block goes (D-204) — same acts, same keys. */}
-                    <div className="flex min-w-0 gap-1.5 pt-0.5">
-                      <Button kind="primary" size="md" shortcut="↵" onClick={() => accept(sel!)} style={{ flex: 1 }} data-plan-hold="">
+                    {/* wraps rather than spills: the hold takes the row's room, and
+                        "Look at it last" takes a row of its own when there isn't any */}
+                    <div className="flex min-w-0 flex-wrap gap-1.5 pt-0.5">
+                      <Button kind="primary" size="md" shortcut="↵" onClick={() => accept(sel!)} style={{ flex: "999 1 auto" }} data-plan-hold="">
                         {holdLabel(selP)}
                       </Button>
-                      <Button size="md" shortcut="J" onClick={() => advance(sel)}>
+                      <Button size="md" shortcut="J" onClick={() => advance(sel)} style={{ flex: "1 1 auto" }}>
                         {LOOK_LAST}
                       </Button>
                     </div>
@@ -1378,20 +1380,21 @@ function PlanRailWeek({
 
           {leaving ? (
             <div className="f-foot">
-              <div className="f-sum">
-                Discard <b>{invested}</b> change{invested === 1 ? "" : "s"}?
-              </div>
+              {/* the count rides the act it's about — a question beside a
+                  "Discard" button said "discard" twice and had no room */}
+              <div className="f-sum" aria-hidden />
               <Button kind="ghost" size="md" onClick={() => setLeaving(false)}>
                 Keep planning
               </Button>
               <Button kind="danger" size="md" shortcut="Esc" onClick={onClose}>
-                Discard
+                Discard {invested} change{invested === 1 ? "" : "s"}
               </Button>
             </div>
           ) : (
             <div className="f-foot">
               <div className="f-sum">
-                <b>{things}</b> things · <b>{placements.length}</b> blocks
+                {/* the button already says how many things — this says the rest, once */}
+                <b>{placements.length}</b> block{placements.length === 1 ? "" : "s"}
               </div>
               <Button kind="primary" size="md" shortcut={["⌘", "↵"]} onClick={() => void commit()} disabled={d.applying || placements.length === 0}>
                 {d.applying ? "Committing…" : `Commit ${things} things`}
