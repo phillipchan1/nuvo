@@ -73,6 +73,9 @@ const S = {
   placeInGap: vi.fn(),
   // the week's slots — a project sitting here is what the thin-path mark reads
   weekSlots: [] as { project_id: string | null; do_date: string; start_time: string; duration_minutes: number }[],
+  placedLog: [] as { key: string; taskIds: string[] }[],
+  onWeek: [] as unknown[],
+  takeBack: vi.fn(),
 };
 vi.mock("../src/hooks/useWeekDraft", () => ({
   placementKey: (p: { task: { id: string } }) => p.task.id,
@@ -85,6 +88,7 @@ vi.mock("../src/hooks/useWeekDraft", () => ({
       unpinPlacement: () => {}, remember: () => {}, undo: () => false, moveLocally: () => {},
       setBlockLength: S.setBlockLength, placeInGap: S.placeInGap, openGaps: () => S.gaps,
       loosePool: S.empty, kept: S.kept, setKept: () => {}, result: S.result, suggestions: S.empty,
+      placedLog: S.placedLog, onWeek: S.onWeek, takeBack: S.takeBack, addToWeek: vi.fn(),
       clearRegions: S.empty, weekSlots: S.weekSlots, planDays: S.planDays, workingDays: S.workingDays, dayContexts: S.ctx, applying: false,
     };
   },
@@ -115,13 +119,13 @@ describe("Plan the week — the walk", () => {
     act(() => {
       fireEvent.keyDown(window, { key: "Enter" });
     });
-    expect(screen.getByText("1/2 accepted")).toBeTruthy();
+    // held — which, live, is the moment it's written (D-217)
+    expect(overlay!.blocks.find((b) => b.key === "admin")!.held).toBe(true);
     expect(screen.getByText("Block 2 of 2")).toBeTruthy();
     expect(screen.getByText("Reply to Grace")).toBeTruthy();
 
     // the act names where the block goes (D-204): a time, not an opinion
     fireEvent.click(screen.getByRole("button", { name: /^Hold Tue 2–2:45pm/ }));
-    expect(screen.getByText("2/2 accepted")).toBeTruthy();
     expect(screen.getByText(/All 2 blocks accepted/)).toBeTruthy();
   });
 
@@ -129,7 +133,7 @@ describe("Plan the week — the walk", () => {
     render(<PlanRail onOverlay={() => {}} onClose={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /^Look at it last/ }));
     expect(screen.getByText("Block 2 of 2")).toBeTruthy();
-    expect(screen.getByText("0/2 accepted")).toBeTruthy();
+    expect(screen.getByText("2 to go")).toBeTruthy();
   });
 });
 
@@ -238,26 +242,43 @@ describe("Plan the week — the way out", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("with work in the draft, Esc asks first; Esc again discards", () => {
+  it("never asks (D-217): what you decided is already on the calendar, and leaving says so", async () => {
+    const { toast } = await import("sonner");
     const onClose = vi.fn();
-    render(<PlanRail onOverlay={() => {}} onClose={onClose} />);
-    act(() => void fireEvent.keyDown(window, { key: "Enter" })); // accept block 1
-    esc();
-    expect(onClose).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: /Discard 1 change/ })).toBeTruthy();
-    esc();
-    expect(onClose).toHaveBeenCalledTimes(1);
+    S.placedLog = [{ key: "b1", taskIds: ["t1"] }];
+    try {
+      render(<PlanRail onOverlay={() => {}} onClose={onClose} />);
+      act(() => void fireEvent.keyDown(window, { key: "Enter" })); // accept block 1
+      esc();
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole("button", { name: /Discard/ })).toBeNull();
+      expect(toast).toHaveBeenCalledWith(expect.stringMatching(/^1 block is on your week/));
+    } finally {
+      S.placedLog = [];
+    }
   });
 
-  it("Keep planning takes the question back, and the ✕ asks the same question", () => {
+  it("the ✕ leaves the same way, and the foot offers the rest, not a commit of everything", () => {
     const onClose = vi.fn();
     render(<PlanRail onOverlay={() => {}} onClose={onClose} />);
-    act(() => void fireEvent.keyDown(window, { key: "Enter" }));
+    expect(screen.getByText(/Accept the rest \(2\)/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Close the plan/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Keep planning" }));
-    expect(screen.queryByRole("button", { name: "Keep planning" })).toBeNull();
-    expect(screen.getByText(/Commit/)).toBeTruthy();
-    expect(onClose).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Plan the week — what's on the week can be taken back (D-217)", () => {
+  it("lists what's saved, and Take it back hands that block to the draft's take-back", () => {
+    const slot = { id: "s1", title: "Launch pricing page · Part 1", color: null, domain_id: null };
+    S.onWeek = [{ kind: "slot", id: "s1", title: slot.title, dayISO: DAY, startMin: 480, durationMin: 75, slot }];
+    try {
+      render(<PlanRail onOverlay={() => {}} onClose={() => {}} />);
+      expect(screen.getByText("On the week")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Take it back" }));
+      expect(S.takeBack).toHaveBeenCalledWith({ slot });
+    } finally {
+      S.onWeek = [];
+    }
   });
 });
 

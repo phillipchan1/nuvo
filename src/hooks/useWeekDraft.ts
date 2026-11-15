@@ -13,12 +13,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { addDays, format, subDays } from "date-fns";
+import { toast } from "sonner";
 import { useVertical } from "./useVertical";
 import { useSettings } from "./useSettings";
 import { useWorkingDays } from "./useWorkingDays";
 import { useExternalEvents } from "./useCalendar";
-import { useSlots, useSlotTasks } from "./useSlots";
-import { useAllTasks, useScheduledTasks } from "./useTasks";
+import { useSlotMutations, useSlots, useSlotTasks } from "./useSlots";
+import { useAllTasks, useScheduledTasks, useTaskMutations } from "./useTasks";
 import {
   showingUp,
   inboxTasks,
@@ -65,13 +66,46 @@ export function computeGain(data: VerticalData) {
   return { doneCount: done.length, doneMins, topMove: moved[0] ?? null, quiet };
 }
 
+// A query with no data yet must default to the SAME empty array every render.
+// A fresh `[]` changed every memo downstream of it (routing → the pool → every
+// block → the overlay handed up to Planner), so the plan re-rendered in a loop
+// for as long as it was open whenever a week had no standing slots.
+const NO_TASKS: Task[] = [];
+const NO_EVENTS: ExternalEvent[] = [];
+const NO_SLOTS: Slot[] = [];
+
 export type WeekDraft = ReturnType<typeof useWeekDraft>;
 
-export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string; rules?: PlanRules } = {}) {
+/** A block the plan put on the calendar the moment you accepted it (D-217) —
+ *  enough to take it back exactly: unschedule its tasks, and either remove the
+ *  sitting it minted or shrink the one it topped up to the length it had. */
+export interface PlacedRecord {
+  key: string;
+  name: string;
+  taskIds: string[];
+  slotId: string | null;
+  /** the existing sitting's length before this block topped it up */
+  grewFrom: number | null;
+  /** the undo depth when it was written — ⌘Z past it takes it back */
+  depth: number;
+  /** each task as it was before — taking it back restores exactly this (a day
+   *  with no time stays that day; work that wasn't in the week leaves it) */
+  before: Record<string, Pick<Task, "do_date" | "start_time" | "status" | "sprint_id" | "slot_id" | "duration_minutes">>;
+}
+
+/** One thing already on the plan's week, from today on: a timed task or a
+ *  sitting (standing and repeating blocks aren't the plan's to take back). */
+export type OnWeekItem =
+  | { kind: "task"; id: string; title: string; dayISO: string; startMin: number; durationMin: number; task: Task }
+  | { kind: "slot"; id: string; title: string; dayISO: string; startMin: number; durationMin: number; slot: Slot };
+
+export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string; rules?: PlanRules; saveAsYouGo?: boolean } = {}) {
   const autoTheme = opts.autoTheme ?? true;
-  const { data, planWeek, applySlots, assignToStanding } = useVertical();
+  const { data, planWeek, applySlots, assignToStanding, unplanTask } = useVertical();
+  const slotMutations = useSlotMutations();
+  const taskMutations = useTaskMutations();
   const { settings, update: updateSettings } = useSettings();
-  const { data: allTasks = [] } = useAllTasks();
+  const { data: allTasks = NO_TASKS } = useAllTasks();
 
   const [committed, setCommitted] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -90,9 +124,9 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
     const start = parseDateISO(weekStartISO);
     return { start: start.toISOString(), end: addDays(start, 7).toISOString() };
   }, [weekStartISO]);
-  const { data: events = [] } = useExternalEvents(range.start, range.end);
-  const { data: blocks = [] } = useScheduledTasks(range.start, range.end);
-  const { data: weekSlots = [] } = useSlots(range.start, range.end);
+  const { data: events = NO_EVENTS } = useExternalEvents(range.start, range.end);
+  const { data: blocks = NO_TASKS } = useScheduledTasks(range.start, range.end);
+  const { data: weekSlots = NO_SLOTS } = useSlots(range.start, range.end);
   // honor the calendars the user has hidden in settings — a hidden calendar is
   // not "busy", and counting it makes the week look full when it isn't.
   const hiddenCals = useMemo(() => new Set(settings?.hidden_calendar_ids ?? []), [settings]);
@@ -148,7 +182,7 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
   //    placed. Cap-don't-cram, spill across occurrences. See docs/standing-slots.
   const standingSlots = useMemo(() => weekSlots.filter(isStandingSlot), [weekSlots]);
   const standingSlotIds = useMemo(() => standingSlots.map((s) => s.id), [standingSlots]);
-  const { data: standingChildren = [] } = useSlotTasks(standingSlotIds);
+  const { data: standingChildren = NO_TASKS } = useSlotTasks(standingSlotIds);
   // minutes already inside each standing slot — a part-full block only takes
   // what it has room for (children carry slot_id, so they're never in keptTasks)
   const occupiedMins = useMemo(() => {
@@ -605,6 +639,7 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
     dayCtx: Record<string, DayContext>;
   };
   const history = useRef<DraftState[]>([]);
+  const takeBackPastRef = useRef<(depth: number) => void>(() => {});
   const remember = () => {
     history.current.push({ overrides, kept, runs, unbatched, splits, clears, dayCtx });
     if (history.current.length > 80) history.current.shift();
@@ -619,6 +654,9 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
     setSplits(prev.splits);
     setClears(prev.clears);
     setDayCtx(prev.dayCtx);
+    // a block written after this point goes back to having no time — undo
+    // reverses the save, not only the draft (D-217)
+    takeBackPastRef.current(history.current.length);
     return true;
   };
 
@@ -808,8 +846,10 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
     [weekDays, workingDays, fromGate],
   );
 
-  const commit = async () => {
-    setApplying(true);
+  /** What placements write: a task on its own, or a sitting holding its tasks.
+   *  `exclude` keeps a sitting this plan minted from being topped up by the next
+   *  block of the same project — that was a block you placed somewhere else. */
+  const writesFor = (list: Placement[], exclude: ReadonlySet<string> = new Set()) => {
     const startISOof = (p: Placement) => {
       const [y, mo, d] = p.dayISO.split("-").map(Number);
       return new Date(y, mo - 1, d, Math.floor(p.startMin / 60), p.startMin % 60).toISOString();
@@ -825,11 +865,11 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
     // not sittings this commit created.
     const sittingByProject = new Map<string, Slot>();
     for (const s of weekSlots) {
-      if (!s.project_id || isStandingSlot(s)) continue;
+      if (!s.project_id || isStandingSlot(s) || exclude.has(s.id)) continue;
       if (!sittingByProject.has(s.project_id)) sittingByProject.set(s.project_id, s);
     }
     const taskPlacements: { id: string; doDateISO: string; startISO: string; durationMins: number; splitChild?: { title: string } }[] = [];
-    for (const p of placements) {
+    for (const p of list) {
       const slot = slotById.get(p.task.id);
       if (slot) {
         // Already has a sitting this week → grow that one and file the new work
@@ -873,6 +913,148 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
         ...(isChild ? { splitChild: { title: `${p.task.title} (${p.part}/${p.parts})` } } : {}),
       });
     }
+    return { slotSpecs, taskPlacements, sittingByProject };
+  };
+
+  // ── save as you go (D-217) ────────────────────────────────────────────────
+  // A block you accept, drag, or give another time is yours — it is written the
+  // moment you decide, so leaving the plan halfway loses nothing you decided.
+  // What Nuvo proposed and you haven't touched stays a proposal. A written block
+  // leaves the draft (its tasks now have a time) and the composer reads it as
+  // fixed time, exactly like a block placed the week before.
+  // kept per week on this device, so a block saved in an earlier sitting is
+  // still taken back exactly after you leave and come back (a log that's lost
+  // only costs exactness: take-back falls back to "no time")
+  const logKey = `nuvo-plan-placed:${weekStartISO}`;
+  const [placedLog, setPlacedLog] = useState<PlacedRecord[]>(() => {
+    try {
+      const raw = localStorage.getItem(logKey);
+      // depths belong to the sitting that wrote them; a new sitting's ⌘Z never reaches them
+      return raw ? (JSON.parse(raw) as PlacedRecord[]).map((r) => ({ ...r, depth: -1 })) : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    try {
+      if (placedLog.length) localStorage.setItem(logKey, JSON.stringify(placedLog.map((r) => ({ ...r, depth: 0 }))));
+      else localStorage.removeItem(logKey);
+    } catch {
+      /* storage unavailable: take-back still works, less exactly */
+    }
+  }, [logKey, placedLog]);
+  const writing = useRef(new Set<string>());
+  const mintedSlots = useRef(new Set<string>());
+  const writePlacement = async (p: Placement) => {
+    const key = placementKey(p);
+    const block = slotById.get(p.task.id);
+    const taskIds = block ? block.taskIds : [p.task.id];
+    const { slotSpecs, taskPlacements, sittingByProject } = writesFor([p], mintedSlots.current);
+    const spec = slotSpecs[0] ?? null;
+    const grewFrom = spec?.existingSlotId ? (sittingByProject.get(spec.projectId ?? "")?.duration_minutes ?? 0) : null;
+    const depth = history.current.length;
+    const before: PlacedRecord["before"] = {};
+    for (const id of taskIds) {
+      const t = taskById.get(id);
+      if (t) before[id] = { do_date: t.do_date, start_time: t.start_time, status: t.status, sprint_id: t.sprint_id, slot_id: t.slot_id, duration_minutes: t.duration_minutes };
+    }
+    try {
+      // the work joins the week (no reviewed stamp, no goal), then gets its time
+      await planWeek({ commitTaskIds: taskIds, placements: taskPlacements, goal: "", stamp: false });
+      const ids = spec ? await applySlots([spec]) : [];
+      const slotId = ids[0] ?? null;
+      if (slotId && !spec?.existingSlotId) mintedSlots.current.add(slotId);
+      setPlacedLog((prev) => [...prev, { key, name: block?.name ?? p.task.title, taskIds, slotId, grewFrom, depth, before }]);
+    } catch (e) {
+      // said, never swallowed: the block goes back to being a proposal
+      toast.error(`Couldn't save ${block?.name ?? p.task.title}${e instanceof Error ? ` — ${e.message}` : ""}`);
+    } finally {
+      // the override pinned it while it was written; from here the calendar
+      // holds it, and a later block reusing this id must not inherit the pin
+      setOverrides((prev) => {
+        if (!prev[key]) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      writing.current.delete(key);
+    }
+  };
+  useEffect(() => {
+    if (!opts.saveAsYouGo) return;
+    for (const p of placements) {
+      const k = placementKey(p);
+      // a part of a split overdue task can't be written apart from its
+      // siblings — those land when the plan finishes
+      if (k.includes("#") || p.parts || !isHeld(k) || writing.current.has(k)) continue;
+      writing.current.add(k);
+      void writePlacement(p);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opts.saveAsYouGo, placements, overrides]);
+
+  /** Put a saved block back to having no time. A record from this plan is
+   *  reversed exactly; anything else on the week is unscheduled as it stands. */
+  const takeBack = (item: { record?: PlacedRecord; task?: Task; slot?: Slot }) => {
+    const rec = item.record ?? placedLog.find((r) => (item.slot && r.slotId === item.slot.id) || (item.task && !r.slotId && r.taskIds.includes(item.task.id)));
+    if (rec) {
+      setPlacedLog((prev) => prev.filter((r) => r !== rec));
+      writing.current.delete(rec.key);
+      const restore = () =>
+        rec.taskIds.forEach((id) => (rec.before[id] ? taskMutations.patchTask(id, rec.before[id], { undo: false }) : unplanTask(id)));
+      if (rec.slotId && rec.grewFrom != null) {
+        slotMutations.updateSlot({ id: rec.slotId, patch: { duration_minutes: rec.grewFrom } });
+        restore();
+        return;
+      }
+      const slot = rec.slotId ? weekSlots.find((s) => s.id === rec.slotId) : null;
+      if (rec.slotId) {
+        slotMutations.removeSlot(slot ?? ({ id: rec.slotId, google_event_id: null } as Slot));
+        mintedSlots.current.delete(rec.slotId);
+      }
+      restore();
+      return;
+    }
+    if (item.slot) {
+      const children = allTasks.filter((t) => t.slot_id === item.slot!.id).map((t) => t.id);
+      slotMutations.removeSlot(item.slot);
+      children.forEach((id) => unplanTask(id));
+    } else if (item.task) unplanTask(item.task.id);
+  };
+  takeBackPastRef.current = (depth: number) => {
+    for (const r of placedLog) if (r.depth >= 0 && r.depth >= depth) takeBack({ record: r });
+  };
+
+  /** Captures you added to the week join it now, not at the finish (D-217). */
+  const addToWeek = async (ids: string[]) => {
+    setKept((prev) => new Set([...prev, ...ids]));
+    if (opts.saveAsYouGo && ids.length) await planWeek({ commitTaskIds: ids, placements: [], goal: "", stamp: false });
+  };
+
+  /** What's on the plan's week from today on — what you can see and take back. */
+  const onWeek = useMemo<OnWeekItem[]>(() => {
+    const at = (iso: string | null) => {
+      if (!iso) return null;
+      const d = new Date(iso);
+      return { dayISO: format(d, "yyyy-MM-dd"), startMin: d.getHours() * 60 + d.getMinutes() };
+    };
+    const out: OnWeekItem[] = [];
+    for (const t of onCalBlocks) {
+      const w = at(t.start_time);
+      if (!w || w.dayISO < today || t.recurrence_id || t.slot_id) continue;
+      out.push({ kind: "task", id: t.id, title: t.title, ...w, durationMin: t.duration_minutes ?? 30, task: t });
+    }
+    for (const s of weekSlots) {
+      const w = at(s.start_time);
+      if (!w || w.dayISO < today || s.recurrence_id) continue;
+      out.push({ kind: "slot", id: s.id, title: s.title, ...w, durationMin: s.duration_minutes ?? 30, slot: s });
+    }
+    return out.sort((a, b) => a.dayISO.localeCompare(b.dayISO) || a.startMin - b.startMin);
+  }, [onCalBlocks, weekSlots, today]);
+
+  const commit = async () => {
+    setApplying(true);
+    const { slotSpecs, taskPlacements } = writesFor(placements, mintedSlots.current);
     // commit the pool first (every kept task joins the week), then time it.
     // Run members ride along even if they were never "kept" — an inbox capture
     // swept into a run is joining the week by virtue of being in one.
@@ -973,6 +1155,11 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
     slotLooseWork,
     theming,
     themeErr,
+    // save as you go (D-217)
+    placedLog,
+    takeBack,
+    addToWeek,
+    onWeek,
     // the commit
     goal,
     setGoal,

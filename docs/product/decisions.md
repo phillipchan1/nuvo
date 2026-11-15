@@ -8307,6 +8307,55 @@ operator misses it on the other pages, bring back one pip line, not a list.
 
 *Status: built 2026-11-14. Verified at `?rail=frame`, expanded and railed.*
 
+**D-217 · 2026-11-15 · Plan the week saves what you decide as you decide it; leaving never asks.**
+*(Asked by the operator after leaving a plan halfway: "I committed some things which I thought were good decisions… it didn't commit those things… I got to do this all over again.")*
+
+**Why.** "Accept" only marked a block in memory and Commit was the only write, so leaving
+halfway threw every decision away. D-199 called that safe ("nothing is written until Commit, so
+nothing is lost"), but only for someone who reads *accept* and *commit* as two steps, and the
+rail showed "2/5 accepted" beside a button saying "Commit". The operator read accepting as
+committing, as most people would. Decisions made without full clarity are exactly the ones you
+come back to, so a plan that can't be left halfway can't be trusted.
+
+**What.** *This reverses D-199's "nothing written until Commit" and its leave question; its Esc
+and week cutover stand.*
+- **Your acts write; Nuvo's proposals don't.** Holding a block (↵, a drag, another time, a gap
+  you picked) writes it at once, through the same `planWeek` / `applySlots` the finish uses
+  (`useWeekDraft`'s `saveAsYouGo`, desktop rail only). A saved block leaves the draft and the
+  composer reads it as fixed time. Adding inbox captures to the week writes at once too. What
+  Nuvo proposed and you didn't answer stays a proposal.
+- **Leaving never asks.** Esc and ✕ close; if anything was saved, a toast says so. Draft-only
+  edits (a split, a new length, a painted clear, a day's context) are re-proposals and are not
+  kept. (Day contexts set in the plan were never written, even on Commit. That's a pre-existing
+  gap, noted here, not fixed.)
+- **On the week** lists what's on the calendar from today on, each with **Take it back**. A block
+  this plan saved is restored exactly: the sitting it minted is removed, or the one it topped up
+  goes back to its old length, and every task gets back its day, status and week. The record
+  lives per week on this device (`nuvo-plan-placed:<week>`), so this holds across leaving and
+  coming back. Without the record it falls back to "no time". ⌘Z after a save takes it back.
+- **The foot** says how much is on the week and offers **Accept the rest (N)**, or **Finish the
+  week**, which stamps the week reviewed and commits what's kept, as Commit did.
+- **On the way:** the rail re-rendered in a loop for as long as the plan was open, because the
+  draft's query defaults were fresh `[]`s. Every memo downstream changed every render, down to
+  the overlay handed up to Planner. They are stable constants now. That was pre-existing on
+  master (~1.5 warnings/s) and worse once writes landed.
+
+**Anchor.** W1 (*can I actually carry this week?*): a plan you can't leave halfway isn't a plan
+you have. It strains **P15** (protect the boring core): the week can now be half-planned, and the
+crown, the decks and the agent read it as it is, which is honest. It also strains **P3** a little:
+a hold is your act, so writing it promotes nothing Nuvo chose. The four no's: no new pool or
+place (deliberately not a saved draft to return to, P10), no new name for a thing (*Take it back*
+and *On the week* name acts and a list, P11), it works with messy data (P7), and it isn't built
+on the operator's week (P16). The phone's plan (`MobilePlanWeek`) has no per-block accept and
+still writes once at the end; it is unchanged.
+
+*Status: built 2026-11-15 on `claude/plan-saves-as-you-go`. Driven in the dev app on the local
+account: hold → written (slot + tasks), Esc → no question plus toast, reopen → "1 on the week" and
+the draft placed around it, Take it back → slot gone and tasks back exactly as before (diffed
+against a snapshot, also across a reload), ⌘Z after a hold → reversed. Covered by
+`tests/plan-walk.test.tsx` (the way out, take back). Not driven on a production account; the
+phone is untouched.*
+
 **D-216 · 2026-11-14 · Offers keep thirteen rules: say where (with the day), show where, say why
 and what it costs, ride their row, and always have a second answer. Plan mode reaches the decks as
 Plan projects and Plan initiatives.** *(Asked by the operator: "if we put intelligence in and it's
