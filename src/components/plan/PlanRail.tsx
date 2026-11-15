@@ -102,6 +102,9 @@ type StackItem = {
   yesDrafts?: boolean;
   /** shown under the label without a click: the reason this needs you */
   sub?: string;
+  /** what a block holds, unless its label is already the one task's title —
+   *  a group's name ("Frontier admin") never says what's in it */
+  items?: { id: string; title: string; mins: number }[];
   /** a third act, when there is one (Pick a time · Shorten to fit) */
   extra?: { label: string; run: () => void }[];
   yes: () => string;
@@ -411,6 +414,10 @@ function PlanRailWeek({
       // splitting only helps when the refusal was about one long stretch, and a half fits
       const gap = gapMins(u.reason);
       const canSplit = (b?.taskIds.length ?? 0) >= 2 && gap != null && (b?.durationMins ?? 0) / 2 <= gap;
+      const items = (b?.taskIds ?? []).map((id) => {
+        const t = d.taskById.get(id);
+        return { id, title: t?.title ?? "Untitled", mins: t?.duration_minutes ?? 30 };
+      });
       out.push({
         id: `unplaced:${u.task.id}`,
         glyph: "⊘",
@@ -419,6 +426,8 @@ function PlanRailWeek({
         chip: "no time yet",
         why: u.reason,
         sub: `No time found — ${plainReason(u.reason)}`,
+        // shown unless the label already IS the one task's title
+        items: items.length > 1 || (items.length === 1 && items[0].title !== (b?.name ?? u.task.title)) ? items : undefined,
         extra: [
           { label: "Pick a time", run: () => {
             setSel(null);
@@ -1022,7 +1031,7 @@ function PlanRailWeek({
         </div>
       ) : (
         <>
-          <div className="grid min-h-0 flex-1 content-start gap-6 overflow-y-auto px-4 pb-5 pt-5">
+          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] content-start gap-6 overflow-y-auto px-4 pb-5 pt-5">
             {/* the crown — one hero, the claim in figures, the load by world */}
             <div className="grid gap-3">
               <FlowHead
@@ -1177,18 +1186,7 @@ function PlanRailWeek({
                         </div>
                       </div>
                     </div>
-                    {items.length > 1 && (
-                      <ul className="grid" style={{ boxShadow: "inset 0 1px 0 var(--line-1)" }}>
-                        {items.map((t) => (
-                          <li key={t.id} className="flex min-h-[28px] items-center gap-2" style={{ boxShadow: "inset 0 -1px 0 var(--line-1)" }}>
-                            <span className="min-w-0 flex-1 truncate text-body" title={t.title}>
-                              {t.title}
-                            </span>
-                            <span className="f-num shrink-0 text-caption text-[var(--faint)]">{t.mins}m</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                    {items.length > 1 && <BlockItems items={items} />}
                     <div className="text-caption text-muted">{selP.reason}</div>
                     {/* how long — your estimate beats the sum of the tasks; Nuvo re-places it */}
                     <div className="grid gap-1">
@@ -1312,11 +1310,13 @@ function PlanRailWeek({
                 {stack.map((it) => (
                   <div
                     key={it.id}
-                    className="grid gap-1.5 rounded-[var(--r-ctl)] px-1.5 py-2.5"
+                    // the column is the rail's width, never the title's: an auto
+                    // track grew to a long title and pushed it past the card
+                    className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1.5 rounded-[var(--r-ctl)] px-1.5 py-2.5"
                     style={{ background: focus === it.id ? "var(--accent-wash)" : undefined }}
                     onPointerEnter={() => !sel && setFocus(it.id)}
                   >
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex min-w-0 items-center gap-1.5">
                       <span className="w-[18px] shrink-0 text-center text-body" style={{ color: "var(--accent-ink)" }} title={it.cause}>
                         {it.glyph}
                       </span>
@@ -1332,6 +1332,11 @@ function PlanRailWeek({
                       )}
                     </div>
                     {it.sub && <p className="pl-6 text-caption leading-snug text-muted">{it.sub}</p>}
+                    {it.items && (
+                      <div className="pl-6">
+                        <BlockItems items={it.items} />
+                      </div>
+                    )}
                     <div className="flex flex-wrap gap-1 pl-6">
                       <Button
                         size="xs"
@@ -1404,5 +1409,23 @@ function PlanRailWeek({
         </>
       )}
     </div>
+  );
+}
+
+/** The tasks a block holds, one hairline row each — the same list on the
+ *  selected block and on a To settle card, so a group's name is never the
+ *  only thing you're asked to decide about. */
+function BlockItems({ items }: { items: { id: string; title: string; mins: number }[] }) {
+  return (
+    <ul className="grid min-w-0 grid-cols-[minmax(0,1fr)]" style={{ boxShadow: "inset 0 1px 0 var(--line-1)" }}>
+      {items.map((t) => (
+        <li key={t.id} className="flex min-h-[28px] min-w-0 items-center gap-2" style={{ boxShadow: "inset 0 -1px 0 var(--line-1)" }}>
+          <span className="min-w-0 flex-1 truncate text-body" title={t.title}>
+            {t.title}
+          </span>
+          <span className="f-num shrink-0 text-caption text-[var(--faint)]">{t.mins}m</span>
+        </li>
+      ))}
+    </ul>
   );
 }
