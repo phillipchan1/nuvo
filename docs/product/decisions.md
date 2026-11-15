@@ -8342,6 +8342,5 @@ outcome at a named 30m default. The UI says *tasks*, since a **Step** is a check
 row; held by R6 and R11) and **P10** (another walk; held by it being Plan mode on another
 surface). New names: *Other times*, *Plan projects*, *Plan initiatives*. Closes rail-modes §8.2.
 
-*Status: accepted. Phase 1 built 2026-11-14 on `claude/offer-rules`, desktop Schedule only, driven
-at `?rail=deck`, not yet on a signed-in Schedule. Other times, Plan projects and Plan initiatives
-not built; the decks still show the card at rest.*
+*Status: built 2026-11-14 on `claude/offer-rules` (all four phases; see the spec's status for what
+was driven and what wasn't). Not merged to master.*

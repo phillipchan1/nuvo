@@ -1,6 +1,12 @@
 # Offers — the rules a suggestion keeps, and Plan projects
 
-**Status: accepted (2026-11-14, D-216). Amends D-209's "deck first" and D-213's card labels (see §5). Phase 1 built 2026-11-14 on branch `claude/offer-rules` (day in every time label; the card leaves the rest state; a project's time offer rides its row; hover/focus previews on the Schedule and dims the rest). Driven at `?rail=deck`; not yet driven on a signed-in Schedule. Phases 3–4 built 2026-11-14 on `claude/plan-projects`: the decks' rest state (chips on their cards, no card above the list), Plan projects, and Plan initiatives (shape + quarter); driven at `?decks` and `?decks=plan` with a stand-in drafter, not yet on a signed-in deck. Other times not built.**
+**Status: built 2026-11-14 on branch `claude/offer-rules` (D-216; amends D-209's "deck first" and
+D-213's card labels, §5). All four phases. Driven in the local dev app (local Worker + Postgres,
+test account): the Schedule's chip, hover preview, Other times (alternatives, your own pick, the
+hold write), and the project deck's rest state and Plan projects walk (outcome, a typed task, the
+weeks with the overlap named). Not driven: Plan initiatives on a signed-in deck (harness only), any
+AI draft or steer on a live model (the local Worker has no model key), the phone's Other times sheet,
+and `npm run perf`.**
 Prototype (private, example data): [Nuvo Offer Rules](https://claude.ai/artifact/7oumBYorD2Zk7bAbxZgetX):
 fifteen scenarios on the desktop Schedule, the project deck and the phone.
 
@@ -123,14 +129,19 @@ checklist (D-103); "Add 4 steps" would name the wrong object (P11).
 1. **Phase 1 — the chip at rest (desktop):** ✅ built. `OfferChip`'s `preview` prop →
    `lib/offerPreview` → `Planner`'s `previewOverlay` (the plan overlay with `dimCalendar`);
    `WeekPanel`'s `TimeOfferLine` carries a project's first loose card; `whenLabel` / `holdWhen` say
-   *Today*. Still to do here: the cost half of the why line, and the one-tap reasons on ✕ (today ✕
-   is the existing Not now). **Decks ✅ built:** neither deck mounts `RestDeck` at rest. A card whose
+   *Today*. The cost rides the offer line (R5). **Decks ✅ built:** neither deck mounts `RestDeck` at rest. A card whose
    act names a destination (*Move to Nov 23*, *Suggest tasks*, *Suggest projects*) rides that
    project's or bet's own card on the grid as an `OfferChip` (`rowOffers`: one per card, at most
    three, never an *Open*; pointing at *Move to* lights its week). Placed projects have no row in
    the pool rail, so the card on the grid is their row. Everything else stays behind the line (R11).
-2. **Phase 2 — Other times:** up to two named alternatives from the same fitter, numbered ghosts,
-   pick-on-grid with a conflict check; the phone's time chips and tap-the-day.
+2. **Phase 2 — Other times:** ✅ built. `nuvo/OtherTimes` beside every time chip (a ⋯ on a task
+   row): `alternativesFor` asked again through `useWeekComposer`, cut to two by `nameAlternatives`
+   (a named reason and cost each, `lib/offerChoices`), all options numbered on the grid
+   (`setOfferChoice` → Planner's overlay), "Pick a time yourself…" via `PlanOverlay.onPickTime`,
+   checked by `checkPick`. Choosing writes through the card's `placeAt` / the chip's own block. Saying
+   no from the same menu: *Not now · two weeks* and *No time offers for <project> · two weeks*
+   (`readyKey.times`) — R8's "Memory keeps the answer" is **not** built; these are snoozes. Phone: a
+   `PickSheet` of the same options (no tap-the-day strip yet).
 3. **Phase 3 — Plan projects:** ✅ built (§4). The deck walk (tasks, then weeks) on the Draft the path engine.
 4. **Phase 4 — Plan initiatives** ✅ built (§4) on the same walk: shape, then quarter.
 
@@ -138,5 +149,8 @@ checklist (D-103); "Add 4 steps" would name the wrong object (P11).
 
 1. Does choosing an alternative teach Memory silently (e.g. "never straight after a meeting")?
    Leans yes, under D-194's "says where it learned it". Not in phase 1–2.
-2. The fitter must return *named* alternatives (a reason per candidate), not just the next-best
-   slots. Phase 2 starts by confirming what `useFindTime` / `composeWeek` can return.
+2. ~~Named alternatives from the fitter.~~ Settled: `alternativesFor` returns candidates; the
+   names and costs are added in `lib/offerChoices`.
+3. R8 into Memory: a *Don't offer this* that Memory keeps (D-194), instead of a two-week snooze.
+4. The phone's sheet draws the day with the ghost and takes a tap on it (prototype scenario 15).
+5. Plan projects from the page bar, not only the crown's line.
