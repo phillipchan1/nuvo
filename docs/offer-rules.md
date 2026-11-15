@@ -1,6 +1,6 @@
 # Offers — the rules a suggestion keeps, and Plan projects
 
-**Status: accepted (2026-11-14, D-216). Amends D-209's "deck first" and D-213's card labels (see §5). Phase 1 built 2026-11-14 on branch `claude/offer-rules` (day in every time label; the card leaves the rest state; a project's time offer rides its row; hover/focus previews on the Schedule and dims the rest). Driven at `?rail=deck`; not yet driven on a signed-in Schedule. Other times, Plan projects and Plan initiatives not built.**
+**Status: accepted (2026-11-14, D-216). Amends D-209's "deck first" and D-213's card labels (see §5). Phase 1 built 2026-11-14 on branch `claude/offer-rules` (day in every time label; the card leaves the rest state; a project's time offer rides its row; hover/focus previews on the Schedule and dims the rest). Driven at `?rail=deck`; not yet driven on a signed-in Schedule. Phases 3–4 built 2026-11-14 on `claude/plan-projects`: the decks' rest state (chips on their cards, no card above the list), Plan projects, and Plan initiatives (shape + quarter); driven at `?decks` and `?decks=plan` with a stand-in drafter, not yet on a signed-in deck. Other times not built.**
 Prototype (private, example data): [Nuvo Offer Rules](https://claude.ai/artifact/7oumBYorD2Zk7bAbxZgetX):
 fifteen scenarios on the desktop Schedule, the project deck and the phone.
 
@@ -84,6 +84,26 @@ The counter is **Ready n of m**, a state of the deck (D-201), never a tally of a
 **No history:** drafts from the project's outcome with every size at a 30m default, and says so.
 No outcome either: no draft, just the add line.
 
+**Built (2026-11-14, `claude/plan-projects`):** `ondeck/PlanProjectsRail` + `PlanInitiativesRail`
+over shared parts (`ondeck/PlanWalk`) and one pure half (`lib/planProjects`: walk order, R12's
+`mergeSteer`, `domainPace`, `spanOffers` / `quarterOffers` with costs). The tasks phase asks
+Draft the path's own request (`lib/scaffoldAsk`, which `usePathDraft` now calls too) and sizes with
+its `toSteps` against finished work in the same domain; a line you rename, resize or type is
+pinned (solid check, no wash) and a steer redrafts only the rest. Commit is one press through
+`useTaskMutations().create` (backlog rows, one Undo toast); a project with no outcome gets an
+outcome line in the same phase, since it can't be Ready without one. The weeks phase sizes the
+span at the median of the domain's worked weeks, else its weekly target, else 1.5h a week (said);
+pointing at a span slides the bar there and dims the rest; pressing writes through the deck's own
+`moveProject` + `sprintSpanFor` (the kernel's `weekSpanFor`). Park it = `waiting`. Keys: J looks at
+it last, 1 · 2 pick a span, Esc leaves. **Entry:** the crown's line reads *N not Ready · Plan
+projects ›* when shaping leads; when something is overdue or crowded the line stays *Get ready*
+(with *then: N not Ready*) and the walk is the stack's last card. Not in the page bar.
+**Plan initiatives** is the same shell: *Shape* (an outcome and a first key result when missing,
+plus the deck's own ✦ Suggest projects) then *Quarter* (up to two, a same-domain bet finishing
+there or a quarter over the cap named). Left out: an Undo for the added key result
+(`addKeyResult` doesn't return the row's id); a span past the 4-week horizon previews clamped to
+the last column, cut square.
+
 *Copy note:* the UI says **tasks**, not steps. In the glossary a **Step** is a line on a task's
 checklist (D-103); "Add 4 steps" would name the wrong object (P11).
 
@@ -104,11 +124,15 @@ checklist (D-103); "Add 4 steps" would name the wrong object (P11).
    `lib/offerPreview` → `Planner`'s `previewOverlay` (the plan overlay with `dimCalendar`);
    `WeekPanel`'s `TimeOfferLine` carries a project's first loose card; `whenLabel` / `holdWhen` say
    *Today*. Still to do here: the cost half of the why line, and the one-tap reasons on ✕ (today ✕
-   is the existing Not now). The project decks still mount `RestDeck`; their cards need row chips first.
+   is the existing Not now). **Decks ✅ built:** neither deck mounts `RestDeck` at rest. A card whose
+   act names a destination (*Move to Nov 23*, *Suggest tasks*, *Suggest projects*) rides that
+   project's or bet's own card on the grid as an `OfferChip` (`rowOffers`: one per card, at most
+   three, never an *Open*; pointing at *Move to* lights its week). Placed projects have no row in
+   the pool rail, so the card on the grid is their row. Everything else stays behind the line (R11).
 2. **Phase 2 — Other times:** up to two named alternatives from the same fitter, numbered ghosts,
    pick-on-grid with a conflict check; the phone's time chips and tap-the-day.
-3. **Phase 3 — Plan projects:** the deck walk (tasks, then weeks) on the Draft the path engine.
-4. **Phase 4 — Plan initiatives** on the same walk.
+3. **Phase 3 — Plan projects:** ✅ built (§4). The deck walk (tasks, then weeks) on the Draft the path engine.
+4. **Phase 4 — Plan initiatives** ✅ built (§4) on the same walk: shape, then quarter.
 
 ## 7 · Open
 
