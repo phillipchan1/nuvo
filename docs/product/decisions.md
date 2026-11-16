@@ -8886,3 +8886,41 @@ being one kit part on every rail. New name: **This week** as the project deck's 
 all six steps the ring and closes it (check drawn, "Today." with its stop, one outline and 16
 sparks fired); "3 need a time" opened Today's list on the first loose task. At `?decks`: This week
 1/4 and This quarter 0/1 over their horizons. Pinned in `tests/readiness-ladder.test.tsx`.*
+
+**D-232 · 2026-11-16 · A block whose time passed with work in it is a repair; "Next" moves on.**
+*(Asked by the operator at 9:40 on a Monday: "I didn't do this task at 8:30, and … it says your
+next task is at 8:30. It's 9:40" — "how soon should we suggest repairs?")*
+
+→ **The timing was right; the coverage wasn't.** D-207's rule stands: a block is missed 15 minutes
+after it ends, or at the start of your next block if that comes first. But `useWeekRepair` skipped
+every task inside a block *and* every block whose time had passed, so undone work inside a block
+was never offered back at all. Now a passed block with undone work is a repair. **Nothing in it
+done** → the whole block moves, like any missed block. **Some of it done, or a standing block** →
+the block stays where it was as the record of what happened, and only the undone work moves: one
+task as its own block, several as a new block of the same name. One repair per block, never one
+per task.
+
+→ **A missed block is offered today first.** The composer spreads work to the emptiest day, so
+every missed block was offered tomorrow at 1pm, even with the afternoon free. A missed repair now
+leads with up to two times still open today, then the rest of the week. With today full, it falls
+straight to another day.
+
+→ **"Next:" reads the clock.** The rail's day crown named the first unfinished task of the day,
+so a missed 8:30 stayed "next" all morning. It now names the first task still ahead or under way,
+by the same missed rule (`dayNextTask`, `lib/marks`). A task inside a block ends when its block
+does. A missed task is a repair, never "next".
+
+→ **One apply for both shells** (`useRepairApply`, `plan/repairActs`): the Schedule and the phone
+each had a copy of the act that moves a repair. The phone's card now also reads the tasks inside
+blocks (`useSlotTasks`), which its scheduled-tasks query leaves out.
+
+Anchor: D4 (what did I say I'd do and haven't) · D1 ("Next" is the one thing now). Strains nothing new:
+it's the existing repair, covering a case it skipped. No new name.
+
+*Status: built 2026-11-16 on `claude/repair-timing`. Pinned in `tests/missed-blocks.test.tsx`
+(whole block · leftover · one left · standing block · inside the grace · today first · today full ·
+"Next" skips the missed one, names it while under way, falls to untimed work). Driven on a local
+test account at 9:51am: an 8:30 block of two undone tasks read "didn't happen (8:30am)" on the rail
+and offered Mon 1–1:30pm; "Next" named the 2pm task; with one ticked, its other task moved alone
+to 1pm and Undo put it back in the block; with two left, they moved as a new block of the same
+name. The phone's card read "Rest of … · missed" at 375px.*

@@ -33,8 +33,8 @@ import type { FlowName } from "./Spine";
 // out of the entry chunk is most of P0-4's desktop win.
 const CalendarPane = lazy(() => import("./CalendarPane"));
 import type { PlanOverlay } from "./plan/planOverlay";
-import { useWeekRepair, type Repair } from "../hooks/useWeekRepair";
-import { useRepairs } from "./plan/repairActs";
+import { useWeekRepair } from "../hooks/useWeekRepair";
+import { useRepairApply, useRepairs } from "./plan/repairActs";
 import { repairLineText } from "./plan/RepairLine";
 import { useReady } from "./plan/useReadyCards";
 import { useOfferChoice, useOfferPreview } from "../lib/offerPreview";
@@ -471,23 +471,7 @@ export default function Planner({
     now,
     enabled: onSchedule && !planning,
   });
-  const repairActs = useMemo(
-    () => ({
-      apply: (r: Repair, start: Date) => {
-        if (r.kind === "task" && r.task) {
-          const task = r.task;
-          const was = new Date(task.start_time!);
-          mutations.block(task, start, r.from.durationMin);
-          return () => mutations.block(task, was, r.from.durationMin);
-        }
-        const slot = r.slot!;
-        const before = { start_time: slot.start_time, do_date: slot.do_date };
-        slotMutations.updateSlot({ id: slot.id, patch: { start_time: start.toISOString(), do_date: toDateISO(start) } });
-        return () => slotMutations.updateSlot({ id: slot.id, patch: before });
-      },
-    }),
-    [mutations, slotMutations],
-  );
+  const repairActs = useRepairApply();
   const [repairOverlay, setRepairOverlay] = useState<PlanOverlay | null>(null);
   // Repair is a rail mode (docs/rail-modes.md §2, D-204): the rail becomes the
   // repair walk only on your press of the crown's line, and one mode shows at
