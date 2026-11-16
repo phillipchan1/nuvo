@@ -105,6 +105,16 @@ export function useListReorder({
     let dragging = false;
     let targetIndex: number | null = null;
     let scrollRaf = 0;
+    // What actually scrolls under the list — the list itself, or the column it
+    // sits in (the rail is one scroll since D-236). Found once per drag.
+    let scroller: HTMLElement | null = null;
+    const scrollerOf = (el: HTMLElement): HTMLElement => {
+      for (let n: HTMLElement | null = el; n; n = n.parentElement) {
+        const o = getComputedStyle(n).overflowY;
+        if (o === "auto" || o === "scroll") return n;
+      }
+      return el;
+    };
     let pointerY = 0;
     let pointerX = 0;
     let inZone: string | null = null;
@@ -170,12 +180,13 @@ export function useListReorder({
       const list = container();
       scrollRaf = 0;
       if (!dragging || !list) return;
-      const r = list.getBoundingClientRect();
+      const sc = (scroller ??= scrollerOf(list));
+      const r = sc.getBoundingClientRect();
       let dy = 0;
       if (pointerY < r.top + SCROLL_EDGE) dy = -SCROLL_STEP;
       else if (pointerY > r.bottom - SCROLL_EDGE) dy = SCROLL_STEP;
       if (dy) {
-        list.scrollTop += dy;
+        sc.scrollTop += dy;
         paint(pointerY);
       }
       scrollRaf = requestAnimationFrame(autoScroll);
@@ -186,6 +197,7 @@ export function useListReorder({
       const wasDragging = dragging;
       const droppedIn = inZone;
       stopScroll();
+      scroller = null;
       document.body.classList.remove("wb-noselect");
       chip.classList.remove("is-visible");
       let reordered = false;

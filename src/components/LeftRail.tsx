@@ -1070,7 +1070,11 @@ function LeftRail({
           setKeyCursor(true);
         }}
       />
-      <div data-tauri-drag-region="deep" className="rail-scroll min-h-0 flex-1 overflow-y-auto">
+      {/* One column, one scroll (D-236): the week, its projects, then Today ·
+          Inbox — every part folds in place under its own header; nothing drops
+          to the bottom. Capture stays pinned below. */}
+      <div data-tauri-drag-region="deep" className="rail-col min-h-0 flex-1 overflow-y-auto">
+      <div className="rail-scroll">
         {/* The crown — the planner's one hero (the week's span), its fact, and
             the week's projects. Its door is "Plan the week". */}
         <WeekPanel
@@ -1137,11 +1141,10 @@ function LeftRail({
           }}
         />
       </div>
-      {/* The tray (D-209): Today and Inbox fold to this strip above Capture —
-          the day's blocks are already on the grid beside the rail, so the list
-          is one tap away instead of taking a third of the rail. A tab (or [ / ],
-          D-223) opens it; the chevron folds it. */}
-      <div data-tauri-drag-region="deep" className="rail-tray-handle shrink-0">
+      {/* Today · Inbox (D-209, D-236): a section like the rest — its tabs are
+          the header, it folds in place with the section chevron, and a tab
+          (or [ / ], D-223) opens it. */}
+      <div data-tauri-drag-region="deep" className="rail-tray-handle">
         {/* The faces — Today and Inbox, the day's two; Trash is recovery, so it
             sits as an icon at the strip's end, only while it holds something
             (D-136). Mid-drag the two faces become the two acts you can perform
@@ -1224,7 +1227,7 @@ function LeftRail({
       {/* List — opt out of the titlebar drag region so row drags aren't window drags */}
       <div
         ref={listRef}
-        className="rail-list relative min-h-0 flex-1 overflow-y-auto"
+        className="rail-list relative"
         data-tauri-drag-region="false"
         data-teach="day-list"
       >
@@ -1314,6 +1317,8 @@ function LeftRail({
               )}
           </>
         )}
+      </div>
+
       </div>
 
       {/* Capture — the kit's field at the foot of the pool, out of the

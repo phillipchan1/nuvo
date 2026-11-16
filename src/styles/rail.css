@@ -1047,7 +1047,9 @@ html:root .rest-deck-all:focus-visible { outline: none; box-shadow: 0 0 0 2px va
 /* The tray (D-209): Today and Inbox fold to their tab strip above Capture and
    open into the rail's lower part. The day's blocks are already on the grid. */
 .rail-tray-shut .rail-list { display: none; }
-.rail-tray-open .rail-scroll { flex: 0 1 auto; max-height: 42%; }
+/* one column since D-236: the week and the day's list share a scroll, and the
+   Today · Inbox strip holds the top while you read down its list */
+.rail-col > .rail-tray-handle { position: sticky; top: 0; z-index: 2; background: var(--panel, var(--bg)); }
 .rail-tabs > .k-fold { align-self: center; margin-left: -4px; }
 .crown-line-solo { padding: 8px 16px 10px; border-bottom: 1px solid var(--line-1); }
 

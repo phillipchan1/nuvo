@@ -9000,3 +9000,24 @@ the Gym block was placed at 10:30 (`updated_at` 18:30Z); "OE Initiative Updates"
 repair · arrived after → a repair on its own day, named "Gym + 1 more" · no timestamps → counts).
 The events query now reads `last_synced_at`; the worker's REST layer has no read allowlist on
 `external_events`, so the column is selectable.*
+**D-236 · 2026-11-16 · The rail is one column: Today · Inbox folds in place like every section.**
+*(Asked by the operator, after D-233: "well this is confusing because today inbox collapses to the
+bottom" — chose A, a section like the rest, over keeping the drawer.)*
+
+→ **One scroll.** The week, its projects and Today · Inbox now stack in a single scrolling column;
+each folds in place under its header with the section chevron (D-233), and nothing drops to the
+bottom. Today's ring stays pinned above the column (D-230); Capture stays pinned below it. The
+Today · Inbox strip holds the top of the column while you read down a long list. This retires
+D-209's tray, which folded the list to a strip above Capture and capped the week at 42% while open.
+
+→ **The cost, accepted:** with Projects open and long, Today's list sits below it and you scroll
+to reach it (or fold Projects). The day itself is never out of sight — the ring is pinned.
+
+→ A reorder drag now auto-scrolls whatever actually scrolls under the list (`useListReorder`),
+found once per drag.
+
+Anchor: no ledger row; consistency (P11). No new name.
+
+*Status: built 2026-11-16 on `claude/readiness-dials`. Driven at `?rail=offers`: folded, the strip
+sits under Projects; open, the list flows below it in the one scroll; at 520px tall the column
+scrolls with the ring pinned.*
