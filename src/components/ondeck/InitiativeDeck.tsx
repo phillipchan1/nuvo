@@ -584,7 +584,7 @@ export default function InitiativeDeck({ startIn }: { /** a harness's way into t
           // The line (D-207): at risk first, then what needs shaping.
           // At rest the line is the deck's one door (D-216): the walk when
           // shaping leads, the stack otherwise; offers ride their cards.
-          // The dials carry shaping and risk and open their fixes (D-226), so
+          // The dials carry shaping and risk and open their fixes (D-227), so
           // there is no line left to say.
           line: null,
           onLine: opens === "plan" ? openPlan : () => setReadyMode(true),
@@ -593,7 +593,7 @@ export default function InitiativeDeck({ startIn }: { /** a harness's way into t
           marks: board.lanes.length > 0 ? betMarks : undefined,
           fixes: {
             // Every bet behind each number, its own card when it has one (the
-            // act that fixes it), else the record to open (D-226).
+            // act that fixes it), else the record to open (D-227).
             "bet-ready": board.lanes
               .filter((l) => {
                 const a = initiativeReadinessAxes(data, l.initiative);

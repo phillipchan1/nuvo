@@ -805,7 +805,7 @@ export default function OnDeckPlanner({
           // The line (D-207): the deck's Get ready stack, first card in words.
           // At rest the line is the deck's one door (D-216): the walk when
           // shaping leads, the stack otherwise; the offers ride their cards.
-          // The dials carry shaping and fit and open their fixes (D-226), so
+          // The dials carry shaping and fit and open their fixes (D-227), so
           // the line only speaks for an overdue project, which no dial says.
           line: line?.part === "repair" ? line : null,
           onLine: opens === "plan" ? openPlan : () => setReadyMode(true),

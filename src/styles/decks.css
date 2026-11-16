@@ -949,7 +949,7 @@ html:root .lane-cell:focus-visible { outline: none; background: color-mix(in srg
 /* Nuvo's outcome draft under an empty outcome field (D-216) */
 .pw-suggest { min-width: 0; display: flex; }
 
-/* A dial's fixes, under the dials (D-226): the name and its why open the
+/* A dial's fixes, under the dials (D-227): the name and its why open the
    record; the act sits on the row. Hairline rows, flat on the rail. */
 .deck-fixes { display: grid; gap: 2px; margin-top: 4px; }
 .deck-fixes > .k-btn { justify-self: start; margin-top: 2px; }

@@ -1,4 +1,4 @@
-// A dial's fixes, right under it (D-226). On the decks a dial's "what's left"
+// A dial's fixes, right under it (D-227). On the decks a dial's "what's left"
 // ("2 to shape", "23.5h over") is a button, the way the Schedule's "1 needs a
 // time" is (D-219): it unfolds the projects (or bets) behind that number, each
 // with the act that fixes it on its own row — *Suggest tasks*, *Use this

@@ -19,10 +19,6 @@ export interface LocateTarget {
   projectId?: string | null;
 }
 
-/** Pointing has to rest this long before the grid answers, so running the
- *  pointer down the list doesn't strobe the week. */
-export const LOCATE_DELAY_MS = 150;
-
 let current: LocateTarget | null = null;
 const listeners = new Set<() => void>();
 

@@ -101,7 +101,7 @@ describe("the decks' line", () => {
     expect(deckLine(cards, "initiative")).toMatchObject({ tone: "warn", text: "Staff rigor is at risk", then: "Grow the church needs shaping" });
   });
 
-  it("offers Suggest projects on a bet with a gap it can draft for, and the record beside it (D-226)", () => {
+  it("offers Suggest projects on a bet with a gap it can draft for, and the record beside it (D-227)", () => {
     const draftProjects = vi.fn();
     const open = vi.fn();
     const [card] = initiativeDeckCards(

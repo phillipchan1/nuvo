@@ -8708,15 +8708,15 @@ click a block → back to the menu with your pick; 2 → scheduled Tue 1–1:45p
 **D-226 · 2026-11-16 · Point at a row; its blocks ring on the Schedule.**
 *(Asked by the operator: "when i am hilghting over a project/task it can highlight where it is on
 the schedule? that helps me locate when this stuff will be/ won't be done". Mock:
-[Hover to Locate](https://claude.ai/artifact/EcURPrUtCoZ7QHM5g4dsqd); chosen: ring only, 150ms.)*
+[Hover to Locate](https://claude.ai/artifact/EcURPrUtCoZ7QHM5g4dsqd); chosen: ring only, then no delay.)*
 
 → **Ring only.** Pointing at a rail task rings its block (or the slot it sits in); a crown project
 rings every block of its work and its own sittings. Nothing dims — this is a read aid, not a
 mode, so the week stays as it is. The day takes the accent in the header, with ↑ / ↓ when the
 block is scrolled out of sight; the grid never scrolls under a pointer that is on the rail.
 
-→ **150ms rest, and the keyboard too.** The pointer has to rest before the grid answers, so
-running down the list doesn't strobe. The rail's cursor (D-222, the tray's keyed row) rings the
+→ **At once, and the keyboard too.** The grid answers the pointer immediately — tried with a
+150ms rest, and the operator asked for none; ring-only is what keeps a sweep down the list calm. The rail's cursor (D-222, the tray's keyed row) rings the
 same way when no pointer is on a row. What has no time rings nothing — the row's "needs a time"
 already says so. Phone: unchanged (no hover, no grid beside the list).
 
@@ -8725,13 +8725,13 @@ one delegated `pointerover` on its root, CalendarPane toggles a class on blocks 
 (`data-task-id` / `data-slot-id`) — no event reset; only lit blocks are measured, once per target.
 
 Anchor: W2 · W3 (what's placed, what isn't — seen, not cross-read). Strains **P9** (the grid
-changes as you move): held by ring-only and the rest delay. No new name.
+changes as you move): held by ring-only. No new name.
 
 *Status: built 2026-11-16 on `claude/readiness-dials`. Driven in the dev app: a 9am task rings its
 block and lights Mon; a 9pm task lights Mon with ↓. Project rows not driven (the local schema has
 no project week span); covered by `tests/locate.test.ts`.*
 
-**D-226 · 2026-11-16 · On the decks, a dial's "what's left" opens its fixes, and the line says only
+**D-227 · 2026-11-16 · On the decks, a dial's "what's left" opens its fixes, and the line says only
 what no dial does.**
 *(Asked by the operator: "for projects... can we do similar intelligent options as we did in
 schedule it says 2 to shape but doesn't give me any resource … the labels are sloppy this week holds

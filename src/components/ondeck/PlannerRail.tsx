@@ -53,7 +53,7 @@ export interface RailCrown {
   marks?: Mark[];
   /** the deck at rest: the Get ready stack's top card, in place of the line */
   deck?: ReactNode;
-  /** A dial's fixes (D-226): its "what's left" becomes the button that unfolds
+  /** A dial's fixes (D-227): its "what's left" becomes the button that unfolds
    *  these cards under the dials, each with its act on the row. */
   fixes?: Partial<Record<MarkKey, readonly ReadyCard[]>>;
   /** what a fix's name opens */
@@ -152,7 +152,7 @@ export default function PlannerRail({
               />
             )}
             {/* The dials say what's left and open it, so the line only speaks
-                for what no dial carries, and never adds a "then:" (D-226). */}
+                for what no dial carries, and never adds a "then:" (D-227). */}
             {!crown.deck && crown.line && <CrownLine line={{ ...crown.line, then: null }} onPress={crown.onLine} />}
             {groomAction && <div className="pr-groom">{groomAction}</div>}
           </div>

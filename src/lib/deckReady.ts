@@ -154,7 +154,7 @@ export function initiativeDeckCards(facts: readonly InitiativeDeckFact[], acts: 
         kind: "shape",
         title: f.name,
         why: `${cap(f.gap ?? f.stateWord ?? "")} · ${f.quarterLabel}`,
-        // a bet with no work under it has a better act than opening it (D-226)
+        // a bet with no work under it has a better act than opening it (D-227)
         primary: fix(f),
         secondary: f.canDraft && acts.draftProjects ? { label: `Open ${f.name}`, run: () => acts.open(f.id) } : undefined,
         projectId: null,
