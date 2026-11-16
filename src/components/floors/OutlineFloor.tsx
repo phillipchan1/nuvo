@@ -387,10 +387,21 @@ export default function OutlineFloor({
             return true;
           case "ArrowLeft":
           case "h":
+            // ← always closes something: this row if it is open, else the row
+            // it sits in (a project's initiative, a heading's group) — and lands
+            // there. It used to only walk up on a closed row, which read as ←
+            // "not collapsing" (and ← from a task already closes its project).
             if (h.open && !reaching) {
               if (h.kind === "group") setFolded(toggle(folded, h.group!.key));
               else setOpen(h.id, false);
-            } else if (h.parent) setCursorId(h.parent);
+            } else if (h.parent) {
+              const p = heads.find((x) => x.id === h.parent);
+              if (p?.open && !reaching) {
+                if (p.kind === "group") setFolded(toggle(folded, p.group!.key));
+                else setOpen(p.id, false);
+              }
+              setCursorId(h.parent);
+            }
             return true;
           case "ArrowDown":
           case "j":
