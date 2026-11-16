@@ -573,6 +573,8 @@ const TaskRow = forwardRef<TaskRowHandle, {
       ref={rowEl}
       {...(draggable ? { "data-tauri-drag-region": "false" as const } : {})}
       data-task-drag={draggable ? task.id : undefined}
+      // which task this row is — what the Schedule lights when you point at it (D-226)
+      data-row-task={task.id}
       data-task-drag-group={dragGroup}
       data-task-title={task.title}
       data-task-duration={task.duration_minutes ?? ""}

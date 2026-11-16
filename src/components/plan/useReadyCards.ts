@@ -138,7 +138,7 @@ export function useReady({
       // gives it a time — what the crown's drag onto the grid does.
       if (slate) L().commitTasksToSprint([t.id]);
       const when = whenLabel(p, today);
-      m.block(t, instantAt(p.dayISO, p.startMin), p.durationMin, { undo: "toast", label: `Held ${when} — ${t.title}` });
+      m.block(t, instantAt(p.dayISO, p.startMin), p.durationMin, { undo: "toast", label: `Scheduled ${when} — ${t.title}` });
     };
 
     const input: ReadyInput = {

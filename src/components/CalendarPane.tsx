@@ -73,6 +73,7 @@ import { useStableHandler } from "../hooks/useStableHandler";
 import { consumeLanding, landBlock, markLanding, reachToCrown } from "../lib/motion";
 import { syncCalendarEvents, type CalendarBlockInput } from "../lib/syncCalendarEvents";
 import { gridSyncPlan } from "../lib/calendarGridSync";
+import { getLocate, subscribeLocate } from "../lib/locate";
 // One spelling for what a block IS — shared with Plan the week's grid.
 import {
   blockDesignation,
@@ -2230,6 +2231,63 @@ function CalendarPane({
   const findEvent = (id: string) => eventsRef.current.find((e) => e.id === id);
   const findSlot = (id: string) => slotsRef.current.find((s) => s.id === id);
 
+  // Where is it (D-226): the rail points at a task or a project, and its blocks
+  // take a ring — a task's own block or the slot it sits in; for a project,
+  // every block of its work and its own sittings. The day each sits on takes
+  // the accent in the header, with ↑ / ↓ when the block is scrolled out of
+  // sight (the grid never scrolls under a pointer that is on the rail).
+  // Class toggles on elements FullCalendar already drew — no event reset, and
+  // only the lit blocks are measured, once per target.
+  const paneRef = useRef<HTMLDivElement>(null);
+  const applyLocate = useStableHandler(() => {
+    const pane = paneRef.current;
+    if (!pane) return;
+    for (const el of pane.querySelectorAll(".is-located")) el.classList.remove("is-located");
+    for (const el of pane.querySelectorAll("[data-located]")) el.removeAttribute("data-located");
+    const t = getLocate();
+    if (!t) return;
+    const ids = new Set(t.taskIds);
+    const slotIds = new Set(t.taskIds.map((id) => findTask(id)?.slot_id).filter((s): s is string => !!s));
+    const lit: HTMLElement[] = [];
+    for (const el of pane.querySelectorAll<HTMLElement>(".fc-event[data-task-id], .fc-event[data-slot-id]")) {
+      if (el.hasAttribute(DRAG_MIRROR_ATTR)) continue;
+      const taskId = el.getAttribute("data-task-id");
+      const slotId = el.getAttribute("data-slot-id");
+      const on = taskId
+        ? ids.has(taskId) || (!!t.projectId && findTask(taskId)?.project_id === t.projectId)
+        : !!slotId && (slotIds.has(slotId) || (!!t.projectId && findSlot(slotId)?.project_id === t.projectId));
+      if (on) lit.push(el);
+    }
+    const days = new Map<string, "in" | "above" | "below">();
+    for (const el of lit) {
+      el.classList.add("is-located");
+      const day = el.closest<HTMLElement>("[data-date]")?.getAttribute("data-date");
+      if (!day) continue;
+      const scroller = el.closest<HTMLElement>(".fc-scroller");
+      let where: "in" | "above" | "below" = "in";
+      if (scroller && el.closest(".fc-timegrid-body")) {
+        const s = scroller.getBoundingClientRect();
+        const r = el.getBoundingClientRect();
+        where = r.bottom <= s.top ? "above" : r.top >= s.bottom ? "below" : "in";
+      }
+      // one block in view is enough to say "here"
+      if (days.get(day) !== "in") days.set(day, where);
+    }
+    for (const [day, where] of days) {
+      pane.querySelector(`.fc-col-header-cell[data-date="${day}"]`)?.setAttribute("data-located", where);
+    }
+  });
+  useEffect(() => subscribeLocate(applyLocate), [applyLocate]);
+  // FullCalendar redraws blocks on a refetch or a page; a ring outlives that.
+  const locateFrame = useRef(0);
+  const reapplyLocate = useCallback(() => {
+    if (!getLocate() || locateFrame.current) return;
+    locateFrame.current = requestAnimationFrame(() => {
+      locateFrame.current = 0;
+      applyLocate();
+    });
+  }, [applyLocate]);
+
   /** Instant check, then the write. The paint is the click; the mutation is
    *  scheduled as a macrotask so React/FullCalendar cannot take this frame. */
   const toggleCalendarTaskDone = (clicked: Task, el?: HTMLElement | null) => {
@@ -2290,6 +2348,7 @@ function CalendarPane({
   // FullCalendar mounts it.
   const handleEventDidMount = useCallback((arg: EventMountArg) => {
     const { kind, refId } = arg.event.extendedProps as ExtendedProps;
+    reapplyLocate();
     // The plan's draft and its ghosts belong to the plan, not the selection,
     // the context menus or the drag-to-rail watch.
     if (kind === "plan" || kind === "planghost") return;
@@ -4491,7 +4550,14 @@ function CalendarPane({
     // `data-calendar-pane`: a press in here hands the keyboard to the grid — the
     // rail drops its cursor (LeftRail) so ⌫ in a block's menu can't also trash
     // the row the rail was pointing at.
-    <div data-calendar-pane="" data-plan-dim={plan?.dimCalendar ? "" : undefined} className="relative flex h-full min-w-0 flex-1 flex-col">
+    // `data-plan-pick`: Other times is asking for a time (D-216, D-225), so a
+    // click anywhere on the grid — on a block too — is that time, not an open.
+    <div
+      ref={paneRef}
+      data-calendar-pane=""
+      data-plan-dim={plan?.dimCalendar ? "" : undefined}
+      data-plan-pick={plan?.onPickTime ? "" : undefined}
+      className="relative flex h-full min-w-0 flex-1 flex-col">
       {/* A write that failed is wrong, not now: --danger, never the ember. */}
       {createError && (
         <div role="alert" className="sched-error">

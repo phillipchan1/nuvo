@@ -60,6 +60,7 @@ type Mutations = ReturnType<typeof useTaskMutations>;
 /** Keyboard / menu / tab-drop triage: destination may vanish from the rail, so
  *  these plan/return acts take the toast channel (complete/trash already do). */
 import { MAX_RAIL_WIDTH, MIN_RAIL_WIDTH, paintRailWidth, readRailWidth, writeRailWidth } from "../lib/railWidth";
+import { LOCATE_DELAY_MS, locateTargetAt, locateTargetForKey, setLocate } from "../lib/locate";
 
 const TRIAGE_UNDO = { undo: "toast" as const };
 
@@ -174,6 +175,50 @@ function LeftRail({
   const [crownCursor, setCrownCursor] = useState<string | null>(null);
   const crownHasKeys = useRef(false);
   const [crownEntry, setCrownEntry] = useState<{ seq: number; at: "first" | "last" } | null>(null);
+  // Where is it on the Schedule (D-226): the row under the pointer — or, with
+  // no pointer on a row, the keyboard's — rings its blocks on the grid. The
+  // pointer waits LOCATE_DELAY_MS so running down the list doesn't strobe.
+  const keyLocate = useMemo(
+    () => locateTargetForKey(crownCursor ?? (keyCursor ? selectedId : null)),
+    [crownCursor, keyCursor, selectedId],
+  );
+  const keyLocateRef = useRef(keyLocate);
+  keyLocateRef.current = keyLocate;
+  const hoverLocate = useRef<{ el: Element | null; timer: number | null }>({ el: null, timer: null });
+  useEffect(() => {
+    if (!hoverLocate.current.el) setLocate(keyLocate);
+  }, [keyLocate]);
+  useEffect(
+    () => () => {
+      if (hoverLocate.current.timer) window.clearTimeout(hoverLocate.current.timer);
+      setLocate(null);
+    },
+    [],
+  );
+  const onLocateOver = (e: React.PointerEvent) => {
+    if (e.pointerType !== "mouse") return;
+    const row = (e.target as Element).closest?.("[data-crown-key^='p:'], [data-row-task]") ?? null;
+    const h = hoverLocate.current;
+    if (row === h.el) return;
+    h.el = row;
+    if (h.timer) window.clearTimeout(h.timer);
+    h.timer = null;
+    if (!row) {
+      setLocate(keyLocateRef.current);
+      return;
+    }
+    h.timer = window.setTimeout(() => {
+      h.timer = null;
+      setLocate(locateTargetAt(row));
+    }, LOCATE_DELAY_MS);
+  };
+  const onLocateLeave = () => {
+    const h = hoverLocate.current;
+    if (h.timer) window.clearTimeout(h.timer);
+    h.timer = null;
+    h.el = null;
+    setLocate(keyLocateRef.current);
+  };
   const [labelPickerFor, setLabelPickerFor] = useState<Task | null>(null);
   const [remindPickerFor, setRemindPickerFor] = useState<Task | null>(null);
   const [schedulePickerFor, setSchedulePickerFor] = useState<Task | null>(null);
@@ -989,6 +1034,8 @@ function LeftRail({
       ref={railRef}
       data-rail-drop
       data-drop-tab={tab}
+      onPointerOver={onLocateOver}
+      onPointerLeave={onLocateLeave}
       className="relative z-40 h-full shrink-0 overflow-hidden"
       style={{
         width: collapsed ? 0 : railWidth,

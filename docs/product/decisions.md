@@ -8682,3 +8682,51 @@ operator-specific.
 *Status: built 2026-11-15 — `mobile/deck/MobileDeck.tsx`, `lib/week.ts`, `tests/week-names.test.ts`.
 Verified in the dev app at 375×812 and 320×568 (dark and light), Coverage open/shut, Block time's
 in-place panel; desktop On Deck unchanged. Not run on a device.*
+**D-225 · 2026-11-16 · Other times takes the click it asks for, and its numbers are keys.**
+*(Asked by the operator: "im trying to find alternative time for this task and wont let me do
+anything i tried clicking slots pressing 2 nothing works".)*
+
+→ **Three faults, one gesture.** (1) "Pick a time yourself…" bubbled its click through the React
+tree to the row it was opened from, so the task's own popover opened over the grid you were about
+to click. (2) While choosing, a click on a block opened that block — on a lived-in week nearly
+every press lands on one. (3) With the menu open, a press on the grid read as a click *away* and
+cancelled the chooser, so the click that followed answered nothing. Now the chooser stops its
+clicks at its edge; under `data-plan-pick` the week's blocks let a click fall through to the time
+beneath (it becomes "Your pick", its overlap named); and a press on the Schedule with the menu open
+is a pick.
+
+→ **1 · 2 · 3 choose.** The number the menu and the grid already share schedules that option,
+whether the menu is open or you are picking on the grid — taken before the Schedule's own 1–5
+(D-221) can read it. The toast says *Scheduled*, not *Held* (D-213's verbs had missed it).
+
+Anchor: W2 (where do the hours go). Strains nothing new; it makes R13's second answer reachable.
+
+*Status: built 2026-11-16 on `claude/readiness-dials`. Driven in the dev app on the local test
+account: menu open → click a block → "Your pick · Overlaps …"; Pick a time yourself → no popover,
+click a block → back to the menu with your pick; 2 → scheduled Tue 1–1:45pm, view unchanged.*
+
+**D-226 · 2026-11-16 · Point at a row; its blocks ring on the Schedule.**
+*(Asked by the operator: "when i am hilghting over a project/task it can highlight where it is on
+the schedule? that helps me locate when this stuff will be/ won't be done". Mock:
+[Hover to Locate](https://claude.ai/artifact/EcURPrUtCoZ7QHM5g4dsqd); chosen: ring only, 150ms.)*
+
+→ **Ring only.** Pointing at a rail task rings its block (or the slot it sits in); a crown project
+rings every block of its work and its own sittings. Nothing dims — this is a read aid, not a
+mode, so the week stays as it is. The day takes the accent in the header, with ↑ / ↓ when the
+block is scrolled out of sight; the grid never scrolls under a pointer that is on the rail.
+
+→ **150ms rest, and the keyboard too.** The pointer has to rest before the grid answers, so
+running down the list doesn't strobe. The rail's cursor (D-222, the tray's keyed row) rings the
+same way when no pointer is on a row. What has no time rings nothing — the row's "needs a time"
+already says so. Phone: unchanged (no hover, no grid beside the list).
+
+→ **How.** `lib/locate` is a module store (the shape of `offerPreview`); the rail writes it from
+one delegated `pointerover` on its root, CalendarPane toggles a class on blocks it already stamps
+(`data-task-id` / `data-slot-id`) — no event reset; only lit blocks are measured, once per target.
+
+Anchor: W2 · W3 (what's placed, what isn't — seen, not cross-read). Strains **P9** (the grid
+changes as you move): held by ring-only and the rest delay. No new name.
+
+*Status: built 2026-11-16 on `claude/readiness-dials`. Driven in the dev app: a 9am task rings its
+block and lights Mon; a 9pm task lights Mon with ↓. Project rows not driven (the local schema has
+no project week span); covered by `tests/locate.test.ts`.*

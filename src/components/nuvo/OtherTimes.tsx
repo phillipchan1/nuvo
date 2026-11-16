@@ -26,6 +26,7 @@ import { whenLabel } from "../../lib/readyCards";
 import { instantAt } from "../plan/destinations";
 import { parseDateISO, toDateISO } from "../../lib/dates";
 import { mondayOf } from "../../../supabase/functions/_shared/planningRules.ts";
+import { isTypingIn } from "../../lib/a11y";
 import type { Task } from "../../lib/types";
 
 interface Option {
@@ -113,6 +114,10 @@ export function OtherTimes({
       {phone
         ? open && <PhoneChooser task={task} first={first} onHold={onHold} noes={noes} onClose={reset} />
         : (open || picking) && (
+            // The menu is a portal, but React still bubbles its clicks through
+            // the row it was opened from — so "Pick a time yourself…" also
+            // opened the task's popover over the very grid you were to click.
+            <span style={{ display: "contents" }} onClick={(e) => e.stopPropagation()} onPointerDown={stop} onMouseDown={stop} onDoubleClick={stop}>
             <DeskChooser
               task={task}
               first={first}
@@ -137,10 +142,13 @@ export function OtherTimes({
               onCancel={reset}
               noes={noes}
             />
+            </span>
           )}
     </>
   );
 }
+
+const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
 
 function DeskChooser({
   task,
@@ -205,6 +213,36 @@ function DeskChooser({
   const pickingRef = useRef(picking);
   pickingRef.current = picking;
 
+  // Where the press that may close the menu landed. On `window` in the capture
+  // phase, so it is known before the menu's own (document) listener closes it.
+  const downOnGrid = useRef(false);
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      downOnGrid.current = Boolean((e.target as HTMLElement | null)?.closest?.("[data-calendar-pane]"));
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    return () => window.removeEventListener("pointerdown", onDown, true);
+  }, []);
+
+  // 1 · 2 · 3 — the numbers the menu and the grid share choose that time,
+  // whether the menu is open or you're picking on the grid. Taken before the
+  // Schedule's own 1–5 (its views) can read them.
+  const liveHold = useRef({ options, onHold, anchor });
+  liveHold.current = { options, onHold, anchor };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || isTypingIn(e.target)) return;
+      const n = Number(e.key);
+      const o = Number.isInteger(n) && n >= 1 ? liveHold.current.options[n - 1] : undefined;
+      if (!o || o.past) return;
+      e.preventDefault();
+      e.stopPropagation();
+      liveHold.current.onHold(o.at, liveHold.current.anchor);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+
   // Esc while picking on the grid: back to nothing chosen.
   useEffect(() => {
     if (!picking) return;
@@ -225,7 +263,14 @@ function DeskChooser({
         open={open}
         onClose={() => {
           if (pickingRef.current) onOpen(false);
-          else onCancel();
+          else if (downOnGrid.current) {
+            // A press on the Schedule while the menu is open IS a pick (a
+            // ghost, or your own time) — not a click away. It used to cancel
+            // the chooser, so the click that followed answered nothing.
+            pickingRef.current = true;
+            onPicking(true);
+            onOpen(false);
+          } else onCancel();
         }}
         label={`Other times for ${task.title}`}
         placement="bottom-start"

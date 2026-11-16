@@ -145,7 +145,7 @@ export function HoldOffer({ task, placement, mutations, phone = false }: { task:
     if (phone) haptic("light");
     const label = whenLabel(at, today);
     if (task.project_id && el) void reachToCrown(el, task.project_id);
-    mutations.block(task, instantAt(at.dayISO, at.startMin), at.durationMin, { undo: "toast", label: `Held ${label} — ${task.title}` });
+    mutations.block(task, instantAt(at.dayISO, at.startMin), at.durationMin, { undo: "toast", label: `Scheduled ${label} — ${task.title}` });
   };
   return (
     <span className="offer-pair">
@@ -163,7 +163,7 @@ export function HoldOffer({ task, placement, mutations, phone = false }: { task:
         if (phone) haptic("light");
         // Reach first: the chip is about to leave the row it stands in.
         if (task.project_id) void reachToCrown(el, task.project_id);
-        mutations.block(task, holdStart(placement), placement.durationMin, { undo: "toast", label: `Held ${when} — ${task.title}` });
+        mutations.block(task, holdStart(placement), placement.durationMin, { undo: "toast", label: `Scheduled ${when} — ${task.title}` });
       }}
       onDismiss={() => {
         if (phone) haptic("selection");

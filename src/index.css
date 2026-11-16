@@ -2335,6 +2335,26 @@ html:root .nuvo-cal-host .fc .fc-timegrid-event-harness {
 @media (hover: hover) {
   [data-plan-dim] .fc-event:not(.evt-plan):not(.evt-plan-ghost):not(.evt-plan-clear):hover { opacity: 0.85; }
 }
+/* Where is it (D-226): the rail points at a task or project; its blocks ring.
+   Ring only — the rest of the week stays as it is. An outline, so the block's
+   own fill, border and selection lift are untouched; its harness rises so a
+   neighbour can't cover the ring. */
+.fc-event.is-located {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.fc-timegrid-event-harness:has(> .is-located) { z-index: 6 !important; }
+.fc-col-header-cell[data-located] { color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
+.fc-col-header-cell[data-located] * { color: var(--accent); }
+.fc-col-header-cell[data-located="above"] .cal-dayhead::after { content: "↑"; }
+.fc-col-header-cell[data-located="below"] .cal-dayhead::after { content: "↓"; }
+
+/* Other times is asking for a time (D-225): what's already there can't be
+   opened, so a click on a block falls through to the time under it. On a dense
+   week nearly every press lands on one, and each opened that block instead. */
+[data-plan-pick] .fc-event:not(.evt-plan):not(.evt-plan-ghost):not(.evt-plan-clear) {
+  pointer-events: none;
+}
 /* the walk: the group under review is full strength, the rest wait quieter */
 .fc-event.evt-plan.evt-plan-quiet { opacity: 0.55; }
 

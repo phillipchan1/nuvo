@@ -311,19 +311,21 @@ describe("Hold <time> on a today task with no time", () => {
     expect(opts.undo).toBe("toast");
   });
 
-  it("Find time answers for today only, and only for what fits", async () => {
+  it("Find time answers today first, and only with what fits", async () => {
     const qc = offersClient(offersToday());
     const loose = offersToday().filter((t) => !t.start_time && t.status !== "done");
     const { result } = renderHook(() => useTodayHolds(loose, OFFERS_NOW), {
       wrapper: ({ children }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
     });
     await waitFor(() => expect(result.current.size).toBeGreaterThan(0));
-    for (const p of result.current.values()) {
-      expect(p.dayISO).toBe(OFFERS_TODAY);
-      expect(p.startMin).toBeGreaterThanOrEqual(10 * 60 + 15);
-    }
+    // Today first; what today can't hold goes to the next opening later this
+    // week — which only exists Monday–Saturday, so this read is weekday-proof.
+    const todays = [...result.current.values()].filter((p) => p.dayISO === OFFERS_TODAY);
+    expect(todays.length).toBeGreaterThan(0);
+    for (const p of result.current.values()) expect(p.dayISO >= OFFERS_TODAY).toBe(true);
+    for (const p of todays) expect(p.startMin).toBeGreaterThanOrEqual(10 * 60 + 15);
     // the 11am block and the 1–4pm sitting are busy: nothing lands on them
-    for (const p of result.current.values()) {
+    for (const p of todays) {
       const end = p.startMin + p.durationMin;
       expect(end <= 11 * 60 || p.startMin >= 12 * 60).toBe(true);
       expect(end <= 13 * 60 || p.startMin >= 16 * 60).toBe(true);
