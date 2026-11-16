@@ -29,7 +29,7 @@ import { ProjectShipAssess } from "../record/ShipAssess";
 import TaskListView from "../tasks/TaskListView";
 import { useTaskListKeys } from "../tasks/useTaskListKeys";
 import { Icon } from "../Icon";
-import { Button, Dot, EmptyState, IconButton, Kbd, Menu, MenuItem, MenuLabel, MenuSeparator, PaceTrack, SearchField, Segmented } from "../kit";
+import { Button, Dot, EmptyState, IconButton, Kbd, listTabTitle, Menu, MenuItem, MenuLabel, MenuSeparator, PaceTrack, SearchField, Segmented, useListTabKeys } from "../kit";
 import { DomainPicker, InlineDate, InlineText, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL, RipenessPip, StatusPill } from "./parts";
 import FloorStanding from "./FloorStanding";
 import {
@@ -66,11 +66,13 @@ type Head = {
   open: boolean;
 };
 
-const VIEWS: { value: OutlineView; label: string }[] = [
-  { value: "upcoming", label: "Upcoming" },
-  { value: "completed", label: "Completed" },
-  { value: "everything", label: "Everything" },
+// Each view says its key on hover — [ and ] step through them (D-223).
+const VIEWS: { value: OutlineView; label: string; title: string }[] = [
+  { value: "upcoming", label: "Upcoming", title: listTabTitle("Upcoming") },
+  { value: "completed", label: "Completed", title: listTabTitle("Completed") },
+  { value: "everything", label: "Everything", title: listTabTitle("Everything") },
 ];
+const VIEW_ORDER = VIEWS.map((v) => v.value);
 
 const COLS = "minmax(0, 1fr) 150px 120px 84px 56px 112px 28px";
 const COLS_NARROW = "minmax(0, 1fr) 150px 120px 84px 28px";
@@ -449,6 +451,10 @@ export default function OutlineFloor({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [phone, active, recordMenuOpen, onTop]);
+
+  // [ and ] — the views, previous and next (D-223), the list-tab keys the
+  // Schedule's rail answers too. Not on the phone; not under anything open.
+  useListTabKeys<OutlineView>(VIEW_ORDER, view, setView, () => !phone && !onTop && active === null && !recordMenuOpen);
 
   const noun = altitude === "project" ? "project" : "initiative";
   const total = groups.reduce((a, g) => a + g.items.length, 0);

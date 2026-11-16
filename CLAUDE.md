@@ -102,7 +102,7 @@ in `styles/instrument.css`. Reference screens: the **Schedule** and the **Domain
 capability** (`(hover)` / `(pointer)`), never by UA or width: arrow cursor on controls (the hand is
 for links only), no tap flash / callout / text selection on chrome, no browser context menu on
 app objects, `:active` press feedback under a finger, styled delayed tooltips for every `title`.
-So: **never add `cursor-pointer`** to a control; a hand-written `:hover` goes inside
+Keys for tabs: a page's views take **1–N** (`kit/pageTabKeys`, D-221) and the tabs *inside* a part of the page take **[ ]** (`kit/listTabKeys`, D-223) — never a digit — and every such tab says its key on hover ("Week (1)", "Today ([ ])"). So: **never add `cursor-pointer`** to a control; a hand-written `:hover` goes inside
 `@media (hover: hover)` (a test fails otherwise); content that must stay selectable inside chrome
 says `data-selectable`; a new menu uses `useMenuFocus` + `data-nested-surface`; a new pointer
 drag arms `armDragCancel`; touch physics come from `lib/gesture`, haptics from `lib/haptics`.

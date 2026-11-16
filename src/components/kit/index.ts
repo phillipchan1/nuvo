@@ -27,5 +27,6 @@ export { MiniMonth, monthGrid } from "./MiniMonth";
 export { Dialog } from "./Dialog";
 export { PageBar } from "./PageBar";
 export { usePageTabKeys, withPageTabKeys, pageTabChord } from "./pageTabKeys";
+export { useListTabKeys, listTabTitle, stepTab, LIST_TAB_KEYS } from "./listTabKeys";
 export { NuvoMark } from "./Mark";
 export { PaceTrack } from "../progress/PaceTrack";

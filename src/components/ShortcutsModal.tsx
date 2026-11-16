@@ -31,6 +31,7 @@ const GROUPS: Group[] = [
       { keys: [["⌘", "1"], ["⌘", "4"]], sep: "–", label: "Jump to a floor" },
       { keys: [["⌘", "↑"], ["⌘", "↓"]], sep: "/", label: "Travel the ladder" },
       { keys: [["1"], ["5"]], sep: "–", label: "The page's views — 1 is home (Week / On Deck)" },
+      { keys: [["["], ["]"]], sep: "/", label: "A list's tabs — previous / next (Today · Inbox, the Table's views)" },
     ],
   },
   {
@@ -112,7 +113,7 @@ const GROUPS: Group[] = [
       { keys: [["B"]], label: "Remind (a scheduled task or a deadline)" },
       { keys: [["F"]], label: "Filter the list (Esc clears it)" },
       { keys: [["U"]], label: "Restore (on the Trash tab)" },
-      { keys: [["1"], ["2"], ["3"]], sep: "/", label: "Today / Inbox / Trash tab (no row selected)" },
+      { keys: [["["], ["]"]], sep: "/", label: "Today · Inbox · Trash — previous / next (opens the tray)" },
     ],
   },
   {

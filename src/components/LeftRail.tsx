@@ -41,7 +41,7 @@ import { RAIL_OFFERS_MAX, type RailOfferCandidate } from "../lib/railOffers";
 import type { Placement } from "../lib/compose";
 import { InboxAddressHint } from "./InboxAddress";
 import { skipWhenAsleep } from "./KeepAlive";
-import { Button, Dot, Input, IconButton, MenuLabel, Picker, Popover, SectionHeader } from "./kit";
+import { Button, Dot, Input, IconButton, LIST_TAB_KEYS, listTabTitle, MenuLabel, Picker, Popover, SectionHeader, useListTabKeys } from "./kit";
 import SlotRunHeader, { slotRunFace } from "./tasks/SlotRunHeader";
 import { clockEntries, type ClockEntry } from "../lib/slotRuns";
 import { coverage, pruneTo, rangeBetween, selectionClosesOverlay, toggleGroup, toggleId } from "../lib/selection";
@@ -651,6 +651,37 @@ function LeftRail({
   // The crown holds the keys after a press in it, or whenever the tray's list
   // is folded away (keys must never walk rows you can't see).
   const crownOwns = () => crownHasKeys.current || !trayOpenRef.current;
+
+  // [ and ] — the tray's tabs, previous and next (D-223): Today · Inbox, and
+  // Trash while it holds something. From anywhere on the Schedule (the rail or
+  // the grid), the way `a` reaches the add box. It opens the tray, gives it the
+  // keys, and lights the first row of the face you land on so ↓ keeps walking.
+  const [lightFirst, setLightFirst] = useState(false);
+  useListTabKeys<RailTab>(
+    trashed.length > 0 ? ["today", "inbox", "trash"] : ["today", "inbox"],
+    tab,
+    (t) => {
+      claimKeys("rail");
+      crownHasKeys.current = false;
+      setCrownCursor(null);
+      // Put the old face's cursor down first, or the list hands it to the row
+      // at the same place on the new face (useTaskListKeys' hand-off).
+      setSelectedId(null);
+      setKeyCursor(false);
+      setTab(t);
+      setTrayOpen(true);
+      setLightFirst(true);
+    },
+    () => railKeysOnRef.current,
+  );
+  useEffect(() => {
+    if (!lightFirst) return;
+    setLightFirst(false);
+    if (!drawn.length) return;
+    setSelectedId(drawn[0].id);
+    setKeyCursor(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lightFirst, drawn]);
   useTaskListKeys({
     // …and only while the rail is the pane last pressed in (keyOwner): with a
     // block selected on the grid, j / ⌫ / e belong to the block.
@@ -1057,8 +1088,8 @@ function LeftRail({
       </div>
       {/* The tray (D-209): Today and Inbox fold to this strip above Capture —
           the day's blocks are already on the grid beside the rail, so the list
-          is one tap away instead of taking a third of the rail. A tab (or 1/2/3)
-          opens it; the chevron folds it. */}
+          is one tap away instead of taking a third of the rail. A tab (or [ / ],
+          D-223) opens it; the chevron folds it. */}
       <div data-tauri-drag-region="deep" className="rail-tray-handle shrink-0">
         {/* The faces — Today and Inbox, the day's two; Trash is recovery, so it
             sits as an icon at the strip's end, only while it holds something
@@ -1087,6 +1118,7 @@ function LeftRail({
                   ? { "data-inbox-tab": "", "data-teach": "inbox-tab" }
                   : { "data-today-tab": "" })}
                 className={`rail-tab ${ready ? "rail-tab-ready" : armed ? "rail-tab-armed" : ""}`}
+                title={listTabTitle(t === "inbox" ? "Inbox" : "Today")}
               >
                 {t === "inbox" ? "Inbox" : "Today"}
                 <span className="rail-tab-count">{tabCount(t)}</span>
@@ -1099,6 +1131,7 @@ function LeftRail({
                 size="xs"
                 data-trash-tab=""
                 label={`Trash · ${trashed.length >= TRASH_LIMIT ? `${TRASH_LIMIT}+` : trashed.length}`}
+                shortcut={LIST_TAB_KEYS}
                 aria-pressed={tab === "trash"}
                 icon={<Icon name="trash" size={14} />}
                 onClick={() => {

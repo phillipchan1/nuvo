@@ -8626,3 +8626,28 @@ no pool, no name.
 the task, ← closes back, ↓ off the end hands on). Driven in the real `LeftRail` at `?rail=offers`:
 the full walk down into Today and back up. Not driven in the signed-in app — the local backend's
 database was rebuilt under another session's schema mid-way, so the dev login no longer exists.*
+
+---
+
+**D-223 · 2026-11-15 · A list's own tabs take [ and ]; a page's views keep 1–N.**
+*(Operator: "how to toggle between Today and Inbox cleanly?" — then "make sure it's discoverable,
+hoverable, consistent across the application.")* D-221 gave bare digits to the PageBar's views and
+took the rail's 1/2/3 away to stop one key meaning three things — which left Today · Inbox · Trash
+with no key at all, broke the rail's new keyboard walk (D-222) at the tray, and left the `?` sheet
+still promising 1/2/3.
+
+→ **Two kinds of tabs, two keys, one rule each.** 1–N switch the **page's** views (`pageTabKeys`,
+D-221). **[ and ]** step through the tabs **inside a part of the page**, wrapping
+(`kit/listTabKeys`): the rail's Today · Inbox (· Trash while it holds something), and the Table's
+Upcoming · Completed · Everything. A digit never means a list's tab again.
+→ **On the Schedule they reach the tray from anywhere** (the rail or the grid), the way `a` reaches
+the add box: the tray opens, takes the keys, and the first row of the face you land on lights, so ↓
+keeps walking.
+→ **Discoverable:** every such tab says its keys on hover in the app's one shape — "Today ([ ])",
+like "Week (1)"; the `?` sheet lists [ ] beside 1–N and under Today & Inbox, replacing the stale
+1/2/3 line.
+
+Ledger: no row; a convention. Removes the last place the tray needed a mouse. Adds no name.
+
+*Status: shipped. Pinned in `tests/list-tab-keys.test.ts`. Driven at `?rail=offers` (] and [ walk
+Today → Inbox → Today, the tray lights its first row, hover shows "Inbox ([ ])").*
