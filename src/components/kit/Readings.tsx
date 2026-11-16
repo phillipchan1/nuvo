@@ -14,7 +14,7 @@
 
 import { memo, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { advanceSegment, play, reachArrivalDelay } from "../../lib/motion";
-import { closeMark, dropStop, pop, ring } from "../../lib/celebrate";
+import { bump, closeDial, dropStop, pop, ring } from "../../lib/celebrate";
 import { haptic } from "../../lib/haptics";
 import { MARK_DEFS, markTitle, spanWords, type DayRead, type Mark, type MarkKey, type MarkPiece } from "../../lib/marks";
 import { cx } from "./cx";
@@ -218,25 +218,37 @@ export const MarkSet = memo(function MarkSet({
   marks,
   attrsFor,
   acts,
+  reachKeyFor,
 }: {
   marks: readonly Mark[];
   attrsFor?: (k: MarkKey) => Record<string, string> | undefined;
   /** the dials whose "what's left" opens something — that line is then the
    *  button. A dial with no act here just says it (Done is the run). */
   acts?: Partial<Record<MarkKey, () => void>>;
-  /** kept for callers that still pass them; dials have no pieces to advance */
+  /** hold a dial's motion until a Reach in flight to this key lands */
   reachKeyFor?: (k: MarkKey) => string | undefined;
   thin?: boolean;
 }) {
   const rings = useRef(new Map<MarkKey, HTMLSpanElement | null>());
-  const fullSig = marks.map((m) => (m.full ? "1" : "0")).join("");
-  const prev = usePrev(fullSig);
+  // Motion answers the hand (D-219): every step a dial takes swells it with a
+  // light tap — the click a piece used to give — and a dial that closes gets
+  // its lock (`closeDial`). Only on a change this part watched; never on mount.
+  const sig = marks.map((m) => `${m.n}/${m.of}/${m.full ? 1 : 0}`).join(",");
+  const prev = usePrev(sig);
   useLayoutEffect(() => {
-    if (prev === null || prev === fullSig) return;
+    if (prev === null || prev === sig) return;
+    const was = prev.split(",").map((x) => x.split("/").map(Number));
     marks.forEach((m, i) => {
-      if (m.full && prev[i] === "0") closeMark(rings.current.get(m.key) ?? null, m.tier);
+      const [n0 = 0, , f0 = 0] = was[i] ?? [];
+      const el = rings.current.get(m.key) ?? null;
+      const wait = reachArrivalDelay(reachKeyFor?.(m.key));
+      if (m.full && !f0) closeDial(el, m.tier, wait);
+      else if (m.n > n0) {
+        bump(el, wait, 1.08);
+        setTimeout(() => haptic("light"), wait);
+      }
     });
-  }, [fullSig, prev, marks]);
+  }, [sig, prev, marks, reachKeyFor]);
   const { onDefine, node } = useDefine();
   return (
     <div className="k-markset">
@@ -305,7 +317,7 @@ export const DayCrown = memo(function DayCrown({
     if (prev !== false || !day.closed) return;
     // The day closed under your hand: the hero pops and rings, the stop drops
     // (Stop plays itself), the hour you got back rises in.
-    pop(hero.current, 120);
+    bump(hero.current, 120, 1.06);
     ring(hero.current, 260);
     haptic("success");
     play(line.current, [{ transform: "translateY(6px)", opacity: 0 }, { transform: "none", opacity: 1 }], "--d-land", "--ease-land", 520);

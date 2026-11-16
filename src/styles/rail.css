@@ -1136,3 +1136,6 @@ html:root .crown-shape-item:focus-visible { outline: none; box-shadow: 0 0 0 2px
 .crown-proj-count { font-variant-numeric: tabular-nums; }
 .crown-proj-todo { color: var(--accent); white-space: nowrap; }
 @media (max-width: 767px) { .crown-shape-item { min-height: 44px; } }
+/* The row's ring fills the way the dials do (D-219). */
+.crown-ring circle { transition: stroke-dasharray var(--d-land, 380ms) var(--ease-land, cubic-bezier(.2,.8,.2,1)); }
+@media (prefers-reduced-motion: reduce) { .crown-ring circle { transition: none; } }

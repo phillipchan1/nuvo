@@ -38,6 +38,8 @@ vi.mock("../src/lib/celebrate", () => ({
   dropStop: vi.fn(),
   jolt: vi.fn(),
   closeMark: vi.fn(),
+  closeDial: vi.fn(),
+  bump: vi.fn(),
   seal: vi.fn(),
 }));
 
@@ -244,7 +246,8 @@ describe("Readings kit parts", () => {
       </>,
     );
     expect(celebrate.dropStop).not.toHaveBeenCalled();
-    expect(celebrate.closeMark).not.toHaveBeenCalled();
+    expect(celebrate.closeDial).not.toHaveBeenCalled();
+    expect(celebrate.bump).not.toHaveBeenCalled();
     rerender(
       <>
         <Stop on={false} />
@@ -258,7 +261,23 @@ describe("Readings kit parts", () => {
       </>,
     );
     expect(celebrate.dropStop).toHaveBeenCalledTimes(1);
-    expect(celebrate.closeMark).toHaveBeenCalledWith(expect.anything(), "medium"); // Fits locks
+    expect(celebrate.closeDial).toHaveBeenCalledWith(expect.anything(), "medium", expect.any(Number)); // Fits locks
+  });
+
+  it("every step a dial takes swells it — the click a piece used to give (D-219)", () => {
+    vi.mocked(celebrate.bump).mockClear();
+    vi.mocked(celebrate.closeDial).mockClear();
+    const set = (n: number) => [{ key: "done" as const, label: "Done", n, of: 5, full: n >= 5, tier: "medium" as const, pieces: [], todo: `${5 - n} to go` }];
+    const { rerender } = render(<MarkSet marks={set(2)} />);
+    expect(celebrate.bump).not.toHaveBeenCalled();
+    rerender(<MarkSet marks={set(3)} />);
+    expect(celebrate.bump).toHaveBeenCalledTimes(1);
+    expect(celebrate.closeDial).not.toHaveBeenCalled();
+    rerender(<MarkSet marks={set(5)} />);
+    expect(celebrate.closeDial).toHaveBeenCalledTimes(1);
+    // An undo steps back quietly.
+    rerender(<MarkSet marks={set(4)} />);
+    expect(celebrate.bump).toHaveBeenCalledTimes(1);
   });
 
   it("the day says the hour you got back", () => {

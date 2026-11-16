@@ -8464,7 +8464,10 @@ header is the one place a span is written.
 "N with no time" crown line while the Scheduled dial is open (it says the same), the project row's
 pace track and its amber "● 2" (the row says "1/4 · 2 need a time"), and the phone row's amber
 count pill. The phone's shut strip is three small dials.
-→ Kept: the stop, the day closing ("Done at 3:04pm"), every celebration, the Seal.
+→ Kept: the stop, the day closing ("Done at 3:04pm"), every celebration, the Seal. Drawn for a
+circle: every step a dial takes **swells** it with a light tap (the click a piece gave), a closing
+dial swells harder and rings (`closeDial`; the run's close also sparks), and a finished task swells
+its project's ring on the row.
 
 Ledger: **W2** (what has no time this week) — now answered by naming the tasks behind the count,
 one tap from the dial, rather than a count beside an unrelated line. No row re-scored. Strains **P4** a little less than

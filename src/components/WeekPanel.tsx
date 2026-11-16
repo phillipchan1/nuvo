@@ -32,7 +32,7 @@
 //      open to their loose work — so the row says what the sidebar can't:
 //      weight left, pace, and what has no time.
 
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { useThinPaths } from "../hooks/useThinPaths";
 import { PathOffer, pathCandidates } from "./nuvo/RailOffers";
 import type { RailOfferCandidate } from "../lib/railOffers";
@@ -50,6 +50,9 @@ import { deckWeight } from "../lib/pace";
 import { ProjectShipAssess } from "./record/ShipAssess";
 import type { EmblemSpec } from "../lib/weekEmblem";
 import { Button, Chip, CrownLine, DayCrown, IconButton, MarkLabel, MarkSet, OfferChip, SectionHeader, Stop } from "./kit";
+import { WEEK_REACH_KEY, reachArrivalDelay } from "../lib/motion";
+import { bump } from "../lib/celebrate";
+import { haptic } from "../lib/haptics";
 import { marksReady, movingIds, readDay, weekMarks } from "../lib/marks";
 import { useSettings } from "../hooks/useSettings";
 import type { Task } from "../lib/types";
@@ -76,6 +79,7 @@ const rows0 = (c: { rows: readonly unknown[] }) => c.rows.length > 0;
 // Stable, so the memoized MarkSet skips a render when nothing changed.
 const WEEK_PLACED_ATTRS = { "data-crown-week": "", "data-crown-color": "var(--landed)" };
 const weekMarkAttrs = (k: string) => (k === "placed" ? WEEK_PLACED_ATTRS : undefined);
+const weekMarkReach = (k: string) => (k === "placed" ? WEEK_REACH_KEY : undefined);
 /** Monday of the current week — the crown names a later week "Next week". */
 function currentWeekISO(): string {
   const d = new Date();
@@ -282,6 +286,7 @@ export default function WeekPanel({
                 // The Reach for an act that changes the WEEK lands on
                 // Scheduled — a card that gives work a time moves that dial.
                 attrsFor={weekMarkAttrs}
+                reachKeyFor={weekMarkReach}
                 acts={{ ready: () => setShapeOpen((v) => !v), placed: onLine }}
               />
               {shapeOpen && shapeItems.length > 0 && (
@@ -431,6 +436,18 @@ function ProjectStackRow({
   onExpand: () => void;
 }) {
   const { rock, work, color, placed, loose, open, pct, rolls, continues, canExpand, weightMins, placedLabel } = row;
+  // A task finished under this project swells its ring (D-219) — the click the
+  // row's piece track used to give. Waits for a Reach flying to this row.
+  const ringBtn = useRef<HTMLButtonElement | null>(null);
+  const doneWas = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const was = doneWas.current;
+    doneWas.current = work.done;
+    if (was === null || work.done <= was) return;
+    const wait = reachArrivalDelay(row.projectId);
+    bump(ringBtn.current, wait, 1.25);
+    setTimeout(() => haptic("light"), wait);
+  }, [work.done, row.projectId]);
   const shipped = row.state === "shipped";
   const done = shipped || row.state === "landed";
   const looksDone = row.state === "ready-to-ship";
@@ -499,6 +516,7 @@ function ProjectStackRow({
                     : "Ship it — you'll see what's still open first"
             }
             aria-label={shipped ? "Shipped" : done ? "Reopen push" : `Ship ${row.title}`}
+            ref={ringBtn}
             className="crown-ring"
           >
             <ProgressRing pct={pct} color={color} filled={done} />

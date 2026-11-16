@@ -29,6 +29,18 @@ export function pop(el: Element | null | undefined, delayMs = 0): void {
   );
 }
 
+/** A round thing that just moved swells and settles — a dial's step, the
+ *  day's hero (D-219). Uniform scale, so a circle stays a circle. */
+export function bump(el: Element | null | undefined, delayMs = 0, amount = 1.1): void {
+  play(
+    el,
+    [{ transform: "scale(1)" }, { transform: `scale(${amount})`, offset: 0.4 }, { transform: "scale(1)" }],
+    "--d-land",
+    "--ease-land",
+    delayMs,
+  );
+}
+
 /** One bright pass across a bar that just closed. Draws its own overlay and
  *  removes it; the bar must clip (`overflow: hidden`). */
 export function sweep(bar: HTMLElement | null | undefined, delayMs = 0): void {
@@ -44,12 +56,13 @@ export function sweep(bar: HTMLElement | null | undefined, delayMs = 0): void {
 
 /** An ember outline that opens off an element and fades — the lock and the
  *  Seal. Fixed-position, so it never reflows anything. */
-export function ring(el: Element | null | undefined, delayMs = 0): void {
+export function ring(el: Element | null | undefined, delayMs = 0, round = false): void {
   if (!el || motionOff() || typeof document === "undefined") return;
   const r = el.getBoundingClientRect();
   if (!r.width && !r.height) return;
   const d = document.createElement("span");
   d.className = "k-ring";
+  if (round) d.style.borderRadius = "50%";
   d.setAttribute("aria-hidden", "true");
   Object.assign(d.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${Math.max(r.width, 12)}px`, height: `${Math.max(r.height, 12)}px` });
   document.body.appendChild(d);
@@ -169,4 +182,19 @@ export function seal(projectId: string, significant: boolean): void {
     jolt(target, 160);
     ring(target, 200);
   }
+}
+
+/** A dial closing (D-219) — the lock, drawn for a circle. Shaping clicks (a
+ *  swell and a light tap); a Scheduled / Fits close swells, rings and taps
+ *  harder; the run's close (Done, Shipped, Moving) also throws sparks. */
+export function closeDial(el: HTMLElement | null | undefined, tier: "small" | "medium" | "large", delayMs = 0): void {
+  if (tier === "small") {
+    bump(el, delayMs, 1.12);
+    setTimeout(() => haptic("light"), delayMs);
+    return;
+  }
+  bump(el, delayMs, 1.18);
+  ring(el, delayMs + 120, true);
+  if (tier === "large") burst(el, delayMs + 160);
+  setTimeout(() => haptic(tier === "large" ? "success" : "medium"), delayMs);
 }
