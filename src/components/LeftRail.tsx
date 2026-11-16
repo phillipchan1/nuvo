@@ -1057,6 +1057,8 @@ function LeftRail({
           moment the rail exists for, so it never scrolls out of sight. */}
       <RailDay
         today={today}
+        now={now}
+        slots={slots}
         // "1 needs a time" lights that task in Today's list, where its offer is
         onLoose={(t) => {
           claimKeys("rail");

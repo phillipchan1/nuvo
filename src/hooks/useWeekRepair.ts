@@ -26,7 +26,9 @@ export type RepairWhy = "landed" | "missed";
 export interface Repair {
   /** stable across renders: the row + the time it broke at */
   key: string;
-  kind: "task" | "slot";
+  /** `leftover`: a block whose time passed with some of its work undone — the
+   *  block stays as the record of what happened; the undone work moves (D-232). */
+  kind: "task" | "slot" | "leftover";
   id: string;
   title: string;
   why: RepairWhy;
@@ -37,6 +39,10 @@ export interface Repair {
   options: Placement[];
   task?: Task;
   slot?: Slot;
+  /** `leftover`: the undone work that moves */
+  leftover?: Task[];
+  /** `leftover`: how long the moved work needs (`from` stays the block's own span) */
+  moveMin?: number;
 }
 
 const minsOf = (d: Date) => d.getHours() * 60 + d.getMinutes();
@@ -124,11 +130,34 @@ export function useWeekRepair({
       if (m) broken.push({ key: `task:${t.id}@${t.start_time}`, kind: "task", id: t.id, title: t.title, why: "landed", event: m.title || "A meeting", from, task: t });
     }
     for (const sl of slots) {
-      if (!sl.start_time || sl.recurrence_id) continue;
+      if (!sl.start_time) continue;
       const s = new Date(sl.start_time);
       if (!inWeek(s)) continue;
       const e = new Date(s.getTime() + sl.duration_minutes * 60_000);
-      if (e <= at) continue; // a slot's work is its tasks; a passed slot isn't re-placed here
+      if (e <= at) {
+        // A block whose time passed with work still in it (D-232): it was a
+        // miss like any other, so it gets the same repair. Nothing done in it
+        // → the whole block moves (unless it's a standing one, which keeps its
+        // hour). Some of it done → the block stays as the record of what
+        // happened and only the undone work moves.
+        if (!isMissed(e.getTime(), at.getTime(), nextStartAfter(e.getTime()))) continue;
+        const inside = tasks.filter((t) => t.slot_id === sl.id && t.status !== "trashed");
+        const undone = inside.filter((t) => t.status !== "done");
+        if (!undone.length) continue;
+        const name = sl.title || (undone.length === 1 ? undone[0].title : `${undone[0].title} + ${undone.length - 1} more`);
+        const whole = !sl.recurrence_id && undone.length === inside.length;
+        const at0 = { dayISO: toDateISO(s), startMin: minsOf(s) };
+        if (whole) {
+          broken.push({ key: `slot:${sl.id}@${sl.start_time}`, kind: "slot", id: sl.id, title: name, why: "missed", from: { ...at0, durationMin: sl.duration_minutes }, slot: sl });
+        } else {
+          const need = undone.reduce((n, t) => n + (t.duration_minutes ?? 30), 0);
+          const durationMin = Math.max(15, Math.min(sl.duration_minutes, Math.ceil(need / 15) * 15));
+          const left = undone.length === 1 ? undone[0].title : `Rest of ${sl.title || "a block"}`;
+          broken.push({ key: `left:${sl.id}@${sl.start_time}`, kind: "leftover", id: undone.length === 1 ? undone[0].id : sl.id, title: left, why: "missed", from: { ...at0, durationMin: sl.duration_minutes }, moveMin: durationMin, slot: sl, leftover: undone });
+        }
+        continue;
+      }
+      if (sl.recurrence_id) continue; // a standing block keeps its hour
       const m = meetingOn(s, e);
       if (m)
         broken.push({
@@ -172,10 +201,18 @@ export function useWeekRepair({
     // the staged repairs are placed in turn, so two of them never pick one hour
     const taken: Task[] = [];
     for (const b of broken.slice(0, 6)) {
+      const size = b.moveMin ?? b.from.durationMin;
       const asTask = (b.task
-        ? { ...b.task, start_time: null, duration_minutes: b.from.durationMin }
-        : ({ id: b.id, title: b.title, duration_minutes: b.from.durationMin, project_id: b.slot?.project_id ?? null, status: "backlog", energy: null } as unknown as Task));
-      const options = alternativesFor({ ...base, blocks: [...blocksExcept(b.id), ...taken] }, asTask, b.from, 4);
+        ? { ...b.task, start_time: null, duration_minutes: size }
+        : ({ id: b.id, title: b.title, duration_minutes: size, project_id: b.slot?.project_id ?? null, status: "backlog", energy: null } as unknown as Task));
+      // a leftover's block stays where it was, so it still counts as busy
+      const input = { ...base, blocks: [...blocksExcept(b.kind === "leftover" ? "" : b.id), ...taken] };
+      // A missed block is put back TODAY while today has room (D-207's point,
+      // D-232): the composer alone spreads work to the emptiest day, which is
+      // right for planning a week and wrong for "this slipped this morning".
+      const soon = b.why === "missed" ? alternativesFor({ ...input, workingDays: [at.getDay()] }, asTask, b.from, 2) : [];
+      const rest = alternativesFor(input, asTask, b.from, 4).filter((o) => !soon.some((x) => x.dayISO === o.dayISO && x.startMin === o.startMin));
+      const options = [...soon, ...rest].slice(0, 4);
       if (!options.length) continue;
       const first = options[0];
       taken.push(asBusyBlock(`taken-${b.id}`, "", first.dayISO, first.startMin, first.durationMin));

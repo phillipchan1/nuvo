@@ -10,6 +10,9 @@ import type { Repair } from "../../hooks/useWeekRepair";
 import { useDial } from "../../lib/planDial";
 import { useSettings } from "../../hooks/useSettings";
 import { instantAt, whereSpan } from "./destinations";
+import { useTaskMutations } from "../../hooks/useTasks";
+import { useSlotMutations } from "../../hooks/useSlots";
+import { toDateISO } from "../../lib/dates";
 
 export const instantOf = instantAt;
 
@@ -31,8 +34,63 @@ const writeLeft = (s: Set<string>) => {
 };
 
 export interface RepairActs {
-  /** move the broken block to a start; returns an undo */
-  apply: (r: Repair, start: Date) => () => void;
+  /** move the broken block to a start (`mins`: the length the chosen time
+   *  said, when it differs); returns an undo */
+  apply: (r: Repair, start: Date, mins?: number) => () => void;
+}
+
+/** How a repair moves the week — ONE act for both shells (the Schedule's rail
+ *  and the phone's card had a copy each). A task is re-blocked; a missed or
+ *  displaced block moves whole; a block's leftover work (D-232) leaves the block
+ *  where it was and moves on its own — one task as its own block, several as a
+ *  new block of the same name. Each returns its undo. */
+export function useRepairApply(): RepairActs {
+  const mutations = useTaskMutations();
+  const slotMutations = useSlotMutations();
+  return useMemo(
+    () => ({
+      apply: (r: Repair, start: Date, chosen?: number) => {
+        if (r.kind === "task" && r.task) {
+          const task = r.task;
+          const was = new Date(task.start_time!);
+          mutations.block(task, start, r.from.durationMin);
+          return () => mutations.block(task, was, r.from.durationMin);
+        }
+        if (r.kind === "leftover" && r.leftover?.length && r.slot) {
+          const from = r.slot;
+          const work = r.leftover;
+          const snaps = work.map((t) => ({ id: t.id, status: t.status, do_date: t.do_date, start_time: t.start_time, slot_id: t.slot_id }));
+          const back = () => snaps.forEach(({ id, ...snap }) => mutations.patchTask(id, snap, { undo: false }));
+          const mins = chosen ?? r.moveMin ?? r.from.durationMin;
+          if (work.length === 1) {
+            mutations.block(work[0], start, mins, { undo: false });
+            return back;
+          }
+          const slot = slotMutations.createSlot({
+            title: from.title ?? "",
+            do_date: toDateISO(start),
+            start_time: start.toISOString(),
+            duration_minutes: mins,
+            project_id: from.project_id ?? null,
+            domain_id: from.domain_id ?? null,
+            color: from.color ?? null,
+          });
+          // the slot's insert is queued first, so nothing points at a row the
+          // server hasn't seen yet (the outbox trap in CLAUDE.md)
+          work.forEach((t) => mutations.assignToSlot(t, slot, { undo: false }));
+          return () => {
+            back();
+            slotMutations.removeSlot(slot);
+          };
+        }
+        const slot = r.slot!;
+        const before = { start_time: slot.start_time, do_date: slot.do_date };
+        slotMutations.updateSlot({ id: slot.id, patch: { start_time: start.toISOString(), do_date: toDateISO(start) } });
+        return () => slotMutations.updateSlot({ id: slot.id, patch: before });
+      },
+    }),
+    [mutations, slotMutations],
+  );
 }
 
 /** The fit a repair is currently on (‹ › step through the composer's others). */
@@ -71,7 +129,7 @@ export function useRepairs(repairs: Repair[], acts: RepairActs) {
   const take = (r: Repair, auto = false, at?: { dayISO: string; startMin: number; durationMin: number }) => {
     const o = at ?? fitOf(r, ix);
     const start = instantOf(o.dayISO, o.startMin);
-    const undoIt = acts.apply(r, start);
+    const undoIt = acts.apply(r, start, o.durationMin);
     handled.current.add(r.key);
     const label = `${r.title} → ${whereSpan(o)}`;
     setApplied((prev) => [...prev, { key: r.key, label, undo: undoIt }]);

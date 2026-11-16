@@ -12,14 +12,18 @@ import { TouchButton } from "./touch";
 import { useMemo, useState } from "react";
 import { startOfWeek } from "date-fns";
 import { useExternalEvents } from "../../hooks/useCalendar";
-import { useScheduledTasks, useTaskMutations } from "../../hooks/useTasks";
-import { useSlotMutations, useSlots } from "../../hooks/useSlots";
+import { useScheduledTasks } from "../../hooks/useTasks";
+import { useSlotTasks, useSlots } from "../../hooks/useSlots";
 import { useSettings } from "../../hooks/useSettings";
 import { useWorkingDays } from "../../hooks/useWorkingDays";
-import { useWeekRepair, type Repair } from "../../hooks/useWeekRepair";
-import { fitOf, useRepairs } from "../plan/repairActs";
+import { useWeekRepair } from "../../hooks/useWeekRepair";
+import { fitOf, useRepairApply, useRepairs } from "../plan/repairActs";
 import { LEAVE_IN_PLACE, moveLabel, whereSpan } from "../plan/destinations";
 import { toDateISO } from "../../lib/dates";
+import type { Slot, Task } from "../../lib/types";
+
+const NO_TASKS: Task[] = [];
+const NO_SLOTS: Slot[] = [];
 
 export default function MobileRepairCard({ now }: { now: Date }) {
   const range = useMemo(() => {
@@ -29,12 +33,15 @@ export default function MobileRepairCard({ now }: { now: Date }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toDateISO(startOfWeek(now, { weekStartsOn: 1 }))]);
   const { data: events = [] } = useExternalEvents(range.start, range.end);
-  const { data: tasks = [] } = useScheduledTasks(range.start, range.end);
-  const { data: slots = [] } = useSlots(range.start, range.end);
+  const { data: scheduled = NO_TASKS } = useScheduledTasks(range.start, range.end);
+  const { data: slots = NO_SLOTS } = useSlots(range.start, range.end);
+  // the scheduled query leaves a block's tasks out; a block whose time passed
+  // with work in it is a repair too (D-232), so read them
+  const slotIds = useMemo(() => slots.map((s) => s.id), [slots]);
+  const { data: inside = NO_TASKS } = useSlotTasks(slotIds);
+  const tasks = useMemo(() => [...scheduled, ...inside.filter((t) => !scheduled.some((x) => x.id === t.id))], [scheduled, inside]);
   const { settings } = useSettings();
   const [workingDays] = useWorkingDays();
-  const mutations = useTaskMutations();
-  const slotMutations = useSlotMutations();
   const hiddenCalendarIds = useMemo(() => settings?.hidden_calendar_ids ?? [], [settings]);
   const hiddenEventKeys = useMemo(() => (settings?.hidden_events ?? []).map((h) => h.key), [settings]);
   const repairs = useWeekRepair({
@@ -49,23 +56,7 @@ export default function MobileRepairCard({ now }: { now: Date }) {
     now,
     enabled: true,
   });
-  const acts = useMemo(
-    () => ({
-      apply: (r: Repair, start: Date) => {
-        if (r.kind === "task" && r.task) {
-          const task = r.task;
-          const was = new Date(task.start_time!);
-          mutations.block(task, start, r.from.durationMin);
-          return () => mutations.block(task, was, r.from.durationMin);
-        }
-        const slot = r.slot!;
-        const before = { start_time: slot.start_time, do_date: slot.do_date };
-        slotMutations.updateSlot({ id: slot.id, patch: { start_time: start.toISOString(), do_date: toDateISO(start) } });
-        return () => slotMutations.updateSlot({ id: slot.id, patch: before });
-      },
-    }),
-    [mutations, slotMutations],
-  );
+  const acts = useRepairApply();
   const r = useRepairs(repairs, acts);
   const [open, setOpen] = useState<string | null>(null);
 

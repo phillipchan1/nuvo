@@ -15,10 +15,11 @@
 import {
   dayReadiness,
   fitsCapacity,
+  isMissed,
   movingInitiativeIds,
   type DayReadiness,
 } from "../../supabase/functions/_shared/planningRules.ts";
-import type { Task } from "./types";
+import type { Slot, Task } from "./types";
 import { todayISO } from "./dates";
 import type { VerticalData } from "./vertical";
 import { projectReadinessAxes } from "./lenses";
@@ -204,6 +205,31 @@ export function readDay(today: readonly Task[], workEndMins: number): DayRead {
     backMins = workEndMins - at > 0 ? workEndMins - at : null;
   }
   return { ...r, closedAtDate, backMins, tasks };
+}
+
+/** The day's next task: the first undone one whose time is still ahead or
+ *  under way. A block whose time passed undone is missed by the kernel's rule
+ *  (D-207) — that's a repair now, not "next" (D-232). A task inside a block
+ *  ends when its block does (`slots`); one with no time is next only after
+ *  every timed one. */
+export function dayNextTask(day: DayRead, nowMs: number, slots: readonly Slot[] = []): Task | null {
+  if (day.closed) return null;
+  const slotOf = new Map(slots.map((s) => [s.id, s]));
+  const endOf = (t: Task): number | null => {
+    if (!t.start_time) return null;
+    const startMs = new Date(t.start_time).getTime();
+    const sl = t.slot_id ? slotOf.get(t.slot_id) : undefined;
+    return startMs + (sl ? sl.duration_minutes : t.duration_minutes ?? 30) * 60_000;
+  };
+  const starts = day.tasks.filter((t) => t.start_time).map((t) => new Date(t.start_time!).getTime()).sort((a, b) => a - b);
+  for (const t of day.tasks) {
+    if (t.status === "done") continue;
+    const end = endOf(t);
+    if (end == null) return t;
+    const nextStart = starts.find((st) => st >= end) ?? null;
+    if (!isMissed(end, nowMs, nextStart)) return t;
+  }
+  return null;
 }
 
 /** The day's bar: one piece per task, in its project's hue when it has one. */

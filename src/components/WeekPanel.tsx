@@ -54,9 +54,9 @@ import { WEEK_REACH_KEY, reachArrivalDelay } from "../lib/motion";
 import { mondayOf } from "../../supabase/functions/_shared/planningRules.ts";
 import { bump } from "../lib/celebrate";
 import { haptic } from "../lib/haptics";
-import { marksReady, movingIds, readDay, weekMarks } from "../lib/marks";
+import { dayNextTask, marksReady, movingIds, readDay, weekMarks } from "../lib/marks";
 import { useSettings } from "../hooks/useSettings";
-import type { Task } from "../lib/types";
+import type { Slot, Task } from "../lib/types";
 import type { CrownLineData } from "../lib/crownLine";
 import { readyKey, type ReadyCard } from "../lib/readyCards";
 import { notNow } from "./nuvo/offerSnooze";
@@ -354,7 +354,7 @@ export default function WeekPanel({
   if (!data || !crown) return null;
   const shapeItems = marks[0]?.items ?? [];
   const weekReady = rows0(crown) && marksReady(marks);
-  const nextLine = dayNext(day);
+  const nextLine = dayNext(day, new Date());
 
   const { rows, landed } = crown;
 
@@ -913,9 +913,10 @@ function TimeOfferLine({ card, task, projectName }: { card: ReadyCard; task: Tas
   );
 }
 
-/** "Measure wall at 4pm" — the day's next open task, while the day is open. */
-function dayNext(day: ReturnType<typeof readDay> | null): string | null {
-  const t = day && !day.closed ? day.tasks.find((x) => x.status !== "done") ?? null : null;
+/** "Measure wall at 4pm" — the day's next open task, while the day is open;
+ *  one whose time passed undone is a repair, never "next" (D-232). */
+function dayNext(day: ReturnType<typeof readDay> | null, now: Date, slots?: readonly Slot[]): string | null {
+  const t = day ? dayNextTask(day, now.getTime(), slots) : null;
   if (!t) return null;
   return t.start_time ? `${t.title} at ${fmtDayTime(t.start_time).replace(/^[A-Z][a-z]{2} /, "")}` : t.title;
 }
@@ -923,7 +924,19 @@ function dayNext(day: ReturnType<typeof readDay> | null): string | null {
 /** The day, held above the rail's scroll (D-230): "Today · 2 of 5 done" is
  *  the rail's hero, and finishing it is the moment the day exists for — so it
  *  never scrolls out of sight while you work down the week's projects. */
-export function RailDay({ today, onLoose }: { today: readonly Task[]; onLoose?: (t: Task) => void }) {
+export function RailDay({
+  today,
+  onLoose,
+  now,
+  slots,
+}: {
+  today: readonly Task[];
+  onLoose?: (t: Task) => void;
+  /** the rail's clock — "next" moves on when a block's time is missed */
+  now: Date;
+  /** today's blocks, so a task inside one ends when its block does */
+  slots?: readonly Slot[];
+}) {
   const { settings } = useSettings();
   const workEnd = settings?.work_end_minutes ?? 990;
   const day = useMemo(() => readDay(today, workEnd), [today, workEnd]);
@@ -934,7 +947,7 @@ export function RailDay({ today, onLoose }: { today: readonly Task[]; onLoose?: 
     <div className="rail-day">
       <DayCrown
         day={day}
-        next={dayNext(day)}
+        next={dayNext(day, now, slots)}
         loose={onLoose && loose.length > 0 ? { n: loose.length, run: () => onLoose(loose[0]) } : null}
       />
     </div>
