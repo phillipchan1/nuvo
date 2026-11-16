@@ -209,12 +209,14 @@ it needs to work on a phone.
   cell — that geometry is all a deck owns. Dragging between lanes never re-homes a record.
 - **Readiness reads through ONE set of marks, from the day to the season** (D-209,
   [`docs/readiness-ladder.md`](docs/readiness-ladder.md)). Every altitude draws three marks
-  (shaped · given time · the run) with the kit's `MarkSet`, the day with `DayCrown`, the ember
+  (shaped · given time · the run) as the kit's `MarkSet` of **dials** (D-219: one colour, fill
+  means yes, and under each the words for what's left — the button that opens it; never a
+  second colour to decode), the day with `DayCrown`, the ember
   `Stop` on a title that's ready — over `lib/marks.ts`, whose rules (`dayReadiness`,
   `movingInitiativeIds`, `fitsCapacity`) live in the planning kernel so the agent reads the same
   answers. **Never compute "is today done", "which bets are moving" or "does the week fit" in a
-  surface.** Celebrations go through `lib/celebrate.ts` and grow with what the act means (Ready
-  clicks · Fits/Placed lock · the day stops · Shipped seals); they fire on a transition the part
+  surface.** Celebrations go through `lib/celebrate.ts` and grow with what the act means (Shaped
+  clicks · Fits/Scheduled close · the day stops · Shipped seals); they fire on a transition the part
   watched, never on mount. Juice yes, economy no: no streak, level, tally or combined score (N-04).
 - **A task wears ONE row wherever it appears** — `TaskRow`, on both shells. Both week crowns
   render a project's work through the *same component* the day lists use, handed down as

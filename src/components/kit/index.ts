@@ -7,7 +7,7 @@ export { Chip, ChipButton, Dot, Readiness, Avatar, AvatarStack, type ChipTone, t
 export { SectionHeader, Row, EmptyState, Property, Card } from "./Structure";
 export { OfferCard, type OfferCardProps } from "./OfferCard";
 export { Crown, CrownLine, type CrownProps } from "./Crown";
-export { Stop, MarkBar, MarkLabel, MarkSet, DayCrown } from "./Readings";
+export { Stop, MarkBar, MarkLabel, MarkSet, DayCrown, Dial } from "./Readings";
 export {
   Popover,
   Menu,

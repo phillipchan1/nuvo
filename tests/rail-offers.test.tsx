@@ -180,7 +180,7 @@ describe("Draft the path on the week crown's project row", () => {
     expect(chip.getAttribute("title")).toMatch(/3h held · 20m of work/);
     expect(chip.closest(".crown-offer-line")).not.toBeNull();
     expect(chip.closest(".crown-proj-row")).toBeNull();
-    expect(rowOf("Launch pricing page").querySelector(".crown-proj-top .crown-meta")).not.toBeNull();
+    expect(rowOf("Launch pricing page").querySelector(".crown-proj-count")).not.toBeNull();
   });
 
   it("starts the draft through the path the panel's offer took", async () => {
@@ -216,14 +216,18 @@ describe("Draft the path on the week crown's project row", () => {
 describe("the crown header: one track, one number, and the line as the door (D-206, D-207)", () => {
   beforeEach(() => localStorage.clear());
 
-  it("draws the week as three marks — Ready · Placed · Done (D-209) — and no Significant bar", async () => {
+  it("draws the week as three dials — Shaped · Scheduled · Done (D-219) — each saying what's left", async () => {
     const { container } = mountCrown();
     await waitFor(() => expect(container.querySelector("[data-crown-week]")).not.toBeNull());
-    // The Reach for an act that changes the week lands on Placed.
+    // The Reach for an act that changes the week lands on Scheduled.
     const placed = container.querySelector("[data-crown-week]") as HTMLElement;
-    expect(placed.getAttribute("aria-label")).toMatch(/^Placed: \d+ of \d+$/);
+    expect(placed.closest('[data-mark="placed"]')).not.toBeNull();
     const labels = [...container.querySelectorAll(".k-markset .k-mark-k")].map((el) => el.textContent);
-    expect(labels).toEqual(["Ready", "Placed", "Done"]);
+    expect(labels).toEqual(["Shaped", "Scheduled", "Done"]);
+    // Under each open dial, what's left — in words, never a colour to decode.
+    for (const el of container.querySelectorAll(".k-dial:not([data-full]) .k-dial-todo")) expect(el.textContent).toMatch(/\d/);
+    // No date range: the calendar header is the one place a span is written.
+    expect(container.querySelector(".crown-week-head")?.textContent).toMatch(/^(This|Next) week/);
     // Every label carries its definition.
     for (const el of container.querySelectorAll(".k-markset .k-mark-k")) expect(el.getAttribute("title")).toBeTruthy();
     expect(container.querySelector(".significance")).toBeNull();

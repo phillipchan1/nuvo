@@ -56,8 +56,14 @@ export interface Mark {
   full: boolean;
   tier: MarkTier;
   pieces: MarkPiece[];
-  /** the line under the mark, when it has one (Done's significance) */
+  /** the line under the mark, when it has one (Fits' hours) */
   detail?: string;
+  /** what's left, in words — under the dial, and the button that opens it
+   *  ("3 need a time"). Absent once the mark is full. (D-219) */
+  todo?: string;
+  /** the things still missing, when the surface can list them (the week's
+   *  unshaped projects, with why) */
+  items?: { id: string; name: string; why: string }[];
 }
 
 /** What a mark counts, and when it closes — the quiet definition each label
@@ -71,40 +77,40 @@ export const MARK_DEFS: Record<MarkKey, { name: string; counts: string; closes: 
   week: {
     name: "This week",
     counts: "The projects you committed to this week, and their tasks.",
-    closes: "Its stop lands when every project is Ready and every task is Placed.",
+    closes: "Its stop lands when every project is shaped and every task has a time.",
   },
   ready: {
-    name: "Ready",
-    counts: "Projects on this week with an outcome, a finish date and open steps.",
+    name: "Shaped",
+    counts: "Projects on this week with an outcome, a finish date and open tasks.",
     closes: "Closes when every project on the week is shaped.",
   },
   placed: {
-    name: "Placed",
-    counts: "Tasks on this week that have a time on your calendar. A time is the only promise.",
+    name: "Scheduled",
+    counts: "This week's project tasks that have a time on your calendar.",
     closes: "Closes when nothing on the week is waiting for a time.",
   },
   done: {
     name: "Done",
-    counts: "Tasks on this week you've finished. In color when they serve an initiative whose number moved this quarter.",
-    closes: "The run: it fills all week and never holds the stop back.",
+    counts: "This week's project tasks you've finished.",
+    closes: "It fills all week and never holds the stop back.",
   },
   "deck-ready": {
-    name: "Ready",
-    counts: "Projects on the deck with an outcome, a finish date and open steps.",
+    name: "Shaped",
+    counts: "Projects on the deck with an outcome, a finish date and open tasks.",
     closes: "Closes when every project on the deck is shaped.",
   },
   fits: {
     name: "Fits",
     counts: "This week's project hours against your capacity.",
-    closes: "Closes inside 70–100% of capacity. Past it, the overflow hatches.",
+    closes: "Closes inside 70–100% of capacity.",
   },
   shipped: {
     name: "Shipped",
     counts: "Projects on the deck you've shipped.",
-    closes: "The run: it never holds the stop back.",
+    closes: "It never holds the stop back.",
   },
   "bet-ready": {
-    name: "Ready",
+    name: "Shaped",
     counts: "Initiatives with an outcome, a finish date and a number to move.",
     closes: "Closes when every bet is clear.",
   },
@@ -116,7 +122,7 @@ export const MARK_DEFS: Record<MarkKey, { name: string; counts: string; closes: 
   moving: {
     name: "Moving",
     counts: "Initiatives whose number moved this quarter.",
-    closes: "Moves only when you record a new number. The run: it never holds the stop back.",
+    closes: "Moves only when you record a new number. It never holds the stop back.",
   },
 };
 
@@ -139,8 +145,9 @@ const TIER: Record<MarkKey, MarkTier> = {
   moving: "large",
 };
 
-function mark(key: MarkKey, label: string, pieces: MarkPiece[], n: number, of: number, detail?: string): Mark {
-  return { key, label, n, of, full: of > 0 && n >= of, tier: TIER[key], pieces, detail };
+function mark(key: MarkKey, label: string, pieces: MarkPiece[], n: number, of: number, todo?: (left: number) => string): Mark {
+  const full = of > 0 && n >= of;
+  return { key, label, n, of, full, tier: TIER[key], pieces, todo: !full && todo ? todo(of - n) : undefined };
 }
 
 // ── significance: only toward a moving bet ───────────────────────────────────
@@ -222,14 +229,19 @@ export function weekMarks(crown: WeekCrown, d: VerticalData, now: Date, moving: 
   const placedPieces: MarkPiece[] = [];
   const donePieces: MarkPiece[] = [];
   let ready = 0;
-  let sigDone = 0;
-  let otherDone = 0;
+  const unshaped: { id: string; name: string; why: string }[] = [];
   for (const r of crown.rows) {
     const p = d.projects.find((x) => x.id === r.projectId);
     const axes = p ? projectReadinessAxes(d, p, now) : null;
     const landed = r.state === "shipped" || r.state === "landed";
     const isReady = landed || (axes != null && axes.defined && axes.planned);
     if (isReady) ready++;
+    else
+      unshaped.push({
+        id: r.projectId,
+        name: r.title,
+        why: !axes ? "Not found" : !axes.defined ? (p?.outcome.trim() ? "No finish date" : "No outcome yet") : "No open tasks",
+      });
     readyPieces.push({ state: isReady ? "fill" : "empty", color: r.color });
     const significant = p?.initiativeId != null && movingSet.has(p.initiativeId);
     const done = r.work.done;
@@ -239,24 +251,16 @@ export function weekMarks(crown: WeekCrown, d: VerticalData, now: Date, moving: 
     for (let i = 0; i < loose; i++) placedPieces.push({ state: "empty", color: r.color });
     for (let i = 0; i < done; i++) donePieces.push({ state: significant ? "fill" : "other", color: r.color });
     for (let i = 0; i < placed + loose; i++) donePieces.push({ state: "empty", color: r.color });
-    if (significant) sigDone += done;
-    else otherDone += done;
   }
   const total = placedPieces.length;
   const placedN = placedPieces.filter((x) => x.state !== "empty").length;
   const doneN = donePieces.filter((x) => x.state !== "empty").length;
-  // An account with no initiatives is never scored against a ladder it hasn't
-  // built (P7, P16): no significance line at all.
-  const detail =
-    d.initiatives.length === 0
-      ? undefined
-      : moving.length > 0
-        ? `${sigDone} toward a moving initiative · ${otherDone} other`
-        : "No initiative's number has moved this quarter";
+  const shaped = mark("ready", "Shaped", readyPieces, ready, crown.rows.length, (n) => `${n} to shape`);
+  if (unshaped.length) shaped.items = unshaped;
   return [
-    mark("ready", "Ready", readyPieces, ready, crown.rows.length),
-    mark("placed", "Placed", placedPieces, placedN, total),
-    mark("done", "Done", donePieces, doneN, total, detail),
+    shaped,
+    mark("placed", "Scheduled", placedPieces, placedN, total, (n) => `${n} need${n === 1 ? "s" : ""} a time`),
+    mark("done", "Done", donePieces, doneN, total, (n) => `${n} to go`),
   ];
 }
 
@@ -290,20 +294,19 @@ export function projectDeckMarks(projects: readonly DeckProjectFact[], capacityM
     full: fit === "fits",
     tier: TIER.fits,
     pieces: projects.filter((p) => !p.shipped && p.weekMins > 0).map((p) => ({ state: "soft", color: p.color })),
-    detail:
-      capacityMins <= 0
+    detail: capacityMins <= 0 ? undefined : `${hours(demand)} of ${hours(capacityMins)}`,
+    todo:
+      capacityMins <= 0 || fit === "fits"
         ? undefined
         : fit === "over"
-          ? `${hours(demand)} of ${hours(capacityMins)} · ${hours(demand - capacityMins)} over`
-          : fit === "under"
-            ? `${hours(demand)} of ${hours(capacityMins)} · room for more`
-            : `${hours(demand)} of ${hours(capacityMins)}`,
+          ? `${hours(demand - capacityMins)} over`
+          : `room for ${hours(capacityMins - demand)}`,
   };
   const readyN = projects.filter((p) => p.ready || p.shipped).length;
   return [
-    mark("deck-ready", "Ready", projects.map((p) => ({ state: p.ready || p.shipped ? "fill" : "empty", color: p.color })), readyN, projects.length),
+    mark("deck-ready", "Shaped", projects.map((p) => ({ state: p.ready || p.shipped ? "fill" : "empty", color: p.color })), readyN, projects.length, (n) => `${n} to shape`),
     fits,
-    mark("shipped", "Shipped", projects.map((p) => ({ state: p.shipped ? "fill" : "empty", color: p.color })), projects.filter((p) => p.shipped).length, projects.length),
+    mark("shipped", "Shipped", projects.map((p) => ({ state: p.shipped ? "fill" : "empty", color: p.color })), projects.filter((p) => p.shipped).length, projects.length, (n) => `${n} to ship`),
   ];
 }
 
@@ -331,8 +334,8 @@ export function initiativeDeckMarks(bets: readonly DeckBetFact[]): Mark[] {
   const pieces = (f: (b: DeckBetFact) => boolean, soft = false): MarkPiece[] =>
     bets.map((b) => ({ state: f(b) ? (soft ? "soft" : "fill") : "empty", color: b.color }));
   return [
-    mark("bet-ready", "Ready", pieces((b) => b.ready), bets.filter((b) => b.ready).length, bets.length),
-    mark("on-week", "On a week", pieces((b) => b.onWeek, true), bets.filter((b) => b.onWeek).length, bets.length),
-    mark("moving", "Moving", pieces((b) => b.moving), bets.filter((b) => b.moving).length, bets.length),
+    mark("bet-ready", "Shaped", pieces((b) => b.ready), bets.filter((b) => b.ready).length, bets.length, (n) => `${n} to shape`),
+    mark("on-week", "On a week", pieces((b) => b.onWeek, true), bets.filter((b) => b.onWeek).length, bets.length, (n) => `${n} not this week`),
+    mark("moving", "Moving", pieces((b) => b.moving), bets.filter((b) => b.moving).length, bets.length, (n) => `${n} not moving`),
   ];
 }

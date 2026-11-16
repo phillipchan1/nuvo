@@ -203,10 +203,10 @@ describe("the deck marks", () => {
     expect(marksReady(m)).toBe(true);
   });
 
-  it("an overfull week hatches and holds the stop back", () => {
+  it("an overfull week says how far over, and holds the stop back", () => {
     const m = projectDeckMarks([{ id: "a", color: "red", ready: true, shipped: false, weekMins: 38 * 60 }], 32 * 60);
     expect(m[1].full).toBe(false);
-    expect(m[1].detail).toContain("6h over");
+    expect(m[1].todo).toBe("6h over");
     expect(marksReady(m)).toBe(false);
   });
 

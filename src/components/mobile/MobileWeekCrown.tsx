@@ -42,7 +42,9 @@ import { PHONE_OFFERS_MAX } from "../../lib/railOffers";
 import type { ThinPath } from "../../lib/thinPath";
 import { PathOffer, pathCandidates, useOfferBudget, useStableCandidates } from "../nuvo/RailOffers";
 import { Icon } from "../Icon";
-import { Button, Chip, CrownLine, MarkBar, MarkSet, Stop } from "../kit";
+import { Button, Chip, CrownLine, Dial, MarkSet, Stop } from "../kit";
+import { startOfWeek } from "date-fns";
+import { toDateISO } from "../../lib/dates";
 import { marksReady, movingIds, weekMarks } from "../../lib/marks";
 import { useVertical } from "../../hooks/useVertical";
 import type { CrownLineData } from "../../lib/crownLine";
@@ -50,7 +52,6 @@ import { fmtDayTime } from "../../lib/dates";
 import { carryMark } from "../../lib/priorities";
 import { useWeekCrown, type RenderCrownTask, type WeekCrownRow } from "../../hooks/useWeekCrown";
 import { WeekPlanSheet } from "./WeekPlanCard";
-import { PaceTrack } from "../progress/PaceTrack";
 
 const OPEN_KEY = "nuvo-mobile-weekcrown-open";
 
@@ -144,7 +145,9 @@ export default function MobileWeekCrown({
   );
 
   if (!crown) return null;
-  const { rows, landed, total, looseCount, composed, weekLabel, weekISO, track } = crown;
+  const { rows, landed, total, looseCount, composed, weekISO, track } = crown;
+  // No date range (D-219): the calendar's own header says the span.
+  const weekName = weekISO > toDateISO(startOfWeek(new Date(), { weekStartsOn: 1 })) ? "Next week" : "This week";
 
   const setOpen = (v: boolean) => {
     setOpenState(v);
@@ -209,30 +212,21 @@ export default function MobileWeekCrown({
           className="ph-crown-strip row-hover"
         >
           <span className="ph-crown-name">
-            This week
+            {weekName}
             <Stop on={weekReady} />
           </span>
           {total === 0 ? (
             <span className="truncate text-body text-muted">Nothing on it yet</span>
           ) : (
-            // Three hairlines — Ready, Placed, Done (D-209). Still one line
-            // drawn, not written (D-110); its height never changes (D-123).
-            <span className="ph-crown-lines" aria-hidden>
+            // Three small dials — Shaped, Scheduled, Done (D-219). Still one
+            // line drawn, not written (D-110); its height never changes (D-123).
+            <span className="ph-crown-dials" aria-hidden>
               {marks.map((m) => (
-                <MarkBar key={m.key} pieces={m.pieces} thin />
+                <Dial key={m.key} frac={m.of > 0 ? m.n / m.of : 0} closed={m.full} size={18} stroke={3} />
               ))}
             </span>
           )}
           <span className="flex-1" />
-          {/* The one light on the strip. Not a count — a state: something in
-              this week has nowhere to happen. The number is one tap away. */}
-          {looseCount > 0 && (
-            <span
-              className="h-[7px] w-[7px] shrink-0 rounded-full"
-              style={{ background: "var(--warn)" }}
-              aria-hidden
-            />
-          )}
           {/* Pointing right: the one gesture this row offers is "open me" —
               into the rows, or into the ritual when the week is empty. */}
           <Icon name="chevron-right" size={16} className="shrink-0" style={{ color: "var(--faint)" }} />
@@ -253,8 +247,7 @@ export default function MobileWeekCrown({
           aria-label={`This week, ${landed} of ${total} landed. Hide this week's projects`}
           className="tap-h -ml-1 flex min-w-0 flex-1 items-center gap-1.5 rounded-[var(--r-ctl)] px-1 text-left"
         >
-          <span className="ph-crown-name truncate">This week</span>
-          <span className="truncate text-caption tabular-nums text-muted">{weekLabel}</span>
+          <span className="ph-crown-name truncate">{weekName}</span>
           <Icon name="chevron-down" size={16} className="shrink-0" style={{ color: "var(--faint)" }} />
         </button>
 
@@ -273,14 +266,21 @@ export default function MobileWeekCrown({
           label carrying its definition (a tap says it). */}
       {track.total > 0 && (
         <div className="pb-1 pt-1">
-          <MarkSet marks={marks} attrsFor={(k) => (k === "placed" ? { "data-crown-week": "", "data-crown-color": "var(--landed)" } : undefined)} />
+          <MarkSet
+            marks={marks}
+            attrsFor={(k) => (k === "placed" ? { "data-crown-week": "", "data-crown-color": "var(--landed)" } : undefined)}
+            acts={{
+              placed: onGetReady,
+              ready: marks[0]?.items?.[0] ? () => onOpenProject(marks[0].items![0].id) : undefined,
+            }}
+          />
         </div>
       )}
       {line}
       {/* The line (D-207): the door to Get ready, said as a fact. The SHUT strip
           keeps its one line of pips and its amber light — a strip that grew a
           sentence would resize under the thumb (D-123). */}
-      {onGetReady && readyLine && (
+      {onGetReady && readyLine && !(readyLine.part === "time" && marks[1] && !marks[1].full) && (
         <div className="pb-1">
           <CrownLine line={readyLine} onPress={onGetReady} />
         </div>
@@ -400,24 +400,14 @@ function CrownRow({
                   {carryMark(rolls).text}
                 </span>
               )}
-              {/* The bar and "1/4" were one fact told twice. The bar is the
-                  faster read on a phone, so the numbers go; they are on the
-                  record, one tap away, and in this row's aria-label. */}
-              {/* The rail's own track (progress/PaceTrack): pieces, the
-                  fill in the domain's hue, and the pace tick where the span
-                  stands today. Ticking a piece below advances it here. */}
-              {work.total > 0 && (
-                <span aria-label={`${work.done} of ${work.total} done · ${placedLabel}`}>
-                  <PaceTrack
-                    done={work.done}
-                    total={work.total}
-                    placed={placed.length}
-                    color={color}
-                    elapsed={row.elapsed}
-                    width={48}
-                    reachKey={row.projectId}
-                  />
+              {/* Words, not a track (D-219) — the same as the rail's row. */}
+              {work.total > 0 ? (
+                <span className="text-caption tabular-nums text-muted" aria-label={`${work.done} of ${work.total} done · ${placedLabel}`}>
+                  {work.done}/{work.total}
+                  {loose.length > 0 && <span style={{ color: "var(--accent)" }}> · {loose.length} need{loose.length === 1 ? "s" : ""} a time</span>}
                 </span>
+              ) : (
+                <span className="text-caption text-muted">No tasks yet</span>
               )}
             </span>
           )}
@@ -456,22 +446,10 @@ function CrownRow({
                 The SPLIT is still stated, in the aria-label and the title:
                 D-060 forbids letting the loose half be the whole answer, and
                 it is the visible WORD that goes, not the fact. */}
-            <span
-              className="flex items-center gap-1 rounded-[var(--r-chip)] px-1.5 py-0.5 text-caption font-medium tabular-nums"
-              style={
-                loose.length === 0
-                  ? { color: "var(--faint)" }
-                  : { color: "var(--warn)", background: "color-mix(in srgb, var(--warn) 12%, transparent)" }
-              }
-            >
-              {loose.length > 0 && (
-                <>
-                  <span className="block h-[5px] w-[5px] rounded-full" style={{ background: "var(--warn)" }} />
-                  {loose.length}
-                </>
-              )}
-              <Icon name={expanded ? "chevron-down" : "chevron-right"} size={16} />
-            </span>
+            {/* Just the chevron (D-219): the row already says "N need a time"
+                in words, so the amber count pill said it a second time, in a
+                colour you had to decode. */}
+            <Icon name={expanded ? "chevron-down" : "chevron-right"} size={16} style={{ color: "var(--faint)" }} />
           </button>
         )}
       </div>

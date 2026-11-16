@@ -1,6 +1,8 @@
 # The readiness ladder — from the day to the season
 
-**Status: shipped 2026-11-14 (D-209), with the deviations in §7.** Prototype
+**Status: shipped 2026-11-14 (D-209), with the deviations in §7. Amended 2026-11-15 (D-219): the
+marks are dials, not bars of pieces — one colour, the words for what's left under each — and the week
+is named, not dated.** Prototype
 (private, example data): [Nuvo Readiness](https://claude.ai/artifact/VrHP29PAmat3gQCrrPbs11). It has
 Schedule, Rail, Projects, Initiatives, Phone, Celebrate and Grammar tabs, with a Quiet/Played switch
 that shows D-203's restraint beside this.

@@ -8436,3 +8436,41 @@ a layout added.
 `scripts/ios-postinit.sh`, `styles/frame.css`; `tests/ipad-desktop-shell.test.tsx`. Verified:
 typecheck, build, the frame at 1180×820, a synthetic touch long-press opening a task row's real
 menu. **Not yet run on a physical iPad or an iPad simulator build**, and not yet released.*
+
+
+---
+
+**D-219 · 2026-11-15 · The marks are dials: one colour, fill means yes, and the words for what's
+left under each.**
+*(Operator, on the Schedule rail: "What do we mean by ready, placed and done? … nothing tells me
+here are the ones that are not placed." Then, on the mockups: "I'm a little confused by the
+colors.")* D-209 drew each mark as a bar of pieces in its project's hue, with *soft*, *other* and
+*empty* states — four colours a reader had to learn, and a count that never said **which** things
+were missing. Placed 15/18 and the line "3 with no time · Get ready" were the same fact twice, with
+nothing joining them. The crown also wrote "Nov 16 – 22" under a calendar header reading
+"Nov 15 – 21" (the crown counts Monday weeks and plans next week on a weekend; the calendar starts
+on Sunday), and said "Nothing dated today" and "No initiative's number has moved this quarter" —
+words nobody could act on.
+
+→ **Each mark is a dial** (`Dial`, `MarkSet` in `kit/Readings.tsx`). One colour; empty is just
+empty; a closed dial turns `--ok` with a ✓. Under it, **what's left, in words** — "3 to shape",
+"3 need a time", "11 to go". On the Schedule the first two are buttons: *to shape* lists the
+projects and what each lacks (no outcome, no finish date, no open tasks); *need a time* opens Get
+ready. The run (Done) only says it.
+→ **Plain names:** Ready → **Shaped**, Placed → **Scheduled** (the verb the cards took in D-213).
+→ **The crown names the week, it doesn't date it** — "This week" or "Next week". The calendar
+header is the one place a span is written.
+→ **Gone:** the day line on a day with nothing dated, the significance line under Done, the
+"N with no time" crown line while the Scheduled dial is open (it says the same), the project row's
+pace track and its amber "● 2" (the row says "1/4 · 2 need a time"), and the phone row's amber
+count pill. The phone's shut strip is three small dials.
+→ Kept: the stop, the day closing ("Done at 3:04pm"), every celebration, the Seal.
+
+Ledger: **W2** (what has no time this week) — now answered by naming the tasks behind the count,
+one tap from the dial, rather than a count beside an unrelated line. No row re-scored. Strains **P4** a little less than
+D-209 did (no colour to decode). Adds no pool and no name: Shaped and Scheduled replace two.
+
+*Status: shipped. Mocked first with the operator (bar vs. dials vs. week map; then four
+no-colour-key variants — dials chosen). Driven at `?rail=offers` (desktop), `?weekcrown` at 375px
+and `?decks`; the signed-in Schedule at a weekend (reads "Next week", no Today line). Tests:
+`rail-offers`, `readiness-ladder`, `kit`.*

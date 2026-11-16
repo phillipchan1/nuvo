@@ -862,6 +862,26 @@ html:root [data-sonner-toaster] [data-sonner-toast] [data-button] {
 .k-spark[data-tone="accent"] { background: var(--accent); }
 .k-markset { display: grid; gap: 6px; min-width: 0; }
 .k-markset-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+/* Dials (D-219): one ring, one colour, fill means yes. Words sit under the ring;
+   what's left is the button. */
+.k-dials { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.k-dial { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; text-align: center; }
+.k-dial-ring { position: relative; display: inline-flex; flex: none; max-width: 100%; }
+.k-dial-ring svg { width: 100%; height: 100%; overflow: visible; }
+.k-dial-track { fill: none; stroke: var(--line); }
+.k-dial-arc { fill: none; stroke: var(--accent); stroke-linecap: round; transition: stroke-dasharray var(--d-land, 380ms) var(--ease-land, cubic-bezier(.2,.8,.2,1)), stroke var(--d-quick, 180ms); }
+.k-dial-ring[data-closed] .k-dial-arc { stroke: var(--ok, var(--landed)); }
+.k-dial-mid { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--ink); font: 650 13px/1 var(--font-sans); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.k-dial-ring[data-closed] .k-dial-mid { color: var(--ok, var(--landed)); font-size: 18px; }
+.k-dial .k-mark-k { text-transform: none; letter-spacing: 0; font: 550 12.5px/1.2 var(--font-sans); color: var(--ink); }
+.k-dial[data-full] .k-mark-k::after { content: none; }
+.k-dial-todo { min-height: 18px; padding: 1px 4px; border: 0; background: none; border-radius: var(--r-chip); color: var(--muted); font: 450 11.5px/1.35 var(--font-sans); font-variant-numeric: tabular-nums; }
+.k-dial-todo[data-act] { color: var(--accent); font-weight: 550; }
+@media (hover: hover) { .k-dial-todo[data-act]:hover { background: var(--accent-soft); } }
+html:root .k-dial-todo[data-act]:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+.k-dial-todo[data-done] { color: var(--ok, var(--landed)); }
+@media (prefers-reduced-motion: reduce) { .k-dial-arc { transition: none; } }
+@media (max-width: 767px) { .k-dial-todo[data-act] { min-height: 44px; } }
 .k-mark { display: grid; gap: 5px; min-width: 0; }
 .k-mark-head { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
 .k-mark-k {

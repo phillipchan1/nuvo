@@ -12,7 +12,7 @@
 //
 //   identity — the ring, in the domain's hue (an ARC that fills, not a box)
 //   NAME     — the row's title; its weight left on the right
-//   marks    — the work as a PaceTrack with the pace tick, then what's wrong
+//   marks    — in words: done of total, then what needs a time (D-219)
 //
 // The laws this surface keeps:
 //
@@ -49,12 +49,9 @@ import { MARQUEE_OPEN_EVENT } from "../lib/marquee";
 import { deckWeight } from "../lib/pace";
 import { ProjectShipAssess } from "./record/ShipAssess";
 import type { EmblemSpec } from "../lib/weekEmblem";
-import { PaceTrack } from "./progress/PaceTrack";
 import { Button, Chip, CrownLine, DayCrown, IconButton, MarkLabel, MarkSet, OfferChip, SectionHeader, Stop } from "./kit";
-import { dayPieces, marksReady, movingIds, readDay, weekMarks } from "../lib/marks";
-import { WEEK_REACH_KEY } from "../lib/motion";
+import { marksReady, movingIds, readDay, weekMarks } from "../lib/marks";
 import { useSettings } from "../hooks/useSettings";
-import { taskDomainColor } from "../lib/vertical";
 import type { Task } from "../lib/types";
 import type { CrownLineData } from "../lib/crownLine";
 import { readyKey, type ReadyCard } from "../lib/readyCards";
@@ -79,7 +76,12 @@ const rows0 = (c: { rows: readonly unknown[] }) => c.rows.length > 0;
 // Stable, so the memoized MarkSet skips a render when nothing changed.
 const WEEK_PLACED_ATTRS = { "data-crown-week": "", "data-crown-color": "var(--landed)" };
 const weekMarkAttrs = (k: string) => (k === "placed" ? WEEK_PLACED_ATTRS : undefined);
-const weekMarkReach = (k: string) => (k === "placed" ? WEEK_REACH_KEY : undefined);
+/** Monday of the current week — the crown names a later week "Next week". */
+function currentWeekISO(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return toDateISO(d);
+}
 const OPEN_KEY = "nuvo-rail-week-open";
 function readOpen(): boolean {
   try {
@@ -142,6 +144,8 @@ export default function WeekPanel({
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   // The section itself folds to one line — a per-viewer convenience.
   const [listOpen, setListOpen] = useState(readOpen);
+  // The Shaped dial's list — which projects, and what each is missing.
+  const [shapeOpen, setShapeOpen] = useState(false);
   // The week's slate, read once and shared with the phone's crown — the
   // priorities ARE the projects On Deck committed to this week, derived, so this
   // rail can never drift from the board (or from Set-the-week).
@@ -186,11 +190,8 @@ export default function WeekPanel({
     const now = new Date();
     return weekMarks(crown, data, now, movingIds(data, now));
   }, [crown, data]);
-  const dayPiecesNow = useMemo(
-    () => (day && data ? dayPieces(day, (t: Task) => taskDomainColor(data, t) ?? "var(--muted)") : []),
-    [day, data],
-  );
   if (!data || !crown) return null;
+  const shapeItems = marks[0]?.items ?? [];
   const weekReady = rows0(crown) && marksReady(marks);
   const nextTask = day && !day.closed ? day.tasks.find((t) => t.status !== "done") ?? null : null;
   const nextLine = nextTask
@@ -250,12 +251,14 @@ export default function WeekPanel({
         {/* The day (D-209): today's own tasks, closed the moment the last one
             is — at 3pm or whenever — with the hour you got back. The rail's
             hero; the week reads under it so a good day never waits for Friday. */}
-        {day && <DayCrown day={day} pieces={dayPiecesNow} next={nextLine} />}
+        {day && day.total > 0 && <DayCrown day={day} next={nextLine} />}
         <div className="crown-week">
           <div className="crown-week-head">
-            <MarkLabel k="week">This week</MarkLabel>
+            {/* No date range (D-219): the calendar header is the one place a
+                span is written, so the two can't disagree. On a weekend the
+                crown reads the week being planned — and says so. */}
+            <MarkLabel k="week">{crown.weekISO > currentWeekISO() ? "Next week" : "This week"}</MarkLabel>
             <Stop on={weekReady} />
-            {data.sprint?.week_start && <span className="crown-week-sub">&nbsp;· {crown.weekLabel}</span>}
             {!onLine && (
               <span className="crown-week-act">
                 <Button
@@ -273,19 +276,39 @@ export default function WeekPanel({
             )}
           </div>
           {rows.length > 0 ? (
-            <MarkSet
-              marks={marks}
-              // The Reach for an act that changes the WEEK lands on Placed —
-              // a card that gives work a time moves exactly that bar (D-206).
-              attrsFor={weekMarkAttrs}
-              reachKeyFor={weekMarkReach}
-            />
+            <>
+              <MarkSet
+                marks={marks}
+                // The Reach for an act that changes the WEEK lands on
+                // Scheduled — a card that gives work a time moves that dial.
+                attrsFor={weekMarkAttrs}
+                acts={{ ready: () => setShapeOpen((v) => !v), placed: onLine }}
+              />
+              {shapeOpen && shapeItems.length > 0 && (
+                <div className="crown-shape-list" role="list" aria-label="Projects to shape">
+                  {shapeItems.map((it) => (
+                    <button key={it.id} type="button" role="listitem" className="crown-shape-item" onClick={() => openRecord("project", it.id)}>
+                      <span className="crown-shape-name">{it.name}</span>
+                      <span className="crown-shape-why">{it.why}</span>
+                      <Icon name="chevron-right" size={12} />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
           ) : (
             <p className="k-markset-detail">No projects on this week yet</p>
           )}
         </div>
       </div>
-      {deck ?? (line ? <div className="crown-line-solo"><CrownLine line={line} onPress={onLine} /></div> : null)}
+      {deck ??
+        // The Scheduled dial already says "N need a time" and opens the same
+        // stack, so the line stays quiet while that dial is open (D-219).
+        (line && !(line.part === "time" && marks[1] && !marks[1].full) ? (
+          <div className="crown-line-solo">
+            <CrownLine line={line} onPress={onLine} />
+          </div>
+        ) : null)}
 
       {rows.length > 0 && (
         <>
@@ -503,9 +526,7 @@ function ProjectStackRow({
             >
               Ship
             </Button>
-          ) : (
-            weight && <span className="crown-meta" title={`${weight} of work left`}>{weight}</span>
-          )}
+          ) : null}
 
           {canExpand ? (
             <IconButton
@@ -521,26 +542,25 @@ function ProjectStackRow({
         </div>
 
         {/* The marks — the work as a TRACK of its pieces, with the pace tick
-            where the project's span stands today (progress/PaceTrack, D-187).
+            where the project's span stands today (D-187; words since D-219).
             A piece ticked below lands here. Then what's wrong, if anything. */}
         <div className="crown-proj-marks" aria-label={marksLabel}>
+          {/* Words, not a track (D-219): the ring before the name already
+              draws the done fraction; what's left is said, once. */}
           {work.total > 0 ? (
-            <PaceTrack
-              done={work.done}
-              total={work.total}
-              placed={done ? 0 : placed.length}
-              color={color}
-              elapsed={row.elapsed}
-              // the one-line row's track (D-209): 56px, so the name keeps the room
-              width={56}
-              reachKey={row.projectId}
-            />
+            <span className="crown-meta crown-proj-count">
+              {work.done}/{work.total}
+            </span>
           ) : (
             // The stranger's account, and every honest new project: nothing to
             // draw yet, so say the fact rather than an empty line (P7).
-            <span className="crown-meta">Nothing shaped</span>
+            <span className="crown-meta">No tasks yet</span>
           )}
-          {!done && loose.length > 0 && <NoTime count={loose.length} title={`${loose.length} with no time — ${placedLabel}`} />}
+          {!done && loose.length > 0 && (
+            <span className="crown-meta crown-proj-todo" title={`${loose.length} with no time — ${placedLabel}`}>
+              {loose.length} need{loose.length === 1 ? "s" : ""} a time
+            </span>
+          )}
           {!done && rolls > 0 && (
             // Carrying isn't *now* — the number tells it, a colour would shout it.
             <span className="crown-meta" title={carryMark(rolls).title}>

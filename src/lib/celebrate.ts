@@ -142,7 +142,7 @@ export function seal(projectId: string, significant: boolean): void {
   if (typeof document === "undefined" || motionOff()) return;
   const target =
     document.querySelector<HTMLElement>(`[data-crown-project="${CSS.escape(projectId)}"]`) ??
-    document.querySelector<HTMLElement>('[data-mark="shipped"] .k-markbar');
+    document.querySelector<HTMLElement>('[data-mark="shipped"] .k-dial-ring');
   if (!target) return;
   const r = target.getBoundingClientRect();
   if (!r.width && !r.height) return;

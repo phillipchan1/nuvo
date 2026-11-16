@@ -3,8 +3,10 @@
 //
 //   Stop       the ember full stop a title earns when its altitude is ready
 //   MarkBar    one bar of pieces, one piece per real thing
-//   MarkSet    three marks side by side — shaped · given time · the run — each
-//              label carrying its definition (hover, focus, or a tap)
+//   Dial       one ring, one colour, fill means yes (D-219)
+//   MarkSet    three dials side by side — shaped · given time · the run — each
+//              label carrying its definition, and under it what's left, which
+//              is the button that opens it
 //   DayCrown   "Today." — the day's bar, and the hour you got back
 //
 // Motion only on a transition this part watched happen (never on mount, so a
@@ -12,7 +14,7 @@
 
 import { memo, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { advanceSegment, play, reachArrivalDelay } from "../../lib/motion";
-import { closeMark, dropStop, pop, ring, sweep } from "../../lib/celebrate";
+import { closeMark, dropStop, pop, ring } from "../../lib/celebrate";
 import { haptic } from "../../lib/haptics";
 import { MARK_DEFS, markTitle, spanWords, type DayRead, type Mark, type MarkKey, type MarkPiece } from "../../lib/marks";
 import { cx } from "./cx";
@@ -164,57 +166,112 @@ function useDefine() {
   return { onDefine, node };
 }
 
-// ── three marks ─────────────────────────────────────────────────────────────
+// ── the dial (D-219) ────────────────────────────────────────────────────────
+
+/** One ring that fills in ONE colour — fill means yes. Empty is just empty (no
+ *  second colour to decode), and a closed ring turns `--ok` with a ✓. */
+export function Dial({
+  frac,
+  closed,
+  size = 64,
+  stroke,
+  children,
+  ringRef,
+  attrs,
+}: {
+  frac: number;
+  closed: boolean;
+  size?: number;
+  stroke?: number;
+  children?: ReactNode;
+  ringRef?: (el: HTMLSpanElement | null) => void;
+  attrs?: Record<string, string>;
+}) {
+  const w = stroke ?? Math.max(2.5, Math.round(size / 8));
+  const r = (size - w) / 2;
+  const c = 2 * Math.PI * r;
+  const f = Math.max(0, Math.min(1, frac));
+  return (
+    <span ref={ringRef} className="k-dial-ring" data-closed={closed ? "" : undefined} style={{ width: size, height: size }} {...attrs}>
+      <svg viewBox={`0 0 ${size} ${size}`} aria-hidden>
+        <circle className="k-dial-track" cx={size / 2} cy={size / 2} r={r} strokeWidth={w} />
+        {f > 0 && <circle
+          className="k-dial-arc"
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          strokeWidth={w}
+          strokeDasharray={`${f * c} ${c}`}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />}
+      </svg>
+      {children != null && <span className="k-dial-mid">{children}</span>}
+    </span>
+  );
+}
+
+// ── three dials ─────────────────────────────────────────────────────────────
+
+const valueOf = (m: Mark) => (m.key === "fits" ? `${m.n}h` : `${m.n}/${m.of}`);
 
 export const MarkSet = memo(function MarkSet({
   marks,
   attrsFor,
-  reachKeyFor,
-  thin = false,
+  acts,
 }: {
   marks: readonly Mark[];
   attrsFor?: (k: MarkKey) => Record<string, string> | undefined;
+  /** the dials whose "what's left" opens something — that line is then the
+   *  button. A dial with no act here just says it (Done is the run). */
+  acts?: Partial<Record<MarkKey, () => void>>;
+  /** kept for callers that still pass them; dials have no pieces to advance */
   reachKeyFor?: (k: MarkKey) => string | undefined;
   thin?: boolean;
 }) {
-  const bars = useRef(new Map<MarkKey, HTMLSpanElement | null>());
+  const rings = useRef(new Map<MarkKey, HTMLSpanElement | null>());
   const fullSig = marks.map((m) => (m.full ? "1" : "0")).join("");
   const prev = usePrev(fullSig);
   useLayoutEffect(() => {
     if (prev === null || prev === fullSig) return;
     marks.forEach((m, i) => {
-      if (m.full && prev[i] === "0") closeMark(bars.current.get(m.key) ?? null, m.tier);
+      if (m.full && prev[i] === "0") closeMark(rings.current.get(m.key) ?? null, m.tier);
     });
   }, [fullSig, prev, marks]);
   const { onDefine, node } = useDefine();
-  const detail = marks.find((m) => m.detail)?.detail;
   return (
     <div className="k-markset">
-      <div className="k-markset-cols">
-        {marks.map((m) => (
-          <div key={m.key} className="k-mark" data-full={m.full ? "" : undefined} data-mark={m.key}>
-            <div className="k-mark-head">
+      <div className="k-dials">
+        {marks.map((m) => {
+          const frac = m.of > 0 ? m.n / m.of : 0;
+          const act = !m.full && m.todo ? acts?.[m.key] : undefined;
+          return (
+            <div key={m.key} className="k-dial" data-full={m.full ? "" : undefined} data-mark={m.key}>
+              <Dial
+                frac={frac}
+                closed={m.full}
+                attrs={attrsFor?.(m.key)}
+                ringRef={(el) => {
+                  rings.current.set(m.key, el);
+                }}
+              >
+                {m.full ? "\u2713" : valueOf(m)}
+              </Dial>
               <MarkLabel k={m.key} onDefine={onDefine}>
                 {m.label}
               </MarkLabel>
-              <span className="k-mark-v">
-                <b>{m.key === "fits" ? `${m.n}h` : m.n}</b>/{m.key === "fits" ? `${m.of}h` : m.of}
-              </span>
+              {m.full ? (
+                <span className="k-dial-todo" data-done="">All set</span>
+              ) : act ? (
+                <button type="button" className="k-dial-todo" data-act="" onClick={act}>
+                  {m.todo}
+                </button>
+              ) : (
+                <span className="k-dial-todo">{m.todo ?? ""}</span>
+              )}
             </div>
-            <MarkBar
-              pieces={m.pieces}
-              thin={thin}
-              reachKey={reachKeyFor?.(m.key)}
-              attrs={attrsFor?.(m.key)}
-              label={`${m.label}: ${m.n} of ${m.of}`}
-              barRef={(el) => {
-                bars.current.set(m.key, el);
-              }}
-            />
-          </div>
-        ))}
+          );
+        })}
       </div>
-      {detail && <p className="k-markset-detail">{detail}</p>}
       {node}
     </div>
   );
@@ -232,26 +289,24 @@ function clock(d: Date): string {
 
 export const DayCrown = memo(function DayCrown({
   day,
-  pieces,
   next,
   attrs,
 }: {
   day: DayRead;
-  pieces: MarkPiece[];
   /** what's next, in words ("Measure wall at 4pm"), while the day is open */
   next?: string | null;
   attrs?: Record<string, string>;
 }) {
-  const bar = useRef<HTMLSpanElement | null>(null);
+  const hero = useRef<HTMLHeadingElement | null>(null);
   const line = useRef<HTMLParagraphElement | null>(null);
   const prev = usePrev(day.closed);
   const { onDefine, node } = useDefine();
   useLayoutEffect(() => {
     if (prev !== false || !day.closed) return;
-    // The day closed under your hand: the bar sweeps and rings, the stop drops
+    // The day closed under your hand: the hero pops and rings, the stop drops
     // (Stop plays itself), the hour you got back rises in.
-    sweep(bar.current, 200);
-    ring(bar.current, 380);
+    pop(hero.current, 120);
+    ring(hero.current, 260);
     haptic("success");
     play(line.current, [{ transform: "translateY(6px)", opacity: 0 }, { transform: "none", opacity: 1 }], "--d-land", "--ease-land", 520);
   }, [day.closed, prev]);
@@ -266,26 +321,16 @@ export const DayCrown = memo(function DayCrown({
       ? `Next: ${next}`
       : "";
   return (
-    <div className="k-day" data-closed={day.closed ? "" : undefined}>
+    <div className="k-day" data-closed={day.closed ? "" : undefined} data-crown-day="" {...attrs}>
       <div className="k-day-head">
-        <h2 className="k-day-hero text-display masthead">
+        <h2 ref={hero} className="k-day-hero text-display masthead">
           Today
           <Stop on={day.closed} />
         </h2>
         <MarkLabel k="day" onDefine={onDefine}>
-          {day.total === 0 ? "Nothing dated today" : day.closed ? "All done" : `${day.done} of ${day.total} done`}
+          {day.closed ? "All done" : `${day.done} of ${day.total} done`}
         </MarkLabel>
       </div>
-      {day.total > 0 && (
-        <MarkBar
-          pieces={pieces}
-          label={`Today: ${day.done} of ${day.total} done`}
-          attrs={{ "data-crown-day": "", ...(attrs ?? {}) }}
-          barRef={(el) => {
-            bar.current = el;
-          }}
-        />
-      )}
       {said && (
         <p ref={line} className="k-day-line" aria-live="polite">
           {said}

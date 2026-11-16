@@ -25,6 +25,9 @@ export interface CrownLineData {
   act: string;
   /** one faint "then:" clause, or null */
   then: string | null;
+  /** which part of the stack the line speaks for (the Schedule hides a "time"
+   *  line while its Scheduled dial already says it, D-219) */
+  part?: CardPart;
 }
 
 /** The part of the stack a card belongs to, for the "then:" rule: a second card
@@ -46,7 +49,7 @@ export function lineFrom(cards: readonly LineCard[], act = "Get ready"): CrownLi
   const first = cards[0];
   if (!first) return null;
   const second = cards.find((c) => c.part !== first.part) ?? null;
-  return { tone: first.tone, glyph: first.glyph ?? null, text: first.fact, act, then: second ? second.then : null };
+  return { tone: first.tone, glyph: first.glyph ?? null, text: first.fact, act, then: second ? second.then : null, part: first.part };
 }
 
 /** "1 block" / "3 blocks". */
