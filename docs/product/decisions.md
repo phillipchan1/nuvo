@@ -8542,7 +8542,11 @@ filter row says "N selected" with Complete and Delete for a mouse or a finger
 ⌘E rename · e done · x select — the same fading hint as a heading. On a heading `t` · `v` ·
 1–4 now fall through (those acts became optional in the keymap), so 1–3 switch faces there.
 A project closed or filtered away while its tasks held the keys hands them back to its
-heading.
+heading. **← closes at every depth** (2026-11-15): from a heading, or from inside a project's
+tasks, ← folds the project and lands on its heading — Esc only steps out. The hints say "←
+close" on anything open, and stay for 40 uses (twelve went by in a minute of walking). **The
+add box no longer names its project when focused** inside the Table: the heading above says
+it, and the extra line appearing as ↓ passed through the box shoved every row below it down.
 
 **Not yet:** a task's **steps** (D-103) show in its popover (↵), not inline — no disclosure in
 the outline, and Tab does not turn a task into a step. That needs a row disclosure in `TaskRow`

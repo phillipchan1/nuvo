@@ -76,7 +76,7 @@ const COLS_PHONE = "minmax(0, 1fr) auto";
 
 // A few uses and the hints go — they teach the keys, they are not furniture.
 const HINT_KEY = "nuvo.table.hints";
-const HINT_UNTIL = 12;
+const HINT_UNTIL = 40;
 const readNum = (k: string) => {
   try {
     return Number(localStorage.getItem(k) ?? 0) || 0;
@@ -228,9 +228,10 @@ export default function OutlineFloor({
     setActive({ id: projectId, entry: { at: empty ? "composer" : at, seq: ++seq.current } });
     return true;
   };
-  const leave = (projectId: string, dir: "up" | "down") => {
+  const leave = (projectId: string, dir: "up" | "down" | "close") => {
     setActive(null);
-    if (dir === "up") return setCursorId(projectId);
+    if (dir === "close") setOpen(projectId, false);
+    if (dir === "up" || dir === "close") return setCursorId(projectId);
     const i = heads.findIndex((h) => h.id === projectId);
     setCursorId(heads[i + 1]?.id ?? projectId);
   };
@@ -656,7 +657,7 @@ export default function OutlineFloor({
                 <span className={g.late ? "ol-late" : undefined}>{g.label}</span>
                 {g.span && <span className="ol-span">{g.span}</span>}
                 <span className="k-count">{g.items.length}</span>
-                {hints && cursorId === gid && <HeadHint keys={[["←", "→"], gOpen ? "fold" : "open"]} />}
+                {hints && cursorId === gid && <HeadHint keys={gOpen ? ["←", "close"] : ["→", "open"]} />}
                 <span className="ol-grp-meta">
                   {view === "completed"
                     ? g.doneTasks
@@ -818,10 +819,9 @@ export default function OutlineFloor({
             <TaskListView
               tasks={item.tasks}
               context={{ projectId: p.id, initiativeId: p.initiativeId, domainId: p.domainId }}
-              contextLabel={{ name: p.name, color: domain?.color }}
               keyboard={listActive && !onTop}
               selection={sharedSelection}
-              cursorHint={hints ? <HeadHint keys={["⌘E", "rename", "e", "done", "x", "select"]} /> : undefined}
+              cursorHint={hints ? <HeadHint keys={["⌘E", "rename", "e", "done", "x", "select", "←", "close"]} /> : undefined}
               onOpen={(t) => nav.openOverlay("task-record", t.id)}
               flush
               reorderable={view !== "completed"}
@@ -926,8 +926,12 @@ export default function OutlineFloor({
             <HeadHint
               keys={
                 kind === "project"
-                  ? [open ? "↓" : "→", open ? "into it" : "open", "a", "add task", "⌫", "delete"]
-                  : [open ? "↓" : "→", open ? "into it" : "open", "↵", "open record", "⌫", "delete"]
+                  ? open
+                    ? ["↓", "into it", "←", "close", "a", "add task"]
+                    : ["→", "open", "a", "add task", "⌫", "delete"]
+                  : open
+                    ? ["↓", "into it", "←", "close", "↵", "open record"]
+                    : ["→", "open", "↵", "open record", "⌫", "delete"]
               }
             />
           )}

@@ -77,8 +77,9 @@ export interface TaskListViewProps {
   /** Drawn faintly on the lit row only — the keys it answers, until learned. */
   cursorHint?: ReactNode;
   outline?: {
-    /** ↑ past the first row, ← or Esc on a row — "up"; ↓ past the add box — "down". */
-    onLeave: (dir: "up" | "down") => void;
+    /** ↑ past the first row or Esc — "up" (to the heading); ← — "close" (to the
+     *  heading, folding it: → opened it, ← shuts it); ↓ past the add box — "down". */
+    onLeave: (dir: "up" | "down" | "close") => void;
     /** Bumped by the host to hand the keys in: lit on the first or last row, or
      *  straight into the add box (the first press into an empty project). */
     entry: { at: "first" | "last" | "composer"; seq: number } | null;
@@ -271,11 +272,12 @@ export default function TaskListView({
         ? (e) => {
             if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false;
             const atTop = cursorId === null || cursorId === tasks[0]?.id;
-            const leaveUp =
-              ((e.key === "ArrowUp" || e.key === "k") && atTop) ||
-              e.key === "ArrowLeft" ||
-              e.key === "h" ||
-              (e.key === "Escape" && selectedIds.size === 0);
+            if (e.key === "ArrowLeft" || e.key === "h") {
+              setCursorId(null);
+              outline.onLeave("close");
+              return true;
+            }
+            const leaveUp = ((e.key === "ArrowUp" || e.key === "k") && atTop) || (e.key === "Escape" && selectedIds.size === 0);
             if (!leaveUp) return false;
             setCursorId(null);
             outline.onLeave("up");
