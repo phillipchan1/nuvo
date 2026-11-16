@@ -726,7 +726,15 @@ export function useExternalEventMutations() {
       if (ctx?.snapshot) {
         for (const [key, data] of ctx.snapshot) qc.setQueryData(key, data);
       }
-      toast.error(err instanceof Error ? err.message : "Couldn't delete event");
+      // The server answers a refused write with a bare code ("bad_request",
+      // "request_failed") so it never leaks detail — which is no sentence to
+      // show a person. Say what happened: it's back, and trying again is fair.
+      const said = err instanceof Error ? err.message : "";
+      toast.error(
+        !said || /^(bad_request|request_failed|not found)$/i.test(said)
+          ? "Couldn't delete that — the calendar didn't accept it, so it's back. Try again in a moment."
+          : said,
+      );
     },
     onSuccess: (_d, vars, ctx) => {
       const gone = ctx?.deleted;

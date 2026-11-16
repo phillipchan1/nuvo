@@ -2269,11 +2269,17 @@ function CalendarPane({
     scope: RecurrenceScope,
     notifyGuests?: boolean,
   ) => {
-    eventMutations.deleteEvent({
-      id: event.id,
-      scope,
-      ...(notifyGuests === undefined ? {} : { notifyGuests }),
-    });
+    eventMutations.deleteEvent(
+      {
+        id: event.id,
+        scope,
+        ...(notifyGuests === undefined ? {} : { notifyGuests }),
+      },
+      // A refused delete puts the block back (the rollback re-adds it), still
+      // wearing the selection ring of a block that's about to be deleted — which
+      // reads as a leftover outline. It's just a block again.
+      { onError: () => clearGridSelection() },
+    );
     setEventDeleteConfirm(null);
     setEventMenu(null);
   };

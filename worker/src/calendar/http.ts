@@ -416,6 +416,9 @@ async function handleEvents(c: Context<AppEnv>, deps: CalendarRouteDeps): Promis
     await bootstrapUser(store, null, { emailVerified: true });
     const out = await handleIcloudEvents(store, c.env, body);
     if (typeof out.body.error === "string" && out.status >= 400) {
+      // The client only ever sees the bare code below; keep the real reason where
+      // it can be read (the account's sync log) so "bad_request" is diagnosable.
+      await logSync(io.sql, "icloud", "event-writeback", "error", out.body.error, got.userId).catch(() => {});
       const generic = out.status === 404 ? "not found" : out.status === 400 ? "bad_request" : "request_failed";
       return json({ error: generic }, out.status, OPEN_CORS);
     }
