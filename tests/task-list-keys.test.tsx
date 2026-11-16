@@ -16,7 +16,6 @@ function setup(extra?: TaskListKeyActs["extra"]) {
     trash: vi.fn(),
     date: vi.fn(),
     move: vi.fn(),
-    priority: vi.fn(),
     rename: vi.fn(),
     reorderBy: vi.fn(),
     add: vi.fn(),
@@ -70,8 +69,6 @@ describe("useTaskListKeys — one grammar for every task list", () => {
     expect([...hook.result.current.selectedIds]).toEqual(["a", "b"]);
     press("t");
     expect(acts.date).toHaveBeenCalledWith([ROWS[0], ROWS[1]]);
-    press("2");
-    expect(acts.priority).toHaveBeenCalledWith([ROWS[0], ROWS[1]], "medium");
     press("e");
     expect(acts.complete).toHaveBeenCalledWith([ROWS[0], ROWS[1]]);
     expect(hook.result.current.selectedIds.size).toBe(0);
@@ -102,9 +99,10 @@ describe("useTaskListKeys — one grammar for every task list", () => {
 
   it("marks what it handles, so app-wide letters stand aside — and leaves the rest", () => {
     const { press } = setup();
-    expect(press("1").defaultPrevented).toBe(false); // no row: the tab switcher's
     press("j");
-    expect(press("1").defaultPrevented).toBe(true); // a row: its priority
+    expect(press("e").defaultPrevented).toBe(true); // a row: its act
+    // A bare digit is never a list's: it is the page's view (kit/pageTabKeys).
+    expect(press("1").defaultPrevented).toBe(false);
     expect(press("s").defaultPrevented).toBe(false); // the Schedule's
   });
 
@@ -114,7 +112,7 @@ describe("useTaskListKeys — one grammar for every task list", () => {
   it("a home row is never acted on — it only seeds j / k", () => {
     const acts = {
       open: vi.fn(), complete: vi.fn(), trash: vi.fn(), date: vi.fn(), move: vi.fn(),
-      priority: vi.fn(), rename: vi.fn(), extra: undefined,
+      rename: vi.fn(), extra: undefined,
     };
     const hook = renderHook(() => {
       const [cursorId, setCursorId] = useState<string | null>(null);
@@ -139,7 +137,6 @@ describe("useTaskListKeys — one grammar for every task list", () => {
     }
     expect(acts.trash).not.toHaveBeenCalled();
     expect(acts.complete).not.toHaveBeenCalled();
-    expect(acts.priority).not.toHaveBeenCalled();
     expect(acts.open).not.toHaveBeenCalled();
     press("j");
     expect(hook.result.current.cursorId).toBe("b"); // lit where you clicked, not the top
@@ -206,7 +203,7 @@ describe("the grammar the calendar grid speaks too (D-158)", () => {
   function setupGrid(opts: { owner?: () => boolean; rows?: Block[] } = {}) {
     const acts = {
       open: vi.fn(), complete: vi.fn(), trash: vi.fn(), date: vi.fn(), move: vi.fn(),
-      priority: vi.fn(), rename: vi.fn(), menu: vi.fn(), duplicate: vi.fn(),
+      rename: vi.fn(), menu: vi.fn(), duplicate: vi.fn(),
     };
     let rows = opts.rows ?? BLOCKS;
     const hook = renderHook(

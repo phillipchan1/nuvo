@@ -6,7 +6,7 @@ import { undoAutoPatch } from "../lib/grooming";
 import { TRASH_LIMIT, TRASH_RETENTION_DAYS, useTrashedTasks, type useTaskMutations } from "../hooks/useTasks";
 import TaskComposer, { type TaskComposerHandle } from "./tasks/TaskComposer";
 import TaskActionsMenu from "./tasks/TaskActionsMenu";
-import { TaskDateMenu, TaskMoveMenu, usePriorityAct, useRenameAct } from "./tasks/TaskMenus";
+import { TaskDateMenu, TaskMoveMenu, useRenameAct } from "./tasks/TaskMenus";
 import { orderBeside, useTaskListKeys } from "./tasks/useTaskListKeys";
 import { claimKeys, keyOwner } from "./tasks/keyOwner";
 import { restoreFromTrashPatch } from "../lib/types";
@@ -604,7 +604,6 @@ function LeftRail({
   const rowRect = (id: string) =>
     document.querySelector<HTMLElement>(`[data-task-drag="${id}"]`)?.getBoundingClientRect() ??
     new DOMRect(360, 200, 0, 40);
-  const setPriority = usePriorityAct(mutations);
   const renameTask = useRenameAct(mutations);
   const railKeysOn =
     hotkeysEnabled && !rowMenu && !editingId && !contextMenu && !labelPickerFor && !schedulePickerFor && !remindPickerFor;
@@ -647,7 +646,6 @@ function LeftRail({
       },
       date: (targets) => setRowMenu({ kind: "date", targets, anchor: rowRect(targets[0].id) }),
       move: (targets) => setRowMenu({ kind: "move", targets, anchor: rowRect(targets[0].id) }),
-      priority: setPriority,
       rename: (t) => setEditingId(t.id),
       // `.` — the row's right-click menu, beside the row.
       menu: (t) => {
@@ -688,7 +686,7 @@ function LeftRail({
             setSelectedIds(new Set());
             return true;
           }
-          return ["e", "t", "v", "x", "1", "2", "3", "4", "Backspace", "Delete", "a", "A"].includes(e.key);
+          return ["e", "t", "v", "x", "Backspace", "Delete", "a", "A"].includes(e.key);
         }
         switch (e.key) {
           case "Escape":

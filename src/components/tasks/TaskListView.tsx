@@ -26,7 +26,7 @@ import type { CaptureContext } from "../../lib/captureDraft";
 import TaskRow, { type TaskMeta, type TaskRowHandle } from "../TaskRow";
 import TaskComposer, { type TaskComposerHandle } from "./TaskComposer";
 import TaskActionsMenu from "./TaskActionsMenu";
-import { TaskDateMenu, TaskMoveMenu, usePriorityAct, useRenameAct } from "./TaskMenus";
+import { TaskDateMenu, TaskMoveMenu, useRenameAct } from "./TaskMenus";
 import { orderBeside, useTaskListKeys } from "./useTaskListKeys";
 import type { PathDraft } from "./usePathDraft";
 
@@ -121,7 +121,6 @@ export default function TaskListView({
   // hold on the grip reorders (a touch drag would fight the scroll), and a tap
   // opens the task sheet. Same row, same add box.
   const phone = useIsMobile();
-  const setPriority = usePriorityAct(mutations);
   const renameTask = useRenameAct(mutations);
 
   const [cursorId, setCursorId] = useState<string | null>(null);
@@ -256,7 +255,6 @@ export default function TaskListView({
       trash: (targets) => targets.forEach((t) => mutations.trash(t, { undo: "toast" })),
       date: (targets) => setMenu({ kind: "date", targets, anchor: rowRect(targets[0].id) }),
       move: (targets) => setMenu({ kind: "move", targets, anchor: rowRect(targets[0].id) }),
-      priority: setPriority,
       rename: (t) => setEditingId(t.id),
       reorderBy: reorderable
         ? (t, delta) => {

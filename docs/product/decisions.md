@@ -8486,6 +8486,30 @@ and `?decks`; the signed-in Schedule at a weekend (reads "Next week", no Today l
 
 ---
 
+**D-221 · 2026-11-15 · A bare digit means one thing: the page's Nth view. 1 is always home.**
+*(Asked by the operator: "1, 2, 3, 4, 5 for the subnav… I don't even use priority… default should
+always be week.")*
+
+**Why.** Bare digits had three owners on the Schedule — the rail's Today · Inbox · Trash, a row's or
+block's priority (1–4), and, on the Build rungs, the faces — so "press 1" meant whatever you last
+touched, and the Schedule's five views couldn't have digits at all. D-208's ⌥⌘1–N worked but nobody
+would learn a chord when the Build rungs already taught the plain key.
+
+**What.** `usePageTabKeys` binds **1–N** to the PageBar's tabs in bar order, on every page that has
+them, standing down while typing or under a floating surface; each tab's hover title carries its
+digit. The Schedule's order is **Week · Day · Month · Year · Spread** — Week first, because Week is
+the default and 1 is always the default; the app now *opens* on Week at any window width (it used to
+open on Day under 1100px). Plain 1–4 priority is gone from task lists and calendar blocks (priority
+is still set in the task's own panel), the rail's 1/2/3 tab keys are gone (the tabs click), and the
+⌥⌘N chord is gone — one way, not two. Supersedes the key half of D-208.
+
+**Anchor.** Closes no ledger row; a convention. Removes three meanings of one key (P11, overlapping
+names, in reverse).
+
+*Status: built 2026-11-15. Driven in the dev app: Schedule 3 → Month, 5 → Spread, 1 → Week; Projects
+3 → Table, the hidden Schedule unmoved. Desktop keyboard only — the phone has no PageBar tabs. Not
+driven: a digit under a modal.*
+
 **D-220 · 2026-11-15 · The Table is the outline, and Groom folds into it.**
 
 The Groom board shaped projects one card at a time, in columns of how shaped they were; the

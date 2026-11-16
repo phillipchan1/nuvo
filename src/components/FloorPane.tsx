@@ -3,7 +3,7 @@
 // demand timeline), with Table (the outline, D-220) and Shipped as sibling
 // views, and drill into a single record's detail.
 
-import { memo, useEffect } from "react";
+import { memo } from "react";
 import type { Focus, Rung } from "./AppShell";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { skipWhenAsleep } from "./KeepAlive";
@@ -16,9 +16,8 @@ import OutlineFloor from "./floors/OutlineFloor";
 import ShippedWall from "./floors/ShippedWall";
 
 const RUNG_LABEL: Record<Rung, string> = { day: "Schedule", project: "Projects", initiative: "Initiatives", domain: "Domains" };
-// The three faces of a build altitude (D-099, D-220). ⌥⌘1–3 everywhere (the
-// page's views, one chord below the sidebar's ⌘1–4); plain 1–3 too, on these
-// rungs, while no list holds the keys.
+// The three faces of a build altitude (D-099, D-220). 1–3, like every page's
+// views; 1 is the home face.
 const FACES = withPageTabKeys([
   { value: "ondeck", label: "On Deck" },
   { value: "all", label: "Table" },
@@ -86,28 +85,6 @@ function FloorPane({
 
   // ⌥⌘1–4 — the same chord every page's views answer to (kit/pageTabKeys).
   usePageTabKeys(FACES, rung === "project" ? setProjectView : rung === "initiative" ? setInitiativeView : undefined, active);
-
-  // Plain 1 · 2 · 3 switch the Build faces (On Deck · Table · Shipped)
-  // — like the Schedule view's number keys. Scoped to the project & initiative
-  // rungs, and never while typing (composer / brief / step edits). ⌘1–5 stays the
-  // global rung nav. Both rungs share the same face order, so one map drives both.
-  useEffect(() => {
-    if (!active) return;
-    if (rung !== "project" && rung !== "initiative") return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const el = e.target as HTMLElement;
-      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
-      const map: Record<string, ProjectView & DetailView> = { "1": "ondeck", "2": "all", "3": "shipped" };
-      const v = map[e.key];
-      if (!v) return;
-      e.preventDefault();
-      if (rung === "project") setProjectView(v);
-      else setInitiativeView(v);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [active, rung, setProjectView, setInitiativeView]);
 
   const bar = (
     <PageBar

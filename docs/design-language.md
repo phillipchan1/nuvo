@@ -79,7 +79,9 @@ committed projects with pieces landed, from `useWeekCrown` — and Settings · S
 breadcrumb (the last word is the page, or the span on screen) · tabs · drag gap · actions. The
 bar spans the whole panel on every page — the rail starts under it — and the breadcrumb holds the
 rail's width (`--rail-w`), so a page's views stand at one x everywhere, 16px into the grid, and
-answer **⌥⌘1–N**, one chord below the sidebar's ⌘1–4 (`kit/pageTabKeys`, D-208). The
+answer a bare **1–N**: the digit is the tab's place in the bar, **1 is always the page's home view**
+(Week, On Deck), and the hover title says so ("Week (1)"). The sidebar owns ⌘1–4 (which page);
+nothing else on a page may spend a bare digit (`kit/pageTabKeys`, D-208, D-221). The
 chat slot sits on the ground beside the panel. Verify the whole frame at `?rail=frame`.
 
 The bar is a size container and **sheds by its own width, never by clipping** — the same page is

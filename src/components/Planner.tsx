@@ -9,8 +9,7 @@ import { readRevealConfig, isRevealReady, isAcknowledged, acknowledge, wasToaste
 import { fallbackPanelAnchor } from "../lib/appNav";
 import { MARQUEE_OPEN_EVENT, MARQUEE_CLOSE_EVENT } from "../lib/marquee";
 import type { ExternalEvent, Slot, Task } from "../lib/types";
-import { isTypingIn } from "../lib/a11y";
-import { useAllTasks, useDayTasks, useGroomInbox, useInboxTasks, usePlannedAnytimeTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations, useTrashedTasks } from "../hooks/useTasks";
+import { useAllTasks, useDayTasks, useGroomInbox, useInboxTasks, usePlannedAnytimeTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations } from "../hooks/useTasks";
 import { useCalendarAccounts, useCalendarRangePrefetch, useCalendarRefresh, useExternalEventMutations, useExternalEvents, useHiddenEvents, useLabels, useTravelDirection } from "../hooks/useCalendar";
 import { useSlots, useSlotTasks, useSlotMutations } from "../hooks/useSlots";
 import { todayWithSlotChildren } from "../lib/slotRuns";
@@ -668,40 +667,6 @@ export default function Planner({
   // (w / d / m, paging) stand down so they can't swap the view hidden under it,
   // while the rail beside it keeps its own.
   const gridCovered = anyModalOpen || weekPlanOpen || overlay !== "none";
-
-  const { data: trashedRows = [] } = useTrashedTasks();
-
-  // 1/2/3 switch the rail's Today · Inbox · Trash tabs. Lives here — not in
-  // LeftRail — so it still works in focus mode (⌘.) when the rail is slid shut,
-  // and so the numbers follow the tab strip left-to-right (Today is first now).
-  useEffect(() => {
-    if (!onSchedule || anyModalOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      // With a row under the cursor, 1–4 set its priority instead (the rail
-      // list marks the key it spent).
-      if (e.defaultPrevented) return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (isTypingIn(e.target)) return;
-      switch (e.key) {
-        case "1":
-          e.preventDefault();
-          setTab("today");
-          break;
-        case "2":
-          e.preventDefault();
-          setTab("inbox");
-          break;
-        case "3":
-          if (trashedRows.length > 0) {
-            e.preventDefault();
-            setTab("trash");
-          }
-          break;
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onSchedule, anyModalOpen, setTab, trashedRows.length]);
 
   // Stable identities for everything handed to the rail and the grid — both are
   // memo'd, and an inline arrow here re-rendered them on every Planner render.

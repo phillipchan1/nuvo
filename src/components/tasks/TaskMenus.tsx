@@ -207,13 +207,6 @@ export function TaskMoveMenu({
   );
 }
 
-/** Set priority (keys 1–4) as one undoable act. */
-export function usePriorityAct(mutations: Mutations) {
-  const patchEach = usePatchEach(mutations);
-  return (targets: Task[], priority: Task["priority"]) =>
-    patchEach(targets, () => ({ priority }), `${noun(targets)} — ${priority === "none" ? "no" : priority} priority`);
-}
-
 /** Rename as a one-step undo. */
 export function useRenameAct(mutations: Mutations) {
   const patchEach = usePatchEach(mutations);

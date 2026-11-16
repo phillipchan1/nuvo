@@ -81,7 +81,7 @@ export const DEFAULT_NAV: AppNavState = {
   flowStep: 0,
   flowFocus: null,
   tab: "today",
-  calView: typeof window !== "undefined" && window.innerWidth < 1100 ? "timeGridDay" : "timeGridWeek",
+  calView: "timeGridWeek", // Week is home, at any width: 1 is always the default view
   overlay: "none",
   overlayId: null,
   overlaySubId: null,

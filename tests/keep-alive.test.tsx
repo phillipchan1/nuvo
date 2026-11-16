@@ -112,6 +112,6 @@ describe("rung switches keep both surfaces mounted", () => {
   it("FloorPane's 1–4 keys are gated on active", () => {
     const floor = read("components/FloorPane.tsx");
     expect(floor).toMatch(/active = true/);
-    expect(floor).toMatch(/if \(!active\) return;/);
+    expect(floor).toMatch(/usePageTabKeys\([^;]*, active\);/);
   });
 });

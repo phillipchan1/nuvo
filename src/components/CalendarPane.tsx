@@ -53,7 +53,7 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTaskListKeys } from "./tasks/useTaskListKeys";
 import { claimKeys, keyOwner } from "./tasks/keyOwner";
-import { usePriorityAct, useRenameAct } from "./tasks/TaskMenus";
+import { useRenameAct } from "./tasks/TaskMenus";
 import { PLAN_EVENT_PREFIX, PLAN_GHOST_PREFIX, type PlanOverlay } from "./plan/planOverlay";
 import {
   DRAFT_PREVIEW_ID,
@@ -95,14 +95,15 @@ const FC_PLUGINS = [timeGridPlugin, dayGridPlugin, interactionPlugin];
 export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board" | "year";
 
 // The view switch's five faces — the bar's tabs, in the same slot as every
-// page's views (D-190, D-208), on ⌥⌘1–5 like every page's views (kit/pageTabKeys).
+// page's views (D-190, D-208), on 1–5 like every page's views (kit/pageTabKeys).
+// Week is first because Week is home: 1 is always the page's default view.
 // A tight bar says the phone ladder's letters instead.
 const CAL_VIEWS = withPageTabKeys([
-  { value: "board", label: "Spread", short: "S" },
-  { value: "timeGridDay", label: "Day", short: "D" },
   { value: "timeGridWeek", label: "Week", short: "W" },
+  { value: "timeGridDay", label: "Day", short: "D" },
   { value: "dayGridMonth", label: "Month", short: "M" },
   { value: "year", label: "Year", short: "Y" },
+  { value: "board", label: "Spread", short: "S" },
 ] as const satisfies readonly { value: CalView; label: string; short: string }[]);
 
 /** Views that aren't FullCalendar at all — they own their own canvas, so every
@@ -922,7 +923,7 @@ function CalendarPane({
     else calRef.current?.getApi()?.today();
   };
 
-  // ⌥⌘1–5 — the views in the bar's order, the chord every page's views take.
+  // 1–5 — the views in the bar's order, the keys every page's views take.
   usePageTabKeys(CAL_VIEWS, onViewChange, hotkeysEnabled);
 
   // Schedule hotkeys. Views always win on bare s / w / d / m / y (the rail's
@@ -2506,7 +2507,6 @@ function CalendarPane({
   // length, and the ⌫ cases that have to ask first (a series' scope, an event's
   // guests). Every move records undo, as a drag does.
   const qc = useQueryClient();
-  const setPriority = usePriorityAct(mutations);
   const renameTask = useRenameAct(mutations);
   const gridRows = useMemo(() => gridBlocks(fcEvents as CalendarBlockInput[]), [fcEvents]);
   const homeId = useMemo(
@@ -2970,7 +2970,6 @@ function CalendarPane({
         const tasks = tasksOf(targets);
         if (tasks.length) setTaskRowMenu({ kind: "move", targets: tasks, anchor: blockRect(`task:${tasks[0].id}`) });
       },
-      priority: (targets, p) => setPriority(tasksOf(targets), p),
       rename: startRename,
       menu: (b) => openBlockMenu(b),
       duplicate: duplicateBlocks,
@@ -2996,11 +2995,6 @@ function CalendarPane({
             return onlyTasks(targets, "When…");
           case "v":
             return onlyTasks(targets, "Move to…");
-          case "1":
-          case "2":
-          case "3":
-          case "4":
-            return onlyTasks(targets, "Priority");
           case "Backspace":
           case "Delete":
             return deleteKey(targets);

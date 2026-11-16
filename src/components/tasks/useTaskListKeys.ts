@@ -4,7 +4,7 @@
  *   j k ↑ ↓    move the cursor           ↵       open the task
  *   e          complete / reopen          ⌘E      rename in place
  *   t          when… (a day, a time)      v       move to… (a home, out of a slot)
- *   1 2 3 4    priority high … none       x       select (then any act hits all)
+ *   x          select (then any act hits all)
  *   ⌫          trash, with undo           ⌥↑ ⌥↓   reorder
  *   a / ⇧A     add below / above          esc     clear the selection, then the cursor
  *   .          the row's menu             ⌘D      duplicate
@@ -35,11 +35,10 @@ export interface TaskListKeyActs<T extends KeyRow = Task> {
   /** Complete (or reopen) — the host runs the row's own animation. */
   complete: (targets: T[]) => void;
   trash: (targets: T[]) => void;
-  /** t · v · 1–4 — absent where the rows have no date, home or priority (the
+  /** t · v — absent where the rows have no date or home (the
    *  Table's project headings), so the key falls through to the page. */
   date?: (targets: T[]) => void;
   move?: (targets: T[]) => void;
-  priority?: (targets: T[], p: Task["priority"]) => void;
   rename: (t: T) => void;
   /** Move a row one place (⌥↑ -1, ⌥↓ +1). Absent when the list's order isn't
    *  the user's to set. */
@@ -70,7 +69,6 @@ export interface TaskListCursor {
   setSelectedIds: (ids: Set<string>) => void;
 }
 
-const PRIORITY_KEYS: Record<string, Task["priority"]> = { "1": "high", "2": "medium", "3": "low", "4": "none" };
 
 export function useTaskListKeys<T extends KeyRow = Task>({
   enabled,
@@ -243,13 +241,6 @@ export function useTaskListKeys<T extends KeyRow = Task>({
         case "v":
           if (!acts.move || !targets.length) return;
           acts.move(targets);
-          return handled();
-        case "1":
-        case "2":
-        case "3":
-        case "4":
-          if (!acts.priority || !targets.length) return;
-          acts.priority(targets, PRIORITY_KEYS[e.key]);
           return handled();
         case "x": {
           if (!current) return;

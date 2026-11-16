@@ -12,11 +12,11 @@ const GROUPS: Group[] = [
   {
     title: "Schedule",
     items: [
-      { keys: [["S"]], label: "Spread (week board)" },
       { keys: [["W"]], label: "Week" },
       { keys: [["D"]], label: "Day" },
       { keys: [["M"]], label: "Month" },
       { keys: [["Y"]], label: "Year" },
+      { keys: [["S"]], label: "Spread (week board)" },
       { keys: [["="], ["⌘", "→"]], sep: "or", label: "Next period" },
       { keys: [["−"], ["⌘", "←"]], sep: "or", label: "Previous period" },
       { keys: [["⌘", "T"]], label: "Today" },
@@ -30,7 +30,7 @@ const GROUPS: Group[] = [
     items: [
       { keys: [["⌘", "1"], ["⌘", "4"]], sep: "–", label: "Jump to a floor" },
       { keys: [["⌘", "↑"], ["⌘", "↓"]], sep: "/", label: "Travel the ladder" },
-      { keys: [["⌥", "⌘", "1"], ["⌥", "⌘", "5"]], sep: "–", label: "The page's views (Day · Week… / On Deck · Groom…)" },
+      { keys: [["1"], ["5"]], sep: "–", label: "The page's views — 1 is home (Week / On Deck)" },
     ],
   },
   {
@@ -61,7 +61,6 @@ const GROUPS: Group[] = [
       { keys: [["E"]], label: "Mark done / reopen" },
       { keys: [["T"]], label: "When… (type a day or a time)" },
       { keys: [["V"]], label: "Move to… (project, initiative, domain, out of a slot)" },
-      { keys: [["1"], ["4"]], sep: "–", label: "Priority high … none (on a row)" },
       { keys: [["X"]], label: "Select — then any key acts on all" },
       { keys: [["⌫"]], label: "Move to trash" },
       { keys: [["⌘", "E"]], label: "Rename in place" },
