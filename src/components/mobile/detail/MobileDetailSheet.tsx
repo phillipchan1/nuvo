@@ -149,7 +149,7 @@ export default function MobileDetailSheet({
   // a project or initiative could not be deleted on a phone at all. Deleting the
   // record you're looking at closes the sheet with it; "Open" is a no-op here
   // (you are already in it), so the menu is opened by button only.
-  const { openActions, sheet: actionSheet } = useRecordActions(() => {});
+  const { openActions, sheet: actionSheet } = useRecordActions(() => {}, { inRecord: true });
   const recordFrame = frame.level === "project" || frame.level === "initiative" ? frame : null;
   const gone =
     recordFrame &&

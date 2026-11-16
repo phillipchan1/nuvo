@@ -870,7 +870,13 @@ button.ph-dayhead { width: 100%; border-top: 0; border-left: 0; border-right: 0;
    narrows. */
 @media (max-width: 359px) {
   .ph-cal-row .k-seg.ph-seg button { min-width: 30px; padding: 0 8px; }
-  .ph-travel .k-btn[data-icon] { width: 28px; }
+  /* The kit's coarse-pointer `min-width: 44px` beat the narrowing here, so at
+     320px the row ran 21px past the screen and clipped ›. The arrows draw at
+     32px and take back their 44px with an outward bloom (`.tap-icon` is
+     already `position: relative`). */
+  .ph-travel .k-btn[data-icon] { width: 32px; min-width: 32px; }
+  .ph-travel .k-btn[data-icon]::before { content: ""; position: absolute; inset: 0 -4px 0 -8px; }
+  .ph-travel .k-btn[data-icon]:last-child::before { inset: 0 -8px 0 -4px; }
   .ph-travel .k-btn:not([data-icon]) { padding: 0 9px; }
 }
 

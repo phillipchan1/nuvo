@@ -32,9 +32,12 @@ export function Dialog({
   const isMobile = useIsMobile();
   if (isMobile) {
     return (
-      <Sheet title={title} onClose={onClose}>
+      // The Sheet's body is the scroller (it caps at 88dvh and locks the page),
+      // and the footer pins to its foot so the acts never scroll off-screen.
+      // No `pb-safe` on the footer: the Sheet panel already clears the home bar.
+      <Sheet title={title} onClose={onClose} contentClassName="mobile-scroll overflow-y-auto">
         <div className="px-4 pb-4">{children}</div>
-        {footer && <div className="k-dialog-foot pb-safe">{footer}</div>}
+        {footer && <div className="k-dialog-foot sticky bottom-0 bg-[var(--raised)]">{footer}</div>}
       </Sheet>
     );
   }

@@ -193,11 +193,12 @@ export function fmtDayTime(iso: string): string {
 }
 
 /** Hour 0–23, or 24 for midnight end-of-day. */
+/** A whole hour in the app's one clock vocabulary (`at` in mobile/dayPlan,
+ *  D-122): `6am`, `12pm`, `11pm` — never `6:00 AM` beside a gutter reading `6am`. */
 export function formatHourLabel(hour: number): string {
-  if (hour === 0 || hour === 24) return "12:00 AM";
-  if (hour === 12) return "12:00 PM";
-  if (hour < 12) return `${hour}:00 AM`;
-  return `${hour - 12}:00 PM`;
+  const h = ((hour % 24) + 24) % 24;
+  const mer = h < 12 ? "am" : "pm";
+  return `${h % 12 === 0 ? 12 : h % 12}${mer}`;
 }
 
 export function fmtDuration(minutes: number | null | undefined): string {

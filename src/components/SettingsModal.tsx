@@ -142,6 +142,7 @@ function AppearancePane({
   settings: UserSettings | undefined;
   updateSettings: (patch: Partial<UserSettings>) => void;
 }) {
+  const isMobile = useIsMobile();
   const theme = settings?.theme ?? "system";
   const { scale, zoomIn, zoomOut, zoomReset } = useUiScale();
 
@@ -155,7 +156,8 @@ function AppearancePane({
           ))}
         </div>
       </Row>
-      <Row title="Zoom" desc="⌘+ · ⌘− · ⌘0">
+      {/* The keys are the desktop's; a phone has none to hint at. */}
+      <Row title="Zoom" desc={isMobile ? undefined : "⌘+ · ⌘− · ⌘0"}>
         <span className="fm-stepper">
           <IconButton
             size="xs"

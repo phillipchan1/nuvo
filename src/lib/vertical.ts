@@ -419,7 +419,7 @@ export function buildVertical(
       startDate: i.start_date,
       targetDate: i.target_date,
       status: normalizeInitiativeStatus(i.status),
-      progress: i.progress,
+      progress: i.progress ?? 0,
       momentum: (["up", "flat", "down"].includes(i.momentum) ? i.momentum : "flat") as Momentum,
       createdAt: i.created_at ?? null,
       tendedAt: i.tended_at ?? null,
@@ -500,7 +500,7 @@ export function buildVertical(
         targetDate: p.target_date,
         status,
         storedStatus: stored,
-        progress: p.progress,
+        progress: p.progress ?? 0,
         // Derived-complete has no stamp of its own: it shipped when its last task
         // did, which is exactly what the week's scoreboard needs to date it. And
         // a reopened project has no ship date at all — clearing it keeps the old
@@ -687,7 +687,9 @@ export function buildVertical(
         weeklyTargetHours: d.weekly_target_hours ?? 0,
         investedThisWeek: led ? led.week / 60 : 0,
         meetingHoursThisWeek: (meetingWeek.get(d.id) ?? 0) / 60,
-        quarterHours: led ? Math.round(led.quarter / 60) : 0,
+        // Tenths, like the week beside it — whole hours read 20 minutes as "0h
+        // this quarter" next to "0.3h this week", a week bigger than its quarter.
+        quarterHours: led ? Math.round(led.quarter / 6) / 10 : 0,
         lastTouchedDays: led?.last != null ? daysSince(led.last) : null,
         lastShip: ship ? { name: ship.name, daysAgo: daysSince(ship.at) } : null,
         weeks: (weekly.get(d.id) ?? new Array(13).fill(0)).map((m: number) => m / 60),

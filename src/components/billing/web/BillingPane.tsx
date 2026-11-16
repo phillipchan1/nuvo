@@ -69,7 +69,9 @@ function ShareCodeBlock({
       .catch((e) => {
         const msg = e instanceof Error ? e.message : "";
         if (!cancelled && !/not configured/i.test(msg)) {
-          setError(msg || "Could not load your code");
+          // Never the transport's own words ("Edge Function returned a
+          // non-2xx status code") — the person can't act on those.
+          setError("Couldn’t load your code right now");
         }
       })
       .finally(() => {

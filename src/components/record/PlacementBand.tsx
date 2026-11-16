@@ -250,10 +250,10 @@ export function WeekBand({
             now={i === 0}
             // `within` must follow the horizon or week +5 falls through to a
             // date and prints "Sep 6" over "Sep 6".
-            label={weekTick(w.weekStart, { within: horizon })}
+            label={weekTick(w.weekStart, { within: horizon, asWeekStart: true })}
             sub={fmtDay(w.weekStart)}
             onClick={() => place(i)}
-            title={`${weekName(w.weekStart)} — ${weekSpan(w.weekStart)}`}
+            title={`${weekName(w.weekStart, { asWeekStart: true })} — ${weekSpan(w.weekStart)}`}
           />
         ))}
       </div>

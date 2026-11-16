@@ -55,15 +55,29 @@ export function weeksBetween(from: Date | string, to: Date | string): number {
   return differenceInCalendarWeeks(anchor(to), anchor(from), { weekStartsOn: 1 });
 }
 
+/** Whole weeks from `ref` to `d`, counted in the convention `d` itself wears
+ *  when the caller says it is a week START (a board's own `weekStart`, whose
+ *  weekday IS the person's week-start setting). Without that, both snap to the
+ *  Sunday week — which on a Sunday named a Monday-start person's current week
+ *  "Last week" and the next one "Now", while the deck lit the current one as now. */
+function weeksFrom(d: Date | string, ref: Date | string, asWeekStart?: boolean): number {
+  if (asWeekStart) {
+    const date = asDate(d);
+    const weekStartsOn = date.getDay() === 1 ? 1 : 0;
+    return differenceInCalendarWeeks(date, asDate(ref), { weekStartsOn });
+  }
+  return weeksBetween(ref, d);
+}
+
 /** The front door: "This week" · "Next week" · "Last week" · "In 3 weeks" ·
  *  "3 weeks ago" · "Week of Aug 24". Relative while relative still locates you,
  *  dated after that — never a number.
  *  `within` caps the relative voice (default 4, the planning horizon). */
 export function weekName(
   d: Date | string = new Date(),
-  opts?: { ref?: Date | string; within?: number },
+  opts?: { ref?: Date | string; within?: number; asWeekStart?: boolean },
 ): string {
-  const n = weeksBetween(opts?.ref ?? new Date(), d);
+  const n = weeksFrom(d, opts?.ref ?? new Date(), opts?.asWeekStart);
   const within = opts?.within ?? 4;
   if (n === 0) return "This week";
   if (n === 1) return "Next week";
@@ -88,9 +102,9 @@ export function weekSpan(d: Date | string = new Date()): string {
  *  fit: "Now" · "Next" · "+2" · "−1" · "Aug 24" once it's off the horizon. */
 export function weekTick(
   d: Date | string = new Date(),
-  opts?: { ref?: Date | string; within?: number },
+  opts?: { ref?: Date | string; within?: number; asWeekStart?: boolean },
 ): string {
-  const n = weeksBetween(opts?.ref ?? new Date(), d);
+  const n = weeksFrom(d, opts?.ref ?? new Date(), opts?.asWeekStart);
   const within = opts?.within ?? 4;
   if (n === 0) return "Now";
   if (n === 1) return "Next";

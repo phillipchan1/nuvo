@@ -308,6 +308,28 @@ export default function MobileDeck({
   const dragging = drag != null;
   const poolCards = cards.filter((c) => c.col == null);
 
+  // Coverage's open/closed lives here because its toggle rides the crown line
+  // while its grid sits under the strip — two places, one state.
+  const hasCoverage = Boolean(coverage && coverage.rows.length > 0);
+  const covered = coverage ? coverage.rows.filter((r) => r.cells.some((c) => c > 0)).length : 0;
+  const coverageKey = `nuvo.mobile.deck.coverage.${scope}`;
+  const [coverageOpen, setCoverageOpen] = useState(() => {
+    try {
+      return localStorage.getItem(coverageKey) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleCoverage = () =>
+    setCoverageOpen((v) => {
+      try {
+        localStorage.setItem(coverageKey, v ? "0" : "1");
+      } catch {
+        /* ignore */
+      }
+      return !v;
+    });
+
   // ── the strip and the coverage rows are one grid in two scrollers ───────────
   // They have to agree about which cell sits under which column, so whichever
   // one the finger moves drags the other to the same offset.
@@ -344,7 +366,15 @@ export default function MobileDeck({
       <span className="sr-only" aria-live="polite">
         {page === 0 ? poolLabel : columns[page - 1]?.title}
       </span>
-      <DeckCrownFace crown={crown} groomAction={groomAction} />
+      <DeckCrownFace
+        crown={crown}
+        groomAction={groomAction}
+        coverage={
+          hasCoverage ? (
+            <CoverageToggle open={coverageOpen} onToggle={toggleCoverage} covered={covered} total={coverage!.rows.length} />
+          ) : null
+        }
+      />
 
       <ColumnStrip
         columns={columns}
@@ -359,10 +389,9 @@ export default function MobileDeck({
         onScroll={syncScroll(stripRef, covRef)}
       />
 
-      {coverage && coverage.rows.length > 0 && (
-        <CoverageBand
-          scope={scope}
-          rows={coverage.rows}
+      {hasCoverage && coverageOpen && (
+        <CoverageGrid
+          rows={coverage!.rows}
           columns={columns}
           scrollRef={covRef}
           onScroll={syncScroll(covRef, stripRef)}
@@ -520,18 +549,37 @@ export default function MobileDeck({
 }
 
 // ── the crown — readiness, execution voice (PlannerRail's, at phone width) ─────
-// One line, deliberately quiet: a 12px name, a tabular count and a 3px meter.
-// The horizon's readiness is CONTEXT for the week you're standing in, not the
-// headline — the top bar already carries the screen's one hero. The gap line
-// names the first debt and is the tap into it; it vanishes when clean.
-function DeckCrownFace({ crown, groomAction }: { crown: DeckCrown; groomAction?: ReactNode }) {
+// At most two lines, because everything above the pager is paid for out of the
+// one thing this screen is for — the column you're standing in. It used to be
+// four rows (horizon name · gap · Block time · Coverage) and with the shell's
+// chrome that left a 568px phone ~60px of initiatives.
+//
+//   line 1  the read: how much of the horizon is ready, and how many domains
+//           it carries (the Coverage toggle; its grid opens under the strip).
+//           The horizon's NAME ("Next 6 weeks") is gone from sight — the strip
+//           directly below names every column, so saying it again was the
+//           eyebrow-restating-a-heading the design language forbids. Screen
+//           readers still get it.
+//   line 2  the debt, only when there is one: the gap names it and is the tap
+//           into it, and Block time — the act on that same unshaped work — sits
+//           at its end instead of on a row of its own.
+function DeckCrownFace({
+  crown,
+  groomAction,
+  coverage,
+}: {
+  crown: DeckCrown;
+  groomAction?: ReactNode;
+  /** the Coverage toggle, carried on the read line. */
+  coverage?: ReactNode;
+}) {
   const pct = crown.total > 0 ? (crown.done / crown.total) * 100 : 0;
   return (
-    <div className="shrink-0 border-b border-[var(--line-1)] px-4 pb-2 pt-2.5">
-      <div className="flex items-center gap-2.5">
-        <span className="shrink-0 text-caption font-semibold text-muted">{crown.eyebrow}</span>
+    <div className="shrink-0 border-b border-[var(--line-1)] px-4">
+      <div className="flex min-h-11 items-center gap-2.5">
+        <span className="sr-only">{crown.eyebrow}</span>
         {crown.total === 0 ? (
-          <span className="text-caption text-[var(--faint)]">Nothing placed</span>
+          <span className="min-w-0 flex-1 text-caption text-[var(--faint)]">Nothing placed</span>
         ) : (
           <>
             <span className="shrink-0 text-caption tabular-nums">
@@ -545,21 +593,30 @@ function DeckCrownFace({ crown, groomAction }: { crown: DeckCrown; groomAction?:
             </span>
           </>
         )}
+        {coverage}
       </div>
-      {crown.gap && (
-        <button
-          type="button"
-          onClick={crown.gap.onJump}
-          disabled={!crown.gap.onJump}
-          className="tap-h fast -mb-1 flex w-full items-center gap-1.5 text-left"
-        >
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--warn)]" aria-hidden />
-          <span className="shrink-0 text-caption text-ink">{crown.gap.label}</span>
-          {crown.gap.detail && <span className="min-w-0 flex-1 truncate text-caption text-muted">· {crown.gap.detail}</span>}
-          {crown.gap.onJump && <Icon name="chevron-right" size={14} className="ml-auto shrink-0 text-[var(--faint)]" />}
-        </button>
+      {(crown.gap || groomAction) && (
+        // flex-wrap: Block time opens its panel in place as a full-width row
+        // (`basis-full`) under this line, never a popover.
+        <div className="-mt-1 flex flex-wrap items-center gap-x-2 pb-1">
+          {crown.gap ? (
+            <button
+              type="button"
+              onClick={crown.gap.onJump}
+              disabled={!crown.gap.onJump}
+              className="tap-h fast flex min-w-0 flex-1 items-center gap-1.5 text-left"
+            >
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--warn)]" aria-hidden />
+              <span className="shrink-0 text-caption text-ink">{crown.gap.label}</span>
+              {crown.gap.detail && <span className="min-w-0 flex-1 truncate text-caption text-muted">· {crown.gap.detail}</span>}
+              {crown.gap.onJump && <Icon name="chevron-right" size={14} className="shrink-0 text-[var(--faint)]" />}
+            </button>
+          ) : (
+            <span className="flex-1" />
+          )}
+          {groomAction}
+        </div>
       )}
-      {groomAction && <div className="mt-0.5">{groomAction}</div>}
     </div>
   );
 }
@@ -787,17 +844,51 @@ function CardShell({
 // ── coverage — which domains are carried, and when ────────────────────────────
 // The desktop strip, at phone scale: one row per domain, one cell per column, each
 // unit of work an identical accumulating pip. Empty cell = one tap to start work
-// for that domain in that column. Collapsed by default here — vertical space on a
-// phone belongs to the deck.
-function CoverageBand({
-  scope,
+// for that domain in that column. Collapsed by default — vertical space on a
+// phone belongs to the deck — and its toggle rides the crown's read line rather
+// than costing a row of its own. Shut, it says the count in words ("2/2"
+// beside the word Coverage), never a row of coloured dots you'd have to have
+// memorised; open, each row is labelled by its domain's mark.
+function CoverageToggle({
+  open,
+  onToggle,
+  covered,
+  total,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  covered: number;
+  total: number;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      aria-label={`Coverage: ${covered} of ${total} domains carried`}
+      className="tap-h fast -mr-1 flex shrink-0 items-center gap-1 pl-1 pr-1 text-caption"
+    >
+      <span className="font-semibold text-muted">Coverage</span>
+      <span className="tabular-nums text-[var(--faint)]">
+        {covered}/{total}
+      </span>
+      <Icon
+        name="chevron-down"
+        size={14}
+        className="fast text-[var(--faint)]"
+        style={{ transform: open ? undefined : "rotate(-90deg)" }}
+      />
+    </button>
+  );
+}
+
+function CoverageGrid({
   rows,
   columns,
   scrollRef,
   onScroll,
   onAdd,
 }: {
-  scope: string;
   rows: { domain: Domain; cells: number[] }[];
   columns: DeckColumn[];
   /** the rows scroll sideways with the strip above them — one grid, two scrollers. */
@@ -805,117 +896,54 @@ function CoverageBand({
   onScroll: () => void;
   onAdd: (domain: Domain, col: number) => void;
 }) {
-  const key = `nuvo.mobile.deck.coverage.${scope}`;
-  const [open, setOpen] = useState(() => {
-    try {
-      return localStorage.getItem(key) === "1";
-    } catch {
-      return false;
-    }
-  });
-  const toggle = () => {
-    setOpen((v) => {
-      try {
-        localStorage.setItem(key, v ? "0" : "1");
-      } catch {
-        /* ignore */
-      }
-      return !v;
-    });
-  };
-  const covered = rows.filter((r) => r.cells.some((c) => c > 0)).length;
-
-  // Plain language, not palette knowledge: a collapsed row of coloured dots
-  // only reads if you've memorised which hue is which domain. Name the first
-  // couple of domains with a status word instead; the rest sit behind the
-  // count expander.
-  const statusOf = (r: { cells: number[] }): string => {
-    const first = r.cells.findIndex((c) => c > 0);
-    if (first === -1) return "idle";
-    if (columns[first]?.now) return "now";
-    return columns[first]?.chip ?? "later";
-  };
-
   return (
-    <div className="shrink-0 border-b border-[var(--line-1)]">
-      <button
-        type="button"
-        onClick={toggle}
-        aria-expanded={open}
-        className="tap-h fast flex w-full items-center gap-2 px-4 text-left"
-      >
-        <span className="shrink-0 text-caption font-semibold text-muted">Coverage</span>
-        <span className="min-w-0 flex-1 truncate text-caption text-muted">
-          {rows.slice(0, 2).map((r, i) => (
-            <span key={r.domain.id}>
-              {i > 0 && " · "}
-              <span style={{ color: r.domain.color }}>{r.domain.name}</span> {statusOf(r)}
-            </span>
-          ))}
-        </span>
-        <span className="ml-auto flex shrink-0 items-center gap-1 text-caption tabular-nums text-[var(--faint)]">
-          {covered}/{rows.length}
-          <Icon
-            name="chevron-down"
-            size={14}
-            className="fast"
-            style={{ transform: open ? undefined : "rotate(-90deg)" }}
-          />
-        </span>
-      </button>
-
-      {open && (
-        // Same shape as the strip: a pinned icon gutter, and the cells scrolling
-        // beside it in lockstep with the strip's columns.
-        <div className="flex items-stretch pb-1.5">
-          <div className="shrink-0" style={{ width: GUTTER_PX }}>
-            {rows.map((r) => (
-              <span
-                key={r.domain.id}
-                className="flex h-7 items-center justify-center text-caption"
-                style={{ color: r.domain.color }}
-                title={r.domain.name}
-              >
-                <DomainSymbol value={r.domain.icon} size={14} />
-              </span>
-            ))}
+    // Same shape as the strip: a pinned icon gutter, and the cells scrolling
+    // beside it in lockstep with the strip's columns.
+    <div className="flex shrink-0 items-stretch border-b border-[var(--line-1)] py-1">
+      <div className="shrink-0" style={{ width: GUTTER_PX }}>
+        {rows.map((r) => (
+          <span
+            key={r.domain.id}
+            className="flex h-7 items-center justify-center text-caption"
+            style={{ color: r.domain.color }}
+            title={r.domain.name}
+            aria-label={r.domain.name}
+          >
+            <DomainSymbol value={r.domain.icon} size={14} />
+          </span>
+        ))}
+      </div>
+      <div ref={scrollRef} onScroll={onScroll} className="mobile-scroll min-w-0 flex-1 overflow-x-auto">
+        {rows.map((r) => (
+          <div
+            key={r.domain.id}
+            className="grid w-max min-w-full items-center"
+            style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(${COL_MIN_PX}px, 1fr))` }}
+          >
+            {columns.map((c, i) => {
+              const n = r.cells[i] ?? 0;
+              return (
+                <button
+                  key={c.key}
+                  onClick={() => onAdd(r.domain, i)}
+                  title={n > 0 ? `${n} in ${c.title}` : `Start one in ${c.title}`}
+                  aria-label={n > 0 ? `${r.domain.name}: ${n} in ${c.title}` : `Start a ${r.domain.name} one in ${c.title}`}
+                  className="fast flex h-7 items-center justify-center gap-0.5 border-l border-[var(--line-1)]"
+                  style={c.now ? { background: NOW_BAND } : undefined}
+                >
+                  {n === 0 ? (
+                    <Icon name="plus" size={10} className="text-[var(--faint)] opacity-60" />
+                  ) : (
+                    Array.from({ length: Math.min(n, 4) }).map((_, k) => (
+                      <span key={k} className="h-2 w-2 rounded-[2.5px]" style={{ background: r.domain.color }} />
+                    ))
+                  )}
+                </button>
+              );
+            })}
           </div>
-          <div ref={scrollRef} onScroll={onScroll} className="mobile-scroll min-w-0 flex-1 overflow-x-auto">
-            {rows.map((r) => (
-              <div
-                key={r.domain.id}
-                className="grid w-max min-w-full items-center"
-                style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(${COL_MIN_PX}px, 1fr))` }}
-              >
-                {columns.map((c, i) => {
-                  const n = r.cells[i] ?? 0;
-                  return (
-                    <button
-                      key={c.key}
-                      onClick={() => onAdd(r.domain, i)}
-                      title={n > 0 ? `${n} in ${c.title}` : `Start one in ${c.title}`}
-                      className="fast flex h-7 items-center justify-center gap-0.5 border-l border-[var(--line-1)]"
-                      style={c.now ? { background: NOW_BAND } : undefined}
-                    >
-                      {n === 0 ? (
-                        <Icon name="plus" size={10} className="text-[var(--faint)] opacity-60" />
-                      ) : (
-                        Array.from({ length: Math.min(n, 4) }).map((_, k) => (
-                          <span
-                            key={k}
-                            className="h-2 w-2 rounded-[2.5px]"
-                            style={{ background: r.domain.color }}
-                          />
-                        ))
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   );
 }

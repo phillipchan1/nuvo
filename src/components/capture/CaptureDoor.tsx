@@ -113,6 +113,11 @@ export interface CaptureDoorProps {
   /** The host needs the field itself (to raise the iOS keyboard, D-115). */
   fieldRef?: MutableRefObject<HTMLInputElement | null>;
   autoFocus?: boolean;
+  /** Words a dismissed door was holding — the phone keeps an unsent line
+   *  through a stray scrim tap. Only the words: the face re-reads them. */
+  initialText?: string;
+  /** Every change to the line, so a host can hold it past a dismiss. */
+  onTextChange?: (text: string) => void;
 }
 
 export default function CaptureDoor({
@@ -125,9 +130,15 @@ export default function CaptureDoor({
   initialDurationMinutes = null,
   fieldRef,
   autoFocus,
+  initialText = "",
+  onTextChange,
 }: CaptureDoorProps) {
   const panel = variant === "panel";
-  const [text, setText] = useState("");
+  const [text, setTextState] = useState(initialText);
+  const setText = (v: string) => {
+    setTextState(v);
+    onTextChange?.(v);
+  };
   const [kind, setKindState] = useState<CaptureKind>(initialKind);
   const [day, setDay] = useState<string | null>(initialStart ? toDateISO(initialStart) : defaultDoDate);
   const [start, setStart] = useState<Date | null>(initialStart);
@@ -449,6 +460,7 @@ export default function CaptureDoor({
         aria-label="Capture a task, event or slot"
         enterKeyHint={kind === "event" ? "next" : "done"}
         enterDisabled
+        initialText={initialText}
         onTextChange={(v) => {
           setText(v);
           if (error) setError(null);

@@ -38,7 +38,14 @@ const MOVE_TOL_PX = 10;
  * `onOpen` is what "Open" means on the calling surface — on the phone that is
  * the detail Sheet, not the desktop record modal.
  */
-export function useRecordActions(onOpen: (kind: RecordKind, id: string) => void) {
+export function useRecordActions(
+  onOpen: (kind: RecordKind, id: string) => void,
+  opts: {
+    /** Mounted inside the record it acts on (the detail sheet's ⋯): "Open"
+     *  would point at the screen already showing, so it is left off. */
+    inRecord?: boolean;
+  } = {},
+) {
   const [state, setState] = useState<{ kind: RecordKind; id: string } | null>(null);
   // Shipping asks first, and the assessment outlives the sheet that launched it.
   const [shipId, setShipId] = useState<string | null>(null);
@@ -92,7 +99,7 @@ export function useRecordActions(onOpen: (kind: RecordKind, id: string) => void)
 
   const sheet = (
     <>
-      {state && <RecordActionSheet state={state} onOpen={onOpen} onClose={close} onShip={setShipId} />}
+      {state && <RecordActionSheet state={state} onOpen={onOpen} inRecord={opts.inRecord} onClose={close} onShip={setShipId} />}
       {shipId && <ProjectShipAssess id={shipId} onClose={() => setShipId(null)} />}
     </>
   );
@@ -103,11 +110,13 @@ export function useRecordActions(onOpen: (kind: RecordKind, id: string) => void)
 function RecordActionSheet({
   state,
   onOpen,
+  inRecord,
   onClose,
   onShip,
 }: {
   state: { kind: RecordKind; id: string };
   onOpen: (kind: RecordKind, id: string) => void;
+  inRecord?: boolean;
   onClose: () => void;
   onShip: (id: string) => void;
 }) {
@@ -120,7 +129,7 @@ function RecordActionSheet({
       ? data.projects.find((p) => p.id === state.id)
       : data.initiatives.find((i) => i.id === state.id);
 
-  const items = buildRecordActions(state.kind, state.id, data, {
+  const built = buildRecordActions(state.kind, state.id, data, {
     openRecord: onOpen,
     updateProject,
     deleteProject,
@@ -130,6 +139,7 @@ function RecordActionSheet({
     onClose,
     week,
   });
+  const items = inRecord && built[0]?.kind === "action" && built[0].label === "Open" ? built.slice(1) : built;
 
   const run = (item: Extract<RecordAction, { kind: "action" }>) => {
     // Delete is hard (no undo — see useVertical), so it asks in place rather

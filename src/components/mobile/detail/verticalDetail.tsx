@@ -437,8 +437,16 @@ export function ProjectScreen({ d, store, id }: { d: VerticalData; store: Store;
 export function projectContext(d: VerticalData, p: Project): ReactNode {
   const dom = domainById(d, p.domainId);
   const init = p.initiativeId ? initiativeById(d, p.initiativeId) : null;
-  const head = dom ? <><DomainSymbol value={dom.icon} size={12} /> {dom.name}</> : "—";
-  return <span className="inline-flex items-center gap-1">{head}{init && <> · {init.name}</>}</span>;
+  // A flex row whose words are their own truncating box: an `inline-flex`
+  // wrapper is atomic to the row's `truncate`, so a long initiative was
+  // hard-clipped mid-word at 320px instead of ending in an ellipsis.
+  const words = `${dom ? dom.name : "—"}${init ? ` · ${init.name}` : ""}`;
+  return (
+    <span className="flex min-w-0 items-center gap-1">
+      {dom && <DomainSymbol value={dom.icon} size={12} className="shrink-0" />}
+      <span className="min-w-0 truncate">{words}</span>
+    </span>
+  );
 }
 
 // ── Rows ─────────────────────────────────────────────────────────────────────
@@ -737,8 +745,10 @@ export function ProgressBar({ pct, color }: { pct: number; color: string }) {
  *  field the visual weight of the work itself; a native `<select>` is one 44px
  *  row, opens iOS's own wheel, and reads its current value at a glance. */
 export function StatusSelect({ value, onPick }: { value: ProjectStatus; onPick: (s: ProjectStatus) => void }) {
+  // `!flex`: the unlayered `.ph-field { display: block }` beats a plain `flex`
+  // utility, which stacked the chevron under the value.
   return (
-    <div className="ph-field flex items-center gap-2.5 !py-0">
+    <div className="ph-field !flex items-center gap-2.5 !py-0">
       <Dot color={STATUS_COLOR[value]} shape="round" />
       <select
         value={value}

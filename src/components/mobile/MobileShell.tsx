@@ -329,7 +329,13 @@ export default function MobileShell() {
     const fact = at ? `Done at ${at}${day.backMins ? ` · ${spanWords(day.backMins)} back` : ""}` : "Done";
     return { ...calHero, stop: true, fact, factAccent: true };
   }, [calHero, day]);
-  const { data: weekTasks = [], isPending: weekPending } = useSprintTasks(vertical.sprint?.id ?? null);
+  const { data: weekTasks = [], isPending: weekQueryPending } = useSprintTasks(vertical.sprint?.id ?? null);
+  // A week with no sprint row yet disables the query, and a disabled query is
+  // `isPending` forever in TanStack v5 — the Week segment sat on a skeleton
+  // for every fresh week. No sprint means nothing to wait for.
+  const weekPending = vertical.sprint ? weekQueryPending : false;
+  // The capture sheet's unsent line, kept past an accidental dismiss.
+  const heldCapture = useRef("");
   const { data: allTasks = [] } = useAllTasks();
   // The floor under delete. Its own query (every other read excludes trashed
   // rows), and the lens that reveals it appears only when it holds something.
@@ -837,6 +843,7 @@ export default function MobileShell() {
       {capture && (
         <MobileCapture
           onClose={() => setCapture(null)}
+          held={{ text: heldCapture.current, set: (t) => (heldCapture.current = t) }}
           initialKind={capture.kind}
           initialStart={capture.at?.start ?? null}
           initialDurationMinutes={capture.at?.durationMinutes ?? null}

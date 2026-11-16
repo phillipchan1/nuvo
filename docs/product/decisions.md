@@ -8651,3 +8651,34 @@ Ledger: no row; a convention. Removes the last place the tray needed a mouse. Ad
 
 *Status: shipped. Pinned in `tests/list-tab-keys.test.ts`. Driven at `?rail=offers` (] and [ walk
 Today → Inbox → Today, the tray lights its first row, hover shows "Inbox ([ ])").*
+
+**D-224 · 2026-11-15 · The phone deck's crown is two lines at most; the horizon's name goes,
+the strip says it.** *(Asked by the operator after the mobile audit: "redesign it.")* Projects and
+Initiatives → On Deck stacked four rows above the pager — the horizon name and readiness, the
+gap line, *Block time* on its own row, and the Coverage summary — 222px on a 375×812 phone,
+with 171px of shell chrome above that. On a 568px phone the Initiatives face left ~60px for the
+initiatives themselves.
+
+→ `MobileDeck`'s crown is now **line 1, the read** — "0/3 ready", the meter, and the Coverage
+toggle (its count in words, "Coverage 2/2") — and **line 2, the debt**, only when there is one:
+the gap line with *Block time* at its end, because both act on the same unshaped work. The
+Coverage grid opens under the strip, aligned with its columns, as before. "Next 6 weeks" /
+"Next 4 quarters" left the screen (kept for screen readers): the strip directly below names
+every column, so the eyebrow restated a heading. The pager grew 361 → 438px at 375×812;
+at 320×568 the first initiative is fully in view. Static on purpose: a header that collapses
+as you scroll would be chrome that resizes under the thumb (D-123).
+
+Found on the way: `weekName` / `weekTick` snapped every date to a Sunday week, so on a Sunday
+a Monday-start person's current week was named "Last week" / "−1" and the next one "Now",
+while the deck lit the current column as now. Callers that pass a board's own `weekStart`
+now say so (`asWeekStart`) and are counted in that week's convention — the deck, the
+placement band, the desktop On Deck titles. The rituals still use the Sunday snap.
+
+**Anchor.** Closes no new row; it makes **W1** ("Can I actually carry this week?") and the On Deck rows
+legible on a small phone. Strains **P11** slightly — "Coverage" is now a word on a line rather
+than a row label; no new name. Four no's: no pool, no name, no data dependence, not
+operator-specific.
+
+*Status: built 2026-11-15 — `mobile/deck/MobileDeck.tsx`, `lib/week.ts`, `tests/week-names.test.ts`.
+Verified in the dev app at 375×812 and 320×568 (dark and light), Coverage open/shut, Block time's
+in-place panel; desktop On Deck unchanged. Not run on a device.*

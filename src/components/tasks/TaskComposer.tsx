@@ -90,6 +90,8 @@ export interface TaskComposerProps {
   "aria-label"?: string;
   /** The host reads what's being typed (the capture sheet seeds an event from it). */
   onTextChange?: (text: string) => void;
+  /** The line to open with — a host that held an unsent line past a dismiss. */
+  initialText?: string;
   /** The host needs the element itself (to raise the iOS keyboard, D-115). */
   fieldRef?: MutableRefObject<HTMLInputElement | null>;
   /** Enter does nothing here — the host submits some other way (an event form). */
@@ -196,6 +198,7 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
     footer,
     "aria-label": ariaLabel,
     onTextChange,
+    initialText = "",
     fieldRef,
     enterDisabled,
     enterKeyHint = "enter",
@@ -210,8 +213,8 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
     [JSON.stringify(context ?? {}), placement], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const { capture, preview, env } = useTaskCapture(stableContext);
-  const [text, setText] = useState("");
-  const [caret, setCaret] = useState(0);
+  const [text, setText] = useState(initialText);
+  const [caret, setCaret] = useState(initialText.length);
   const [focused, setFocused] = useState(false);
   const [literal, setLiteral] = useState<ReadonlySet<string>>(() => new Set());
   const [pasted, setPasted] = useState<string[] | null>(null);

@@ -408,7 +408,7 @@ export default function OnDeckPlanner({
             domain={domain}
             column={w.idx + 2}
             dropAttr={{ "data-week": String(w.idx) }}
-            label={`New ${name} project — ${weekName(w.weekStart).toLowerCase()}`}
+            label={`New ${name} project — ${weekName(w.weekStart, { asWeekStart: true }).toLowerCase()}`}
             onAdd={() => domain && addForDomain(domain, w.idx)}
             // Dragging a project in from the rail: its OWN lane lights in the week
             // under the pointer — exactly where it will land, before the drop.
@@ -891,7 +891,7 @@ export default function OnDeckPlanner({
                       data-week={w.idx}
                       className="dk-head-cell"
                       {...colState(w.idx)}
-                      title={`${weekName(w.weekStart)} · ${weekDates(w.weekStart)}`}
+                      title={`${weekName(w.weekStart, { asWeekStart: true })} · ${weekDates(w.weekStart)}`}
                     >
                       <span>{format(w.weekStart, "MMM")}</span>
                       <span className="dk-head-num">{format(w.weekStart, "d")}</span>
@@ -933,9 +933,9 @@ export default function OnDeckPlanner({
                       // and Enter/Space, so starting a project *in a chosen week*
                       // is never a mouse-only act.
                       {...pressable(() => { setComposeDomain(null); setComposeWeek(w.idx); }, {
-                        label: `New project — ${weekName(w.weekStart).toLowerCase()}`,
+                        label: `New project — ${weekName(w.weekStart, { asWeekStart: true }).toLowerCase()}`,
                       })}
-                      title={composeWeek === w.idx ? undefined : `New project — ${weekName(w.weekStart).toLowerCase()}`}
+                      title={composeWeek === w.idx ? undefined : `New project — ${weekName(w.weekStart, { asWeekStart: true }).toLowerCase()}`}
                       className="dk-col"
                       {...colState(w.idx)}
                     >

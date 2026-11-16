@@ -756,7 +756,13 @@ html:root [data-sonner-toaster] [data-sonner-toast] [data-button] {
 /* ── Touch sizes — the same parts under a finger (golden rule: 44px) ──────── */
 @media (pointer: coarse) {
   .k-btn { min-height: 44px; }
-  .k-btn[data-size="xs"] { min-height: 36px; }
+  .k-btn[data-size="xs"] { min-height: 36px; position: relative; }
+  /* An xs button stays 36px to the eye but takes a 44px finger: the hit area
+     grows past its edges (the bulk bar's trick, made the kit's). Same for a
+     chip that is a button — 20px tall drawn, 44px to tap. */
+  .k-btn[data-size="xs"]::before { content: ""; position: absolute; inset: -4px 0; }
+  button.k-chip { position: relative; }
+  button.k-chip::before { content: ""; position: absolute; inset: -12px -2px; }
   .k-btn[data-icon] { min-width: 44px; }
   .k-field { min-height: 44px; font-size: 16px; }
   .k-field input, .k-field textarea { font-size: 16px; } /* iOS zooms anything smaller */
