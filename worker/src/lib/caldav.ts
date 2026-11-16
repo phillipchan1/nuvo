@@ -380,6 +380,48 @@ export async function putEvent(
   return res.headers.get("ETag");
 }
 
+/** If-Match needs the strong form; a weak `W/"x"` never matches and Apple answers 412. */
+export function strongEtag(etag: string | null | undefined): string | null {
+  const t = (etag ?? "").trim();
+  if (!t) return null;
+  return t.replace(/^W\//i, "");
+}
+
+/** What a 412 tells us about the ETag, without logging the ETag itself. */
+function etagShape(etag: string | null | undefined): string {
+  if (etag == null) return "none";
+  return `${/^W\//i.test(etag) ? "weak" : "strong"},${/"/.test(etag) ? "quoted" : "bare"},len=${etag.length}`;
+}
+
+/**
+ * Write an edit of a resource you just fetched. Apple has answered 412 to a
+ * fresh ETag from the Worker, failing every edit. On 412 we re-read: if the
+ * resource is byte-identical to what the edit was built from, nothing changed
+ * on Apple's side and the write goes through unconditionally; if it changed,
+ * we refuse rather than overwrite someone's newer copy.
+ */
+export async function putEventOver(
+  href: string,
+  ics: string,
+  username: string,
+  password: string,
+  base: { ics: string; etag: string | null },
+): Promise<string | null> {
+  try {
+    return await putEvent(href, ics, username, password, strongEtag(base.etag));
+  } catch (e) {
+    if (!(e instanceof Error) || !/\bHTTP 412\b/.test(e.message)) throw e;
+  }
+  const now = await getEvent(href, username, password);
+  if (now.ics !== base.ics) {
+    throw new Error(
+      `This event changed on Apple Calendar since it was opened — close it and open it again. (HTTP 412; etag ${etagShape(base.etag)} → ${etagShape(now.etag)})`,
+    );
+  }
+  console.warn(`[caldav] 412 on an unchanged resource; writing without If-Match (etag ${etagShape(base.etag)})`);
+  return await putEvent(href, ics, username, password);
+}
+
 /** DELETE an event resource. 404/410 are treated as already-gone by the caller. */
 export async function deleteEvent(
   href: string,

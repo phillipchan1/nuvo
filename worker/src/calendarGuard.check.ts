@@ -17,7 +17,7 @@ import {
   installIcsFetchTimeoutForTests,
   isBlockedHost,
 } from "./lib/ssrf.ts";
-import { deleteEvent, isIcloudDavUrl, putEvent } from "./lib/caldav.ts";
+import { deleteEvent, isIcloudDavUrl, putEvent, putEventOver, strongEtag } from "./lib/caldav.ts";
 import { discoverAddressBooks, fetchContacts } from "./lib/carddav.ts";
 import { handleIcloudEvents, pickVisibleCalendar } from "./calendar/icloudEvents.ts";
 import { runIcsSync } from "./calendar/icsFeed.ts";
@@ -586,6 +586,48 @@ await m365RefreshCase("missing access_token", { status: 200, body: JSON.stringif
   ok(logsAfter.rows[0]?.n === logsBefore.rows[0]?.n, "missing MS client: no sync_log noise");
   ok(fetched === 0, "missing MS client: no Microsoft request");
   restore();
+}
+
+// Apple answered 412 to a fresh ETag from the Worker, failing every iCloud edit.
+{
+  ok(strongEtag('W/"abc"') === '"abc"', "a weak ETag is sent in its strong form");
+  ok(strongEtag('"abc"') === '"abc"', "a strong ETag is untouched");
+  ok(strongEtag(null) === null && strongEtag("") === null, "no ETag means no If-Match");
+
+  const HREF = "https://caldav.icloud.com/123/calendars/home/e.ics";
+  const BASE = "BEGIN:VCALENDAR\r\nUID:e\r\nEND:VCALENDAR\r\n";
+  const run = async (current: string) => {
+    const calls: { method: string; ifMatch: string | null }[] = [];
+    const restore = installOutboundFetchForTests(async (_input, init) => {
+      const h = new Headers(init?.headers);
+      const method = String(init?.method ?? "GET");
+      calls.push({ method, ifMatch: h.get("If-Match") });
+      if (method === "GET") return new Response(current, { status: 200, headers: { ETag: '"v2"' } });
+      if (h.get("If-Match")) return new Response(null, { status: 412 });
+      return new Response(null, { status: 204, headers: { ETag: '"v3"' } });
+    });
+    let err = "";
+    let etag: string | null = null;
+    try {
+      etag = await putEventOver(HREF, "NEXT", "u", "p", { ics: BASE, etag: 'W/"v1"' });
+    } catch (e) {
+      err = e instanceof Error ? e.message : String(e);
+    }
+    restore();
+    return { calls, err, etag };
+  };
+
+  const same = await run(BASE);
+  ok(same.calls[0]?.method === "PUT" && same.calls[0]?.ifMatch === '"v1"', "first write carries the strong ETag");
+  ok(same.err === "" && same.etag === '"v3"', `412 on an unchanged event still saves (err=${same.err})`);
+  ok(
+    same.calls.map((c) => c.method).join(",") === "PUT,GET,PUT" && same.calls[2]?.ifMatch === null,
+    "412 → re-read → unconditional write only when unchanged",
+  );
+
+  const moved = await run(BASE + "X");
+  ok(/changed on Apple Calendar/.test(moved.err), "412 on a changed event refuses instead of overwriting");
+  ok(moved.calls.filter((c) => c.method === "PUT").length === 1, "a changed event is never written over");
 }
 
 await db.close();

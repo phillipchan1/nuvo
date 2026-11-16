@@ -1,6 +1,6 @@
 import { jsonParam, type Sql } from "../db.ts";
 import type { Store } from "../store.ts";
-import { deleteEvent, getEvent, putEvent } from "../lib/caldav.ts";
+import { deleteEvent, getEvent, putEvent, putEventOver } from "../lib/caldav.ts";
 import { parseRowAt } from "../lib/eventWriteback.ts";
 import {
   addExdate,
@@ -295,7 +295,7 @@ export async function handleIcloudEvents(
     }
     if (split) {
       if (action === "delete") {
-        const headEtag = await putEvent(href, split.head, account.email, password, got.etag);
+        const headEtag = await putEventOver(href, split.head, account.email, password, got);
         await materializeIcloudResource(sql, { ...series, etag: headEtag }, split.head);
         await logSync(sql, "icloud", "event-delete-following", "ok", undefined, userId);
         return { status: 200, body: { ok: true } };
@@ -306,7 +306,7 @@ export async function handleIcloudEvents(
       const tailEtag = await putEvent(newHref, tail, account.email, password);
       let headEtag: string | null;
       try {
-        headEtag = await putEvent(href, split.head, account.email, password, got.etag);
+        headEtag = await putEventOver(href, split.head, account.email, password, got);
       } catch (e) {
         await deleteEvent(newHref, account.email, password).catch(() => {});
         throw e;
@@ -329,7 +329,7 @@ export async function handleIcloudEvents(
     if (isOccurrence && scope !== "ALL" && occurrence) {
       const got = await getEvent(href, account.email, password);
       const next = addExdate(got.ics, occurrence);
-      await putEvent(href, next, account.email, password, got.etag);
+      await putEventOver(href, next, account.email, password, got);
       await deleteOwnedEventsByIds(store, [eventId]);
     } else {
       const status = await deleteEvent(href, account.email, password);
@@ -395,7 +395,7 @@ export async function handleIcloudEvents(
     const next = thisOccurrence
       ? setPartstat(got.ics, account.email, partstat, occurrence)
       : setPartstat(got.ics, account.email, partstat);
-    await putEvent(href, next, account.email, password, got.etag);
+    await putEventOver(href, next, account.email, password, got);
     const selfRsvp = String(body.responseStatus);
     if (scope === "ALL") {
       await sql`
@@ -429,7 +429,7 @@ export async function handleIcloudEvents(
 
   if (p.recurrence !== undefined) {
     const next = editSeries(got.ics, { recurrence: p.recurrence }, { start_at: String(evt.start_at), end_at: String(evt.end_at) }, timeZone);
-    const newEtag = await putEvent(href, next, account.email, password, got.etag);
+    const newEtag = await putEventOver(href, next, account.email, password, got);
     const event = await materializeIcloudResource(sql, { ...series, etag: newEtag }, next, {
       rowId: eventId,
       anchorMs: new Date(String(evt.start_at)).getTime(),
@@ -462,7 +462,7 @@ export async function handleIcloudEvents(
     });
   }
 
-  const newEtag = await putEvent(href, next, account.email, password, got.etag);
+  const newEtag = await putEventOver(href, next, account.email, password, got);
 
   if (scope !== "ALL") {
     const rowPatch: Record<string, unknown> = {};
