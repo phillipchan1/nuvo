@@ -1048,7 +1048,7 @@ html:root .rest-deck-all:focus-visible { outline: none; box-shadow: 0 0 0 2px va
    open into the rail's lower part. The day's blocks are already on the grid. */
 .rail-tray-shut .rail-list { display: none; }
 .rail-tray-open .rail-scroll { flex: 0 1 auto; max-height: 42%; }
-.rail-tray-toggle { margin-left: 2px; }
+.rail-tabs > .k-fold { align-self: center; margin-left: -4px; }
 .crown-line-solo { padding: 8px 16px 10px; border-bottom: 1px solid var(--line-1); }
 
 /* The day closed (D-209): the rest of the working day on the grid, said once. */

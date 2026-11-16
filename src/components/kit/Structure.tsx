@@ -44,6 +44,18 @@ export function SectionHeader({
   );
 }
 
+/** The fold control on its own (D-233) — the very chevron a SectionHeader's
+ *  disclosure draws, for a header whose label isn't one button (the rail's
+ *  Today · Inbox tabs). Same glyph, same colour, same turn: down when open,
+ *  right when folded. One way to fold anything in the rail. */
+export function FoldChevron({ collapsed, onToggle, label }: { collapsed: boolean; onToggle: () => void; label: string }) {
+  return (
+    <button type="button" className="k-fold" data-collapsed={collapsed || undefined} aria-expanded={!collapsed} aria-label={label} title={label} onClick={onToggle}>
+      <Icon name="chevron-down" size={12} className="k-chev" />
+    </button>
+  );
+}
+
 type RowProps = Omit<HTMLAttributes<HTMLDivElement>, "title"> & {
   leading?: ReactNode;
   title: ReactNode;

@@ -8927,3 +8927,19 @@ test account at 9:51am: an 8:30 block of two undone tasks read "didn't happen (8
 and offered Mon 1–1:30pm; "Next" named the 2pm task; with one ticked, its other task moved alone
 to 1pm and Undo put it back in the block; with two left, they moved as a new block of the same
 name. The phone's card read "Rest of … · missed" at 375px.*
+
+**D-233 · 2026-11-16 · The rail folds one way: the section's chevron, right after the count.**
+*(Asked by the operator: "i can imagine the way to collapse projects and today/inbox having the
+same ui cause its inconsistent right now".)*
+
+→ "Projects 9 ›", "Overdue 2 ⌄" and "On the clock 3 ⌄" fold with the chevron right after their
+count, faint, down when open and right when folded. The Today · Inbox tray folded with its own
+IconButton at the far end of the strip, between Trash and the filter, pointing **up** when folded.
+It now wears the same chevron in the same place — right after "Inbox 0" — through a kit part
+(`FoldChevron`, the glyph SectionHeader draws), so a fold can't be drawn a second way. Pressing the
+open tab still folds it too.
+
+Anchor: no ledger row; a consistency fix (P11 — one way to say one thing). No new name.
+
+*Status: built 2026-11-16 on `claude/readiness-dials`. Driven at `?rail=offers` (open ⌄, folded ›)
+and shown at `?kit`.*

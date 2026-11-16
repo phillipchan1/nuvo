@@ -36,6 +36,7 @@ import {
   Row,
   SearchField,
   SectionHeader,
+  FoldChevron,
   Segmented,
   Select,
   Switch,
@@ -260,6 +261,11 @@ function Column({ theme }: { theme: "light" | "dark" }) {
       <Block title="Structure" part="SectionHeader · Row · EmptyState · Property · Card">
         <div style={{ borderRadius: "var(--r-card)", boxShadow: "0 0 0 1px var(--line-1)", padding: 4, background: "var(--panel)" }}>
           <SectionHeader title="On the clock" count={6} collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} actions={<IconButton size="xs" label="Add" icon={plus} />} />
+          <div className="k-section">
+            <span>Today</span>
+            <span className="k-count">5</span>
+            <FoldChevron collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} label={collapsed ? "Open" : "Fold"} />
+          </div>
           {!collapsed && (
             <>
               <Row leading={<TaskCheck checked={false} onChange={() => {}} label="Review activation data" />} title="Review activation data" meta="4–5:30pm" trailing={<Dot color={HUES.work} />} onActivate={() => {}} />

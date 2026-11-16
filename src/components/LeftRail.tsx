@@ -41,7 +41,7 @@ import { RAIL_OFFERS_MAX, type RailOfferCandidate } from "../lib/railOffers";
 import type { Placement } from "../lib/compose";
 import { InboxAddressHint } from "./InboxAddress";
 import { skipWhenAsleep } from "./KeepAlive";
-import { Button, Dot, Input, IconButton, LIST_TAB_KEYS, listTabTitle, MenuLabel, Picker, Popover, SectionHeader, useListTabKeys } from "./kit";
+import { Button, Dot, FoldChevron, Input, IconButton, LIST_TAB_KEYS, listTabTitle, MenuLabel, Picker, Popover, SectionHeader, useListTabKeys } from "./kit";
 import SlotRunHeader, { slotRunFace } from "./tasks/SlotRunHeader";
 import { clockEntries, type ClockEntry } from "../lib/slotRuns";
 import { coverage, pruneTo, rangeBetween, selectionClosesOverlay, toggleGroup, toggleId } from "../lib/selection";
@@ -1176,6 +1176,13 @@ function LeftRail({
               </button>
             );
           })}
+          {/* Folds like every section in the rail (D-233): the section's own
+              chevron, right after the counts — down open, right folded. */}
+          <FoldChevron
+            collapsed={!trayOpen}
+            onToggle={() => setTrayOpen(!trayOpen)}
+            label={trayOpen ? "Fold Today and Inbox" : "Open Today and Inbox"}
+          />
           <div className="rail-tabs-end">
             {trashed.length > 0 && (
               <IconButton
@@ -1191,14 +1198,6 @@ function LeftRail({
                 }}
               />
             )}
-            <IconButton
-              size="xs"
-              className="rail-tray-toggle"
-              label={trayOpen ? "Fold Today and Inbox" : "Open Today and Inbox"}
-              aria-expanded={trayOpen}
-              icon={<Icon name="chevron-down" size={14} style={trayOpen ? undefined : { transform: "rotate(180deg)" }} />}
-              onClick={() => setTrayOpen(!trayOpen)}
-            />
             {/* The filter modifies the face you're looking at, so it rides the
                 strip. Inert on Trash — a filtered trash could hide the row you
                 came back for without saying so. */}

@@ -428,6 +428,12 @@ button.k-chip { padding-right: 4px; }
 }
 .k-section .k-chev { color: var(--faint); transition: transform var(--d-base) var(--ease-out); }
 .k-section[data-collapsed] .k-chev { transform: rotate(-90deg); }
+/* the same chevron, standing alone beside a label that isn't one button (D-233) */
+.k-fold { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: var(--r-chip); background: transparent; color: var(--faint); }
+.k-fold .k-chev { color: inherit; transition: transform var(--d-base) var(--ease-out); }
+.k-fold[data-collapsed] .k-chev { transform: rotate(-90deg); }
+@media (hover: hover) { .k-fold:hover { color: var(--muted); } }
+html:root .k-fold:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
 
 .k-row {
   display: flex;

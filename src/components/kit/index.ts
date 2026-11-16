@@ -4,7 +4,7 @@ export { Button, IconButton, Kbd, Dest, OfferChip, type ButtonKind, type ButtonS
 export { Input, Textarea, SearchField, FormField } from "./Field";
 export { TaskCheck, Checkbox, Switch, Segmented, Tabs, type Choice } from "./Choice";
 export { Chip, ChipButton, Dot, Readiness, Avatar, AvatarStack, type ChipTone, type ReadinessStep } from "./Marks";
-export { SectionHeader, Row, EmptyState, Property, Card } from "./Structure";
+export { SectionHeader, FoldChevron, Row, EmptyState, Property, Card } from "./Structure";
 export { OfferCard, type OfferCardProps } from "./OfferCard";
 export { Crown, CrownLine, type CrownProps } from "./Crown";
 export { Stop, MarkBar, MarkLabel, MarkSet, DayCrown, Dial, FinishRing, UnitCrown } from "./Readings";
