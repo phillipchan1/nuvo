@@ -53,8 +53,9 @@ export function useOfferPreview(): OfferPreview | null {
 
 // ── Other times (R13) ──────────────────────────────────────────────────────
 // While an offer's chooser is open, every option is drawn on the grid at once,
-// numbered: the one pointed at (or chosen) solid, the rest as quiet ghosts. A
-// ghost clicked picks it; a time painted on empty grid is "your pick".
+// numbered: the one pointed at (or chosen) solid, the rest as quiet ghosts. Any
+// of them clicked — solid or ghost — is chosen (placed); a time clicked on
+// empty grid is "your pick", checked and shown, and placed when clicked again.
 
 export interface OfferChoiceOption {
   key: string;
@@ -70,7 +71,8 @@ export interface OfferChoice {
   options: OfferChoiceOption[];
   /** the option drawn solid */
   strong: string | null;
-  onPick: (key: string) => void;
+  /** an option clicked on the grid: place the work there */
+  onChoose: (key: string) => void;
   /** empty time clicked on the grid while choosing — "your pick" */
   onPickTime?: (start: Date) => void;
 }

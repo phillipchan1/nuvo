@@ -17,6 +17,7 @@
  */
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Button, Kbd, Menu, MenuItem, MenuLabel, MenuSeparator, Popover } from "../kit";
 import { PickSheet } from "../mobile/sheetKit";
 import { useWeekComposer } from "../../hooks/useFindTime";
@@ -196,8 +197,8 @@ function DeskChooser({
   }, [mine]);
 
   // Draw every option on the Schedule while this is open (R3 · R13).
-  const live = useRef({ onMine, onPicking, onOpen });
-  live.current = { onMine, onPicking, onOpen };
+  const live = useRef({ onMine, onHold, options });
+  live.current = { onMine, onHold, options };
   useEffect(() => {
     setOfferChoice({
       id,
@@ -209,10 +210,15 @@ function DeskChooser({
         end: instantAt(o.at.dayISO, o.at.startMin + o.at.durationMin),
       })),
       strong,
-      onPick: (key) => {
-        setStrong(key);
-        live.current.onPicking(false);
-        live.current.onOpen(true);
+      // a numbered time on the grid, clicked: that's the choice — the same act
+      // as choosing it in the menu. It used to only light the option and
+      // reopen the menu, and the solid one did nothing at all, so clicking the
+      // time you wanted, again and again, never placed it.
+      onChoose: (key) => {
+        const o = live.current.options.find((x) => x.key === key);
+        if (!o) return;
+        if (o.past) return void toast("That time has passed");
+        live.current.onHold(o.at, null);
       },
       onPickTime: (start) => live.current.onMine(snapPick(start, first.durationMin, toDateISO(start))),
     });

@@ -8801,3 +8801,26 @@ repair's Other times lists Move to ×3 + Pick a time yourself, and choosing #2 m
 account had nothing on this week to drive. Pinned in `tests/get-ready-rail.test.tsx` and
 `tests/memory-rhythm.test.ts` (split series, a later series, one-offs). The rest deck is covered
 by typecheck and its test, not driven.*
+
+**D-229 · 2026-11-16 · A numbered time on the Schedule, clicked, is chosen.**
+*(Asked by the operator, picking a time for "Decide on Defiant Law": "im clicking wed 4-445 over and over again and nothing happens..")*
+
+**Why.** While Other times is open (R13, D-216), the Schedule draws every option numbered: the one
+pointed at is solid, and the rest are dashed ghosts. A click on the **solid** one went to a no-op
+(`onSelect: () => {}`). A click on a ghost only lit it and reopened the menu, so placing it took a
+second act in a different place. The operator had pointed at option 2 in the menu (making it
+solid), chose *Pick a time yourself…*, then clicked option 2 on the grid, repeatedly, and nothing
+happened.
+
+**What.** `OfferChoice.onPick` (light it, reopen the menu) became `onChoose`: a click on any
+numbered option on the grid, solid or ghost, places the work there through the chip's own act
+(`onHold`). That's the same write and toast-with-Undo as choosing it in the menu. A past option says
+"That time has passed" and isn't placed. Clicking empty time while picking still adds **your
+pick**, checked and drawn solid with its cost; clicking it then places it.
+
+**Anchor.** No new row. It fixes R13 doing nothing on its main surface (**P4**: the app shouldn't
+make you hunt for the act you just asked for). No new pool or name, and nothing account-specific.
+
+*Status: built 2026-11-16 on `claude/pick-time-click`. Driven in the dev app on a local account:
+Pick a time yourself → click the dashed 2 → placed Tue 8–8:45am; again → click the solid 1 → placed
+Today 9–10am with Undo (both restored afterwards). Pinned in `tests/other-times-grid.test.tsx`.*
