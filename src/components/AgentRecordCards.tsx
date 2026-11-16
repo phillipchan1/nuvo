@@ -210,13 +210,7 @@ function CalendarChip({ event, label }: { event: ExternalEvent; label?: string }
   const { settings } = useSettings();
   const { moveEventToCalendar } = useExternalEventMutations();
 
-  const hidden = new Set(settings?.hidden_calendar_ids ?? []);
-  const groups = writableCalendarTargets(accounts ?? [], event.calendar_id)
-    .map((g) => ({
-      ...g,
-      calendars: g.calendars.filter((c) => !hidden.has(c.id) || c.id === event.calendar_id),
-    }))
-    .filter((g) => g.calendars.length > 0);
+  const groups = writableCalendarTargets(accounts ?? [], event.calendar_id, settings?.hidden_calendar_ids);
   const count = groups.reduce((n, g) => n + g.calendars.length, 0);
   const writable = isWritableAccount(accounts?.find((a) => a.id === event.account_id));
 

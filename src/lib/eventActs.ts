@@ -32,8 +32,10 @@ export function duplicateEventInput(
     end_at: ev.end_at,
     all_day: ev.all_day,
     location: ev.location ?? undefined,
-    accountId: ev.account_id,
-    calendarId: ev.calendar_id,
+    // An unconfirmed optimistic row carries "" here; the route refuses a
+    // non-uuid id, so let it fall back to the default calendar instead.
+    accountId: ev.account_id || undefined,
+    calendarId: ev.calendar_id || undefined,
     notifyGuests: false,
   };
 }

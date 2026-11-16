@@ -29,6 +29,7 @@ import {
 } from "../../lib/dates";
 import { CALENDAR_OFFLINE_NOTE, isWritableCalendar, providerLabel, writableCalendarTargets } from "../../lib/calendarWrite";
 import { useOnline } from "../../hooks/useOnline";
+import { useSettings } from "../../hooks/useSettings";
 import { plainTextFromHtml } from "../../lib/text";
 import { DescriptionHtml } from "../../lib/descriptionHtml";
 import { describeRule, eventRRule, readEventRRule, rulesEqual, type RecurrenceRule } from "../../lib/recurrence";
@@ -121,6 +122,7 @@ export default function MobileEventSheet({
   const { isHidden, hiddenKeyFor, hide, unhide } = useHiddenEvents();
   const slotMutations = useSlotMutations();
   const { data: accounts = [] } = useCalendarAccounts();
+  const hiddenCalendarIds = useSettings().settings?.hidden_calendar_ids;
   // Same write-back rule as desktop's EventPopover: a two-way Google/iCloud
   // account, and not a read-only mirror/holiday/subscription calendar.
   const account = tap.kind === "event" ? accounts.find((a) => a.id === tap.accountId) : undefined;
@@ -490,7 +492,7 @@ export default function MobileEventSheet({
         .then(() => toast.success("Duplicated"))
         .catch(() => toast.error(`Couldn't copy ${tap.title || "the event"}`));
     };
-    const moveGroups = writableCalendarTargets(accounts, tap.calendarId);
+    const moveGroups = writableCalendarTargets(accounts, tap.calendarId, hiddenCalendarIds);
     const moveRows = moveGroups.flatMap((g) =>
       g.calendars.map((c) => ({
         id: `${g.accountId}|${c.id}`,

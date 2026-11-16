@@ -322,6 +322,19 @@ const stepId = crypto.randomUUID();
   const after = await A.from("tasks").select("title, updated_at, created_at").eq("id", taskId).single();
   ok(after.data?.title === "Brief v2", `LWW kept the newer title: ${after.data?.title}`);
 
+  // `""` in a uuid column means "none" — a domain-less project's domainId.
+  // It used to be a 22P02 → 400 that parked the write.
+  const blankInsertId = crypto.randomUUID();
+  const blankInsert = await A.from("tasks").upsert({ id: blankInsertId, title: "filed", status: "inbox", domain_id: "" }, { onConflict: "id", ignoreDuplicates: true });
+  ok(!blankInsert.error, `insert with domain_id "" → null: ${blankInsert.error?.message}`);
+  const blankPatch = await A.rpc("apply_patch", {
+    p_table: "tasks", p_match: { id: taskId }, p_patch: { domain_id: "" }, p_field_ts: { domain_id: "2026-10-29T15:40:00.000Z" },
+  });
+  ok(!blankPatch.error, `apply_patch domain_id "" → null: ${blankPatch.error?.message}`);
+  const blanked = await A.from("tasks").select("domain_id").eq("id", taskId).single();
+  ok(blanked.data?.domain_id === null, `domain_id stored as null: ${blanked.data?.domain_id}`);
+  await A.from("tasks").delete().eq("id", blankInsertId);
+
   // A natural-key upsert, as useVertical ensures the week's sprint.
   const sprint = await A.from("sprints").upsert({ user_id: a.id, week_start: "2026-10-26" }, { onConflict: "user_id,week_start" }).select("*").single();
   ok(sprint.data?.week_start === "2026-10-26", `sprint upsert on (user_id, week_start): ${sprint.error?.message}`);

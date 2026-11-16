@@ -1343,9 +1343,11 @@ export function EventPopover({
 
   // Writable move targets grouped by account (the event's current calendar is
   // always kept so the picker shows the right value even on a read-only feed).
+  const { settings: moveSettings } = useSettings();
+  const hiddenCalendarIds = moveSettings?.hidden_calendar_ids;
   const moveGroups = useMemo(
-    () => writableCalendarTargets(accounts ?? [], calendarId),
-    [accounts, calendarId],
+    () => writableCalendarTargets(accounts ?? [], calendarId, hiddenCalendarIds),
+    [accounts, calendarId, hiddenCalendarIds],
   );
   const moveTargetCount = useMemo(
     () => moveGroups.reduce((n, g) => n + g.calendars.length, 0),
@@ -1965,7 +1967,9 @@ export function EventPopover({
                   +{hiddenGuestCount} more
                 </Button>
               )}
-              {editable &&
+              {/* Inviting is Google-only (google-events refuses any other
+                  account with 400) — same gate as Meet. */}
+              {editable && isGoogleEvent &&
                 (!addingGuests ? (
                   <Button
                     size="xs"

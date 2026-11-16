@@ -196,12 +196,15 @@ export function pickCreateTarget(
 
 /** Every calendar an event can be moved to, grouped by account — the source for
  *  the calendar/account picker. Read-only accounts and read-only calendar feeds
- *  are excluded; `keepCalendarId` is always retained so the event's current
- *  calendar shows even if it looks read-only. */
+ *  are excluded, and so are hidden calendars (`hiddenIds`) — iCloud refuses a
+ *  move into one with 400 "calendar not visible". `keepCalendarId` is always
+ *  retained so the event's current calendar shows even if it looks read-only. */
 export function writableCalendarTargets(
   accounts: CalendarAccount[],
   keepCalendarId?: string,
+  hiddenIds: readonly string[] = [],
 ): MoveTargetGroup[] {
+  const hidden = new Set(hiddenIds);
   return accounts
     .filter((a) => isWritableAccount(a))
     .map((a) => ({
@@ -209,7 +212,7 @@ export function writableCalendarTargets(
       accountLabel: a.email,
       provider: a.provider,
       calendars: (a.calendars ?? []).filter(
-        (c) => c.id === keepCalendarId || !isReadOnlyCalendarId(c.id),
+        (c) => c.id === keepCalendarId || (!isReadOnlyCalendarId(c.id) && !hidden.has(c.id)),
       ),
     }))
     .filter((g) => g.calendars.length > 0);

@@ -296,7 +296,12 @@ function fromPostgres(err: unknown): RestError {
   const code = err && typeof err === "object" && "code" in err ? String((err as { code?: unknown }).code) : "";
   if (/^[0-9A-Z]{5}$/.test(code)) {
     const message = err instanceof Error ? err.message : "request failed";
-    return new RestError(PG_STATUS[code] ?? 400, code, message);
+    // Only a refusal of the request itself (data 22, integrity 23, syntax or
+    // access 42) is a 400. Anything else unmapped — a statement timeout
+    // (57014), a lock timeout (55P03), an aborted transaction, an internal
+    // error — is the server's, and the outbox parks a 4xx for good, so calling
+    // it 400 turned a blip into a write the user saw refused.
+    return new RestError(PG_STATUS[code] ?? (/^(22|23|42)/.test(code) ? 400 : 503), code, message);
   }
   return new RestError(500, "PGRST000", "request failed");
 }
@@ -742,7 +747,23 @@ function writable(target: Target, mode: "insert" | "update"): Set<string> {
  * `with check` refused it; naming yourself is a no-op. Guarded columns drop
  * silently, as `guard_inbound_token` kept OLD.
  */
+/**
+ * `""` in a uuid column means "none". The SPA spells a missing domain `""` in
+ * places (an initiative or project whose domain was deleted reads
+ * `domainId: ""`), and Postgres refuses the cast with 22P02 — a 400 that parked
+ * the capture or the re-file it rode on. Said once here rather than at every
+ * call site that copies a domain id into a write.
+ */
+function blankUuidsToNull(target: Target, rows: Record<string, unknown>[]): void {
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      if (row[key] === "" && target.info.columns.get(key) === "uuid") row[key] = null;
+    }
+  }
+}
+
 function writeColumns(target: Target, rows: Record<string, unknown>[], mode: "insert" | "update"): string[] {
+  blankUuidsToNull(target, rows);
   const allowed = writable(target, mode);
   const guarded = new Set(target.policy.guarded ?? []);
   const cols = new Set<string>();
@@ -1076,6 +1097,7 @@ async function applyPatchRpc(store: Store, cat: Catalog, args: Record<string, un
     if (!applied.length) return rpcJson({ applied, rejected, matched: 1 });
 
     const values = Object.fromEntries(applied.map((k) => [k, patch[k]]));
+    blankUuidsToNull(target, [values]);
     await assertOwnedRefs(sql, target, [{ ...(match as Record<string, unknown>), ...values }], cat);
     const up = new Params();
     const sets = applied.map((c) => `${q(c)} = r.${q(c)}`);

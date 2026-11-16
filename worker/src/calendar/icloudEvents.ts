@@ -9,6 +9,7 @@ import {
   partstatFor,
   patchMaster,
   seriesCount,
+  isAttendee,
   setPartstat,
   shiftMaster,
   splitSeries,
@@ -382,7 +383,12 @@ export async function handleIcloudEvents(
     const partstat = partstatFor(String(body.responseStatus ?? ""));
     if (!partstat) return { status: 400, body: { error: "invalid responseStatus" } };
     const got = await getEvent(href, account.email, password);
-    if (setPartstat(got.ics, account.email, partstat) === got.ics) {
+    // Listed means the address is an ATTENDEE — not that THIS answer changes
+    // the text. Re-sending the answer you already
+    // gave (or answering one occurrence of a series you'd already answered)
+    // leaves the series text unchanged and used to 400 as "not a guest".
+    // A same-answer PUT is harmless (it carries the ETag).
+    if (!isAttendee(got.ics, account.email)) {
       return { status: 400, body: { error: "You're not listed as a guest on this event" } };
     }
     const thisOccurrence = isOccurrence && scope !== "ALL" && occurrence;

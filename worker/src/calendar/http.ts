@@ -40,6 +40,19 @@ function preflight(): Response {
   return new Response("ok", { headers: OPEN_CORS });
 }
 
+/** icloudEvents.ts reasons that only arise after the event is proven the caller's. */
+const OWN_EVENT_REASONS = [
+  "not an iCloud event",
+  "iCloud credential missing",
+  "event has no CalDAV resource on file",
+  "You're not listed as a guest",
+  "invalid responseStatus",
+  "Only the organizer",
+];
+function isOwnEventReason(message: string): boolean {
+  return OWN_EVENT_REASONS.some((r) => message.startsWith(r));
+}
+
 function clientError(code: string, status = 500): Response {
   return json({ error: code }, status, OPEN_CORS);
 }
@@ -419,6 +432,13 @@ async function handleEvents(c: Context<AppEnv>, deps: CalendarRouteDeps): Promis
       // The client only ever sees the bare code below; keep the real reason where
       // it can be read (the account's sync log) so "bad_request" is diagnosable.
       await logSync(io.sql, "icloud", "event-writeback", "error", out.body.error, got.userId).catch(() => {});
+      // Reasons about the caller's OWN, already-owned event are said as written:
+      // a bare "bad_request" left every iCloud refusal undiagnosable from the
+      // app's error log. Anything that could answer "does this foreign id
+      // exist" (a calendar that isn't visible, a missing row) stays generic.
+      if (out.status === 400 && isOwnEventReason(out.body.error)) {
+        return json({ error: out.body.error }, 400, OPEN_CORS);
+      }
       const generic = out.status === 404 ? "not found" : out.status === 400 ? "bad_request" : "request_failed";
       return json({ error: generic }, out.status, OPEN_CORS);
     }

@@ -611,6 +611,20 @@ export function withoutOverrides(ics: string): string {
   return header + events.filter(isMaster).join("\r\n") + footer;
 }
 
+/** Whether `email` is an ATTENDEE anywhere in the resource (any VEVENT). */
+export function isAttendee(text: string, email: string): boolean {
+  const target = email.trim().toLowerCase();
+  if (!target) return false;
+  return text
+    .replace(/\r?\n[ \t]/g, "")
+    .split(/\r?\n/)
+    .some((line) => {
+      if (!/^ATTENDEE[;:]/i.test(line)) return false;
+      const mailto = line.match(/mailto:([^;:,\s]+)/i);
+      return Boolean(mailto && mailto[1].trim().toLowerCase() === target);
+    });
+}
+
 function rewriteAttendeeLines(text: string, email: string, partstat: string): string {
   const target = email.trim().toLowerCase();
   if (!target) return text;

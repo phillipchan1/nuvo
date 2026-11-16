@@ -166,8 +166,9 @@ export function registerGoogleRoutes(app: Hono<AppEnv>, deps: GoogleRouteDeps): 
         if ("error" in got) return got.error;
         userId = got.userId;
       }
-      if (typeof body.accountId === "string") requireUuid(body.accountId, "accountId");
-      if (typeof body.eventId === "string") requireUuid(body.eventId, "eventId");
+      // Empty means "not given" — the same as the iCloud route (calendar/http.ts).
+      if (typeof body.accountId === "string" && body.accountId) requireUuid(body.accountId, "accountId");
+      if (typeof body.eventId === "string" && body.eventId) requireUuid(body.eventId, "eventId");
       try {
         const result = await handleGoogleEvents(io.sql, c.env, userId, body, c.req.url);
         return json(result.data, result.status, OPEN_CORS);

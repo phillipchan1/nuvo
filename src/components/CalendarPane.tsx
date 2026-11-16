@@ -4520,7 +4520,7 @@ function CalendarPane({
         const series = Boolean(eventSeriesKey(ev));
         const account = accountById.get(ev.account_id);
         const writable = isWritableCalendar(account, ev.calendar_id) && !isPendingEventCreate(ev.id);
-        const moveGroups = writable ? writableCalendarTargets(accounts, ev.calendar_id) : [];
+        const moveGroups = writable ? writableCalendarTargets(accounts, ev.calendar_id, settings?.hidden_calendar_ids) : [];
         const moveCount = moveGroups.reduce((n, g) => n + g.calendars.length, 0);
         const requestDelete = (scope: RecurrenceScope) => {
           if (eventMenuHasInvitees) setEventDeleteConfirm(scope);

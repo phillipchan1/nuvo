@@ -283,5 +283,8 @@ function isUniqueViolation(error: unknown): boolean {
 function isMissingFieldTs(error: unknown): boolean {
   const code = (error as { code?: string } | null)?.code;
   const msg = ((error as { message?: string } | null)?.message ?? "").toLowerCase();
-  return code === "PGRST204" || code === "42703" || /field_ts/.test(msg);
+  // Only when the missing column IS field_ts. Any unknown column used to count,
+  // which switched apply_patch off for the session — after that every update
+  // went out as a plain PATCH, where a stray key is a 400 instead of a skip.
+  return (code === "PGRST204" || code === "42703" || code == null) && /field_ts/.test(msg);
 }

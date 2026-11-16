@@ -382,6 +382,10 @@ export function useExternalEventMutations() {
       guardOffline();
       const awaitProvider =
         patch.recurrence !== undefined || scope !== "THIS" || patch.all_day !== undefined;
+      // The cached guess names the lane for logs; the send resolves the real
+      // provider. `providerForEvent` defaults to Google when the accounts cache
+      // is cold (it is never persisted), and google-events answers an iCloud
+      // event with 400 "event is read-only" — the drag silently reverted.
       const fn = eventsFunctionFor(providerForEvent(id));
       // Every edit to one event goes through its lane (lib/eventWriteback):
       // one row write + provider PATCH at a time, in order, with edits that
@@ -421,7 +425,8 @@ export function useExternalEventMutations() {
           // The zone the edit was made in: a series is anchored to it, so
           // "weekly" means this weekday here, not in UTC (icalTz.ts).
           const body = { eventId: id, patch: merged, scope, timeZone: detectDeviceTz(), ...(rowAt ? { rowAt } : {}) };
-          const { data, error } = await supabase.functions.invoke(fn, { body });
+          const sendTo = eventsFunctionFor(await resolveProviderForEvent(id));
+          const { data, error } = await supabase.functions.invoke(sendTo, { body });
           await throwIfInvokeFailed(data, error);
         },
       );
@@ -546,7 +551,7 @@ export function useExternalEventMutations() {
   const move = useMutation({
     mutationFn: async ({ id, calendarId }: { id: string; calendarId: string }) => {
       guardOffline();
-      const { error } = await supabase.functions.invoke(eventsFunctionFor(providerForEvent(id)), {
+      const { error } = await supabase.functions.invoke(eventsFunctionFor(await resolveProviderForEvent(id)), {
         body: { action: "move", eventId: id, calendarId },
       });
       if (error) throw error;
