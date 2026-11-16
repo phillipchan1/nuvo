@@ -129,7 +129,10 @@ it needs to work on a phone.
 ## Architecture
 
 - `AppShell` → `ResponsiveShell` renders `MobileShell` (<768px) or `AppShellInner`
-  (desktop) via `useIsMobile()`.
+  (desktop) via `useIsMobile()` — by viewport on **every** surface, the native iOS app
+  included: an iPad wide enough wears the desktop shell, an iPhone never does (D-218). So the
+  desktop shell must work under a finger: a long-press reaches each right-click menu
+  (`lib/touchContextMenu`), and a hover-revealed control also shows at `pointer-coarse:`.
 - **Mobile UI lives in `src/components/mobile/`.** Bottom bar = five equal navigation
   destinations **Calendar · Tasks · Projects · Initiatives · Domains**, opening on Calendar. Capture
   and Nuvo are *actions*, not places, so neither is a tab: they float above the bar
@@ -146,8 +149,9 @@ it needs to work on a phone.
   (`nuvo://capture`, `nuvo://chat` — the word stays for installed widgets and now opens
   Nuvo's offers, D-201 — Swift in `src-tauri/ios/NuvoWidgets/`, injected into
   the Xcode project by `scripts/ios-widgets.rb`) and whatever App Intents land next all
-  parse through it, and `MobileShell`'s `applyShortcut` is the only thing that acts on
-  it. **Never add a second parser or a second applier** — a widget's ＋ and a long-pressed
+  parse through it, and `useShortcutDoor` is the only thing that listens for it — each
+  shell hands it its own applier (an iPad can wear either shell, D-218).
+  **Never add a second parser or a second listener** — a widget's ＋ and a long-pressed
   icon's ＋ opening different things is the failure. Widgets carry **no data** (P7): a
   glance ships with its "as of" stamp or not at all. See `docs/ios-releases.md`.
 - **Shared "floors"** render in both shells. Keep them responsive with Tailwind

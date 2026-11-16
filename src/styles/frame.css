@@ -17,6 +17,15 @@
   }
 }
 .app-ground { background: var(--ground); }
+/* An iPad wears this frame (D-218), edge to edge under the status bar and the
+   home indicator (viewport-fit=cover). The ground absorbs the insets so the
+   sidebar and the panel clear them; everywhere else env() is 0 and this is a
+   no-op. Border-box so h-full still means the window. */
+.app-ground {
+  box-sizing: border-box;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+}
 .app-canvas { background: transparent; }
 
 /* The panel. Everything that paints `.atmosphere` inside it paints the panel,

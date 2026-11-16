@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { isMobileTauri } from "../lib/platform";
 
 // The breakpoint below which the app switches from the desktop spine/rail/calendar
 // layout to the single-column mobile shell. 768px keeps tablets in portrait on
@@ -16,8 +15,12 @@ const QUERY = `(max-width: ${MOBILE_BREAKPOINT - 1}px), ((max-height: 500px) and
 
 function read(): boolean {
   if (typeof window === "undefined" || !window.matchMedia) return false;
-  // Native iOS Tauri always runs MobileShell — viewport alone can lie on iPad.
-  if (isMobileTauri()) return true;
+  // The native iOS app decides by viewport like every other surface (D-218).
+  // It used to force MobileShell, which put an 11" iPad — 1180×820, a desktop's
+  // worth of room — on the phone layout. An iPhone still always lands on the
+  // phone shell: it is portrait-locked (scripts/ios-postinit.sh) and narrower
+  // than the breakpoint, and the short-landscape clause above catches it
+  // sideways anyway. An iPad in Split View narrower than 768 does too.
   return window.matchMedia(QUERY).matches;
 }
 

@@ -929,7 +929,7 @@ function InitiativeRecord({
                         {projects.length > 1 && (
                           <span
                             onPointerDown={(e) => startReorderProject(e, p.id)}
-                            className="absolute right-2 top-2 z-10 cursor-grab touch-none select-none rounded-[var(--r-chip)] px-1 text-micro leading-none text-muted opacity-0 transition-opacity group-hover/card:opacity-100 active:cursor-grabbing"
+                            className="absolute right-2 top-2 z-10 cursor-grab touch-none select-none rounded-[var(--r-chip)] px-1 text-micro leading-none text-muted opacity-0 transition-opacity group-hover/card:opacity-100 pointer-coarse:opacity-100 active:cursor-grabbing"
                             title="Drag to reorder"
                             aria-hidden
                           >

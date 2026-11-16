@@ -643,7 +643,7 @@ function GroupedRuns({
                           size="xs"
                           label="Doesn't belong here — place it on its own"
                           icon={<Icon name="close" size={12} />}
-                          className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
+                          className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
                           onClick={() => onRemove(r.id, t.id)}
                         />
                       )}
@@ -962,7 +962,7 @@ function ProjectRow({
           <FitStrip rows={rows} kept={kept} placedIds={placedIds} color={color} />
         )}
 
-        <span className="flex shrink-0 items-center opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        <span className="flex shrink-0 items-center opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
           <IconButton size="xs" label={`Open ${project.name}`} icon={<Icon name="arrow-right" size={12} />} onClick={onOpenRecord} />
           <IconButton size="xs" label="Take it off this week" icon={<Icon name="close" size={12} />} onClick={onRemove} />
         </span>
@@ -2044,7 +2044,7 @@ function WeekGrid({
                           type="button"
                           onPointerDown={(e) => e.stopPropagation()}
                           onClick={() => onDrop(it.taskId ?? it.id)}
-                          className="grid h-4 w-4 shrink-0 place-items-center rounded-[var(--r-chip)] text-[var(--muted)] opacity-0 group-hover:opacity-100"
+                          className="grid h-4 w-4 shrink-0 place-items-center rounded-[var(--r-chip)] text-[var(--muted)] opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100"
                           title={isSplit ? "Remove the whole overdue task from the week" : "Remove from the week"}
                           aria-label={isSplit ? "Remove the whole overdue task from the week" : "Remove from the week"}
                         >

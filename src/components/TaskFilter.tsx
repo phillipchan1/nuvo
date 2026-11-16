@@ -137,7 +137,7 @@ export function FilterBody({
                 label={`Delete the “${v.name}” view`}
                 icon={<Icon name="close" size={12} />}
                 onClick={() => onDeleteView(v.id)}
-                className="tap md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
+                className="tap md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100 pointer-coarse:opacity-100"
               />
             </span>
           ))}

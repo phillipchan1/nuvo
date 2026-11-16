@@ -7,6 +7,9 @@ import {
 } from "../lib/vertical";
 import { VerticalFreeze, VerticalProvider, useVerticalActions, useVerticalSelector } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
+import { useShortcutDoor } from "../hooks/useShortcutDoor";
+import { installTouchContextMenu } from "../lib/touchContextMenu";
+import type { Shortcut } from "../lib/shortcuts";
 import { isTypingIn } from "../lib/a11y";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useEventRouter } from "../hooks/useEventRouter";
@@ -223,6 +226,24 @@ const AppShellInner = memo(function AppShellInner() {
   const { rung, projectView, initiativeView, focus, flow, flowStep } = nav;
   const { agent, setNavFocus } = useAgentContext();
   const { visible: orientationVisible } = useOrientation();
+
+  // The desktop's half of the launch vocabulary (D-218): an iPad wears this
+  // shell, and its lock-screen widgets still say `nuvo://capture` / `chat`.
+  // Same doors as the phone, acted on with this shell's own surfaces — "chat"
+  // opens what the ✦ opens here, Memory (D-205).
+  const applyShortcut = useCallback(
+    (act: Shortcut) => {
+      if (act === "capture") openOverlay("cmd");
+      else if (act === "chat") openOverlay("memory");
+      else jumpToRung("day");
+    },
+    [openOverlay, jumpToRung],
+  );
+  useShortcutDoor(applyShortcut);
+
+  // Right-click menus are this shell's way to a row's verbs; under a finger
+  // (an iPad) a long-press asks for the same menu.
+  useEffect(() => installTouchContextMenu(), []);
 
   // Latch the last Build rung so hiding the overlay doesn't remount On Deck
   // (FloorPane keys its body on `rung`). First visit still lazy-mounts; after

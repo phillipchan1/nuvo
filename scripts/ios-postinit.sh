@@ -81,10 +81,22 @@ fi
 /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string nuvo" "$PLIST"
 
-# Phone-first: portrait only (matches PWA manifest orientation).
+# iPhone: portrait only (matches PWA manifest orientation).
 /usr/libexec/PlistBuddy -c "Delete :UISupportedInterfaceOrientations" "$PLIST" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations array" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations:0 string UIInterfaceOrientationPortrait" "$PLIST"
+
+# iPad: every orientation (D-218). An iPad wears the desktop shell when it is
+# wide enough, and landscape is how an 11" iPad is held at a desk. All four is
+# also what iPadOS asks for multitasking (Split View / Stage Manager); a window
+# narrower than 768pt falls back to the phone shell on its own (useIsMobile).
+/usr/libexec/PlistBuddy -c "Delete :UISupportedInterfaceOrientations~ipad" "$PLIST" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations~ipad array" "$PLIST"
+i=0
+for o in Portrait PortraitUpsideDown LandscapeLeft LandscapeRight; do
+  /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations~ipad:${i} string UIInterfaceOrientation${o}" "$PLIST"
+  i=$((i + 1))
+done
 
 # `tauri ios init` emits Tauri's default asset catalog; overlay the Nuvo icons
 # generated from src-tauri/app-icon.svg (npm run tauri:icon).

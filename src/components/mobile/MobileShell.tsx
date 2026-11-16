@@ -30,8 +30,8 @@ import { useRealtime } from "../../hooks/useRealtime";
 import { useAgentContext } from "../../hooks/useAgentContext";
 import { taskDomainColor } from "../../lib/vertical";
 import { mergeTaskLists } from "../../lib/taskMerge";
-import { isTauri } from "../../lib/platform";
-import { shortcutFromUrl, type Shortcut } from "../../lib/shortcuts";
+import { type Shortcut } from "../../lib/shortcuts";
+import { useShortcutDoor } from "../../hooks/useShortcutDoor";
 import type { Floor } from "../../lib/readiness";
 import { DEFAULT_DURATION_MINUTES, type Slot, type Task } from "../../lib/types";
 import SettingsModal from "../SettingsModal";
@@ -282,50 +282,7 @@ export default function MobileShell() {
     }
   }, []);
 
-  // Manifest shortcuts (long-press the installed app's icon). Consumed once,
-  // then stripped from the URL so a reload doesn't re-open the overlay.
-  const shortcutDone = useRef(false);
-  useEffect(() => {
-    if (shortcutDone.current) return;
-    shortcutDone.current = true;
-    const url = new URL(window.location.href);
-    if (!url.searchParams.has("shortcut")) return;
-    const act = shortcutFromUrl(url.href);
-    url.searchParams.delete("shortcut");
-    window.history.replaceState(history.state, "", url);
-    if (act) applyShortcut(act);
-  }, [applyShortcut]);
-
-  // The native shell's deep links — what the lock-screen widgets actually fire
-  // (`nuvo://capture`, `nuvo://chat`). Two paths, because a cold launch and a
-  // resume deliver the URL differently: `getCurrent()` reads the link the app
-  // was *started* by, `onOpenUrl` catches every one after that. Loaded lazily so
-  // the PWA/web bundle never pulls the Tauri plugin in.
-  useEffect(() => {
-    if (!isTauri()) return;
-    let unlisten: (() => void) | undefined;
-    let done = false;
-    const open = (urls: string[] | null) => {
-      if (done || !urls?.length) return;
-      const act = shortcutFromUrl(urls[urls.length - 1]);
-      if (!act) return;
-      done = true;
-      applyShortcut(act);
-    };
-    void (async () => {
-      try {
-        const { getCurrent, onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
-        unlisten = await onOpenUrl((urls) => {
-          done = false; // a fresh tap is a fresh act
-          open(urls);
-        });
-        open(await getCurrent());
-      } catch {
-        /* no deep-link plugin (older shell / web) — the ＋ and ✦ still work */
-      }
-    })();
-    return () => unlisten?.();
-  }, [applyShortcut]);
+  useShortcutDoor(applyShortcut);
 
   // Filters (audit rank 6) — the phone's half. Same hook, same kernel predicate
   // and the same saved views the desktop rail reads; only the frame differs

@@ -8400,3 +8400,39 @@ title when the title would get under 64px; the crown's track is the 56px D-209 m
 120px had overridden it); Other times' menu gives each option a second line (kit `MenuItem
 detail`); "pick a time yourself" says so in a float, not in the row. Swept for overflow at rail
 widths 240–560 and at 320/375 on the phone.*
+
+**D-218 · 2026-11-15 · An iPad wears the desktop shell when it has a desktop's room; a sideways
+iPhone stays on the phone.** *(Asked by the operator: "if I'm in that mode on an 11-inch, I want it
+to feel like I can have the desktop capabilities without feeling crammed.")* The native iOS app
+forced `MobileShell` on every device (`useIsMobile` → `isMobileTauri()`), so an 11" iPad —
+1180×820 landscape, 820 wide in portrait — got the phone layout, while the same iPad in Safari
+already got the desktop. And the iOS project locked *both* idioms to portrait.
+
+→ The native app now picks its shell by viewport like every other surface. The iPad may rotate
+(`UISupportedInterfaceOrientations~ipad`, all four; the iPhone stays portrait), and a Split View or
+Stage Manager window narrower than 768 falls back to the phone shell on its own. Three things make
+the desktop shell honest under a finger: **(1)** a long-press dispatches `contextmenu` to the
+element under it (`lib/touchContextMenu`, desktop shell only), so the ~40 existing right-click
+menus answer a finger without a second menu; **(2)** controls that only appeared on hover show
+under a coarse pointer; **(3)** the frame's ground pads by the safe-area insets (zero everywhere
+else). The launch doors (`?shortcut=`, `nuvo://capture|chat`) moved out of `MobileShell` into
+`useShortcutDoor` — one listener, one parser — and each shell supplies how it acts, so an iPad's
+widget ＋ opens capture in either shell, and its ✦ link (`nuvo://chat`) opens Memory, as the
+✦ does on the phone (D-205).
+
+**Not** for a sideways iPhone. D-075 stands: at ~390pt tall, less the notch insets, the desktop's
+chrome eats a quarter of the height and the time grid shows four hours — the opposite of "not
+crammed". If the iPhone gets a landscape answer, it is a wide *lens* inside the phone shell (the
+Week with a time column), not a third shell.
+
+**Anchor.** Closes no new row; carries desktop-only answers to the iPad — **W5** (On Deck By
+domain), **Q2** (the On Deck timeline), **Q6** (Summit). Strains **P13**: the desktop shell gains a
+touch device it must work on; drag-to-place by finger is not yet proven (touch scrolls; FullCalendar's
+own touch drag is untested on iPad). Four no's: no pool, no name, no data dependence; **P16** is
+the risk — the operator owns an iPad, a stranger may not — which is why it is a gate removed, not
+a layout added.
+
+*Status: built 2026-11-15 — `useIsMobile`, `useShortcutDoor`, `lib/touchContextMenu`,
+`scripts/ios-postinit.sh`, `styles/frame.css`; `tests/ipad-desktop-shell.test.tsx`. Verified:
+typecheck, build, the frame at 1180×820, a synthetic touch long-press opening a task row's real
+menu. **Not yet run on a physical iPad or an iPad simulator build**, and not yet released.*

@@ -2684,7 +2684,7 @@ export function SlotPopover({
                       e.stopPropagation();
                       taskMutations.removeFromSlot(t, { undo: "toast" });
                     }}
-                    className="k-btn shrink-0 opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
+                    className="k-btn shrink-0 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
                     data-kind="ghost"
                     data-size="xs"
                     data-icon=""
