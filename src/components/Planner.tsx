@@ -582,9 +582,10 @@ export default function Planner({
             ghosts: offerChoice.options
               .filter((o) => o.key !== offerChoice.strong)
               .map((o) => ({ id: o.key, start: o.start.toISOString(), end: o.end.toISOString(), label: String(o.num), kind: "alt" as const })),
-            onSelect: () => {},
+            // a click on any numbered time — the solid one too — chooses it
+            onSelect: (key) => key && offerChoice.onChoose(key.replace(/^offer-choice:/, "")),
             onMove: () => {},
-            onPickGhost: (id) => offerChoice.onPick(id),
+            onPickGhost: (id) => offerChoice.onChoose(id),
             onPickTime: offerChoice.onPickTime,
             dimCalendar: true,
           }
