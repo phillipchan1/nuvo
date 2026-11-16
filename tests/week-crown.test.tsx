@@ -209,12 +209,12 @@ describe("useWeekCrown", () => {
 
   it("states the split rather than the flattering half", async () => {
     const crown = await read();
-    expect(crown.rows.find((r) => r.projectId === "p1")!.placedLabel).toBe("2 of 3 placed");
+    expect(crown.rows.find((r) => r.projectId === "p1")!.placedLabel).toBe("2 of 3 scheduled");
     // A project with nothing placed SAYS so — the read that stops work going
     // missing is "0 of 1", never a silent row.
-    expect(crown.rows.find((r) => r.projectId === "p2")!.placedLabel).toBe("0 of 1 placed");
+    expect(crown.rows.find((r) => r.projectId === "p2")!.placedLabel).toBe("0 of 1 scheduled");
     // And nothing homeless is a plain fact, not a warning (P9).
-    expect(crown.rows.find((r) => r.projectId === "p6")!.placedLabel).toBe("all placed");
+    expect(crown.rows.find((r) => r.projectId === "p6")!.placedLabel).toBe("all scheduled");
     expect(crown.looseCount).toBe(3); // p1's t4, p2's t5, and the carried p7's t8
   });
 

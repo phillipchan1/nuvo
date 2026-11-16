@@ -97,7 +97,7 @@ export interface WeekCrownRow {
   loose: Task[];
   /** placed + loose */
   open: number;
-  /** the split, never the flattering half: "all placed" · "3 of 5 placed" */
+  /** the split, never the flattering half: "all scheduled" · "3 of 5 scheduled" (D-219) */
   placedLabel: string;
   /** landed as a WEEK verdict while the project itself rolls on */
   continues: boolean;
@@ -179,7 +179,7 @@ export function useWeekCrown(forWeekISO?: string): WeekCrown | null {
         // State the split, not the half that happens to be non-zero. "3 of 5
         // placed" and "2 loose" are the same fact, but the first one can't be
         // read as "and the rest is fine" — the read that let work go missing.
-        placedLabel: loose.length === 0 ? "all placed" : `${placed.length} of ${open} placed`,
+        placedLabel: loose.length === 0 ? "all scheduled" : `${placed.length} of ${open} scheduled`,
         // Sealing a push lands the WEEK, not the project. Say so, so "landed"
         // never reads as "closed the project". Shipped is the exception — there
         // the project really did finish.

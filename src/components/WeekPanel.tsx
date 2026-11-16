@@ -575,6 +575,10 @@ function ProjectStackRow({
             <IconButton
               size="xs"
               label={expanded ? `Hide ${row.title}'s work` : `Show ${row.title}'s work — ${marksLabel}`}
+              // No hover tooltip: a chevron says what it does, and the long
+              // one dropped over the very rows it had just unfolded. The words
+              // stay in the aria-label.
+              title=""
               aria-expanded={expanded}
               icon={<Icon name={expanded ? "chevron-down" : "chevron-right"} size={14} />}
               onClick={onExpand}
