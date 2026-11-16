@@ -4,6 +4,7 @@
 // Four steps: Gain → Mandates → Portfolio → Months.
 
 import { useMemo, useState } from "react";
+import { sealInitiative } from "../../lib/celebrate";
 import { subDays } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
@@ -373,7 +374,11 @@ function PortfolioStep({ onNewBet }: { onNewBet: () => void }) {
                         <Button
                           size="xs"
                           icon={<Icon name="check" size={12} />}
-                          onClick={() => updateInitiative(i.id, { status: "complete" })}
+                          onClick={(e) => {
+                            updateInitiative(i.id, { status: "complete" });
+                            const from = e.currentTarget;
+                            requestAnimationFrame(() => sealInitiative(i.id, from));
+                          }}
                           title="Done — onto the trophy shelf"
                         >
                           Ship

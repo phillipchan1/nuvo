@@ -26,7 +26,7 @@ import type { ReminderAnchorKind } from "../../supabase/functions/_shared/remind
 import TaskRow, { type TaskMeta, type TaskRowHandle } from "./TaskRow";
 import type { CrownLineData } from "../lib/crownLine";
 import type { ReadyCard } from "../lib/readyCards";
-import WeekPanel, { type WeekDoor } from "./WeekPanel";
+import WeekPanel, { RailDay, type WeekDoor } from "./WeekPanel";
 import {
   FileOffer,
   HoldOffer,
@@ -1053,6 +1053,9 @@ function LeftRail({
       />
       {/* Clears macOS traffic lights — explicit drag target, not inherited from deep. */}
       <div data-tauri-drag-region className="rail-titlebar-drag w-full shrink-0" aria-hidden />
+      {/* Today stays put above the scroll (D-230): finishing the day is the
+          moment the rail exists for, so it never scrolls out of sight. */}
+      <RailDay today={today} />
       <div data-tauri-drag-region="deep" className="rail-scroll min-h-0 flex-1 overflow-y-auto">
         {/* The crown — the planner's one hero (the week's span), its fact, and
             the week's projects. Its door is "Plan the week". */}
@@ -1093,6 +1096,7 @@ function LeftRail({
           offers={offers}
           onPathCandidates={setPathCands}
           today={today}
+          dayOutside
           deck={deck}
           rowCards={rowCards}
           keys={{

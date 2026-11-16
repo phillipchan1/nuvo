@@ -11,6 +11,7 @@
 // Pure: it takes the snapshot and the writes as arguments and returns a
 // description of the acts. It renders nothing and knows nothing about pointers.
 
+import { sealInitiative } from "./celebrate";
 import {
   initiativeById,
   projectById,
@@ -95,7 +96,11 @@ export function buildRecordActions(
       kind: "action",
       label: done ? "Reopen" : kind === "project" ? "Ship it…" : "Mark complete",
       action: act(() =>
-        done ? setStatus("in_progress") : kind === "project" ? a.onShip(id) : setStatus("complete"),
+        done
+          ? setStatus("in_progress")
+          : kind === "project"
+            ? a.onShip(id)
+            : (setStatus("complete"), sealInitiative(id)),
       ),
     },
     {

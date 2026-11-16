@@ -121,6 +121,7 @@ export default function WeekPanel({
   offers,
   onPathCandidates,
   today,
+  dayOutside = false,
   deck,
   rowCards,
   keys,
@@ -143,6 +144,8 @@ export default function WeekPanel({
   /** Today's tasks as the rail lists them (slot children included) — the day's
    *  reading (D-209). Omitted (a harness), the crown draws no day. */
   today?: readonly Task[];
+  /** the host draws the day itself, above its scroll (`RailDay`, D-230) */
+  dayOutside?: boolean;
   /** The deck at rest (D-209): the Get ready stack's top card. When it's
    *  present it stands where the line would; the line still speaks when
    *  there's no card to show (Handle's "Nuvo moved N · Review"). */
@@ -351,12 +354,7 @@ export default function WeekPanel({
   if (!data || !crown) return null;
   const shapeItems = marks[0]?.items ?? [];
   const weekReady = rows0(crown) && marksReady(marks);
-  const nextTask = day && !day.closed ? day.tasks.find((t) => t.status !== "done") ?? null : null;
-  const nextLine = nextTask
-    ? nextTask.start_time
-      ? `${nextTask.title} at ${fmtDayTime(nextTask.start_time).replace(/^[A-Z][a-z]{2} /, "")}`
-      : nextTask.title
-    : null;
+  const nextLine = dayNext(day);
 
   const { rows, landed } = crown;
 
@@ -425,7 +423,7 @@ export default function WeekPanel({
         {/* The day (D-209): today's own tasks, closed the moment the last one
             is — at 3pm or whenever — with the hour you got back. The rail's
             hero; the week reads under it so a good day never waits for Friday. */}
-        {day && day.total > 0 && <DayCrown day={day} next={nextLine} />}
+        {!dayOutside && day && day.total > 0 && <DayCrown day={day} next={nextLine} />}
         <div className="crown-week">
           <div className="crown-week-head">
             {/* No date range (D-219): the calendar header is the one place a
@@ -911,6 +909,28 @@ function TimeOfferLine({ card, task, projectName }: { card: ReadyCard; task: Tas
           {cost}
         </span>
       )}
+    </div>
+  );
+}
+
+/** "Measure wall at 4pm" — the day's next open task, while the day is open. */
+function dayNext(day: ReturnType<typeof readDay> | null): string | null {
+  const t = day && !day.closed ? day.tasks.find((x) => x.status !== "done") ?? null : null;
+  if (!t) return null;
+  return t.start_time ? `${t.title} at ${fmtDayTime(t.start_time).replace(/^[A-Z][a-z]{2} /, "")}` : t.title;
+}
+
+/** The day, held above the rail's scroll (D-230): "Today · 2 of 5 done" is
+ *  the rail's hero, and finishing it is the moment the day exists for — so it
+ *  never scrolls out of sight while you work down the week's projects. */
+export function RailDay({ today }: { today: readonly Task[] }) {
+  const { settings } = useSettings();
+  const workEnd = settings?.work_end_minutes ?? 990;
+  const day = useMemo(() => readDay(today, workEnd), [today, workEnd]);
+  if (day.total === 0) return null;
+  return (
+    <div className="rail-day">
+      <DayCrown day={day} next={dayNext(day)} />
     </div>
   );
 }

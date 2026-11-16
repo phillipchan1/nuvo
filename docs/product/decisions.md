@@ -8824,3 +8824,31 @@ make you hunt for the act you just asked for). No new pool or name, and nothing 
 *Status: built 2026-11-16 on `claude/pick-time-click`. Driven in the dev app on a local account:
 Pick a time yourself → click the dashed 2 → placed Tue 8–8:45am; again → click the solid 1 → placed
 Today 9–10am with Undo (both restored afterwards). Pinned in `tests/other-times-grid.test.tsx`.*
+
+**D-230 · 2026-11-16 · Finishing is the moment: Today stays in sight, and an initiative ships with
+the seal.**
+*(Asked by the operator: "one of the things i liked which kind of breaks the design was having tasks
+for today done because we want to have the satsifaction of 'Finishing today' which we dont have
+here. finishing today finishing a week finishing a project finishing a intiaitvers those are key
+events we want to celbrate".)*
+
+→ **Today is held above the rail's scroll.** The day's crown ("Today · 2 of 5 done · Next: …",
+and on its last task "Done at 3pm. 1h 30m of your day back." with the ring and the ember stop,
+D-209) sat inside the scroll above the week, so working down the projects scrolled it away — the
+screenshot that asked this had it out of sight. It now stands above the scroll (`RailDay`), the
+rail's fixed hero, so the day closing is always seen. The week reads directly under it.
+
+→ **The ladder, checked rung by rung.** Day: the stop, the ring, the hour back (unchanged, now
+visible). Week: the Done dial's close at the largest tier — swell, ring, sparks (D-219). Project:
+the Seal on ship (D-209). Initiative: **nothing** — the Ship button and "Mark complete" flipped a
+status in silence. It now gets the Seal at full weight (`sealInitiative`: stamp, jolt, ring and
+sparks on the bet's deck card, or on the control pressed), from the record, the right-click / ⋯
+menu and Summit alike. Still refused (D-203): sound, streaks, levels, a running tally.
+
+Anchor: W6 (did anything move) · A4. Strains **P14** (the day's hero now stands outside the
+crown's frame) — held by it wearing the crown's own padding and hairline. No new name.
+
+*Status: built 2026-11-16 on `claude/readiness-dials`. Driven at `?rail=offers`: the day's crown
+renders above `.rail-scroll`, not inside it; the week heads the readings with no doubled hairline.
+The initiative Seal not driven on a live account (the local database was reset under this
+session).*

@@ -24,6 +24,7 @@
 // `esc`, the scrim and ✕ all close, so there is no Done button.
 
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { sealInitiative } from "../../lib/celebrate";
 import { format, parseISO } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useSettings, firstDayOfWeek } from "../../hooks/useSettings";
@@ -786,7 +787,14 @@ function InitiativeRecord({
             <Button
               size="sm"
               icon={<Icon name={shipped ? "refresh" : "check"} size={14} />}
-              onClick={() => updateInitiative(initiative.id, { status: shipped ? "in_progress" : "complete" })}
+              onClick={(e) => {
+                updateInitiative(initiative.id, { status: shipped ? "in_progress" : "complete" });
+                // shipping a bet is a finish worth the seal (D-230); reopening isn't
+                if (!shipped) {
+                  const from = e.currentTarget;
+                  requestAnimationFrame(() => sealInitiative(initiative.id, from));
+                }
+              }}
               title={shipped ? "Shipped — reopen it" : "Finished — ship it"}
             >
               {shipped ? "Reopen" : "Ship"}

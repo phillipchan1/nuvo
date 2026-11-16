@@ -1146,3 +1146,9 @@ html:root .crown-shape-item:focus-visible { outline: none; box-shadow: 0 0 0 2px
   box-shadow: inset 0 0 0 1px var(--accent-ring);
   border-radius: var(--r-ctl);
 }
+
+/* Today, held above the rail's scroll (D-230): the same padding and hairline
+   the crown wears, on the panel's ground — structure, not a float. */
+.rail-day { flex: none; padding: 14px 16px 12px; border-bottom: 1px solid var(--line-1); min-width: 0; }
+/* with the day outside, the week opens the readings — no hairline above it */
+.crown-readings > .crown-week:first-child { border-top: 0; padding-top: 0; }

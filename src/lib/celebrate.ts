@@ -153,9 +153,30 @@ export function closeMark(bar: HTMLElement | null | undefined, tier: "small" | "
 export function seal(projectId: string, significant: boolean): void {
   haptic("success");
   if (typeof document === "undefined" || motionOff()) return;
-  const target =
+  stamp(
     document.querySelector<HTMLElement>(`[data-crown-project="${CSS.escape(projectId)}"]`) ??
-    document.querySelector<HTMLElement>('[data-mark="shipped"] .k-dial-ring');
+      document.querySelector<HTMLElement>('[data-mark="shipped"] .k-dial-ring'),
+    significant,
+  );
+}
+
+/** **The Seal, one altitude up** (D-230) — shipping an initiative, the
+ *  largest finish there is short of a season. It used to flip a status and
+ *  say nothing. The stamp lands on the bet's card on the deck (or on the
+ *  control you pressed, when the deck isn't on screen) and always carries the
+ *  jolt, the ring and the sparks: a bet only ships once. */
+export function sealInitiative(initiativeId: string, from?: Element | null): void {
+  haptic("success");
+  if (typeof document === "undefined" || motionOff()) return;
+  const target =
+    document.querySelector<HTMLElement>(`[data-init-drag="${CSS.escape(initiativeId)}"]`) ??
+    (from instanceof HTMLElement ? from : null) ??
+    document.querySelector<HTMLElement>('[data-mark="moving"] .k-dial-ring');
+  stamp(target, true);
+  burst(target, 240);
+}
+
+function stamp(target: HTMLElement | null, significant: boolean): void {
   if (!target) return;
   const r = target.getBoundingClientRect();
   if (!r.width && !r.height) return;
