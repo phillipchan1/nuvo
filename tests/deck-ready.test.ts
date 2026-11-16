@@ -100,4 +100,18 @@ describe("the decks' line", () => {
     expect(cards[0].key).toBe("bet:risk:b");
     expect(deckLine(cards, "initiative")).toMatchObject({ tone: "warn", text: "Staff rigor is at risk", then: "Grow the church needs shaping" });
   });
+
+  it("offers Suggest projects on a bet with a gap it can draft for, and the record beside it (D-226)", () => {
+    const draftProjects = vi.fn();
+    const open = vi.fn();
+    const [card] = initiativeDeckCards(
+      [{ id: "a", name: "Summer", quarterIdx: 1, quarterLabel: "Q1", risk: null, overdue: false, gap: "no key results", stateWord: null, canDraft: true }],
+      { open, draftPath: vi.fn(), draftProjects },
+    );
+    expect(card.primary.verb).toBe("Suggest projects");
+    card.primary.run(null);
+    expect(draftProjects).toHaveBeenCalledWith("a", null);
+    card.secondary!.run();
+    expect(open).toHaveBeenCalledWith("a");
+  });
 });

@@ -8730,3 +8730,34 @@ changes as you move): held by ring-only and the rest delay. No new name.
 *Status: built 2026-11-16 on `claude/readiness-dials`. Driven in the dev app: a 9am task rings its
 block and lights Mon; a 9pm task lights Mon with ↓. Project rows not driven (the local schema has
 no project week span); covered by `tests/locate.test.ts`.*
+
+**D-226 · 2026-11-16 · On the decks, a dial's "what's left" opens its fixes, and the line says only
+what no dial does.**
+*(Asked by the operator: "for projects... can we do similar intelligent options as we did in
+schedule it says 2 to shape but doesn't give me any resource … the labels are sloppy this week holds
+8 buty 6 then weirdly line after is then 2 need shaping … all the suggestions are buried in get
+ready but that's just an uxtra click … make sure initiatives works well too".)*
+
+→ **The Schedule's grammar, one clock speed up (D-219).** On both decks, "N to shape", "Nh over"
+and "N not moving" are buttons. Each unfolds, right under the dials, every project (or bet) behind
+that number — the count and the list are the same set — with the act that fixes it on its row:
+*Use this outcome* (✦, drafted when the list opens), *Suggest tasks*, *Move to Nov 30*, *Suggest
+projects*; the name opens the record. The Shaped list ends in *Plan projects* / *Plan initiatives*.
+Fits opens only while it reads *over*: "room for 39h" opening a list of moves would contradict
+itself (a crowded week keeps its chip on the card).
+
+→ **The line steps back.** The crown's line no longer repeats a dial ("This week holds 8, room for
+6") and never adds a "then:". On the project deck it speaks only for an overdue project, which no
+dial carries; on the initiative deck there is none left to say. Get ready is still one press away
+from that line, and its cards are the same cards the lists show (`lib/deckReady`, no second rule).
+
+→ **A bet with a gap offers Suggest projects** (when the deck can draft for it), the record
+beside it — it had only offered that when the bet was already at risk.
+
+Anchor: Q1 · Q4 (what does done mean, what are the steps — now one press from the number) · W3.
+Strains **P9** a little less than before (one line fewer, nothing unasked). No new name.
+
+*Status: built 2026-11-16 on `claude/readiness-dials`. Driven at `?decks`: 4 to shape lists all
+four (overdue and crowded ones included), 1 to shape on the initiative deck offers Suggest projects,
+1 not moving lists its bet; no "then:". ✦ outcome drafts not driven (the harness has no agent).
+Pinned in `tests/deck-ready.test.ts`.*

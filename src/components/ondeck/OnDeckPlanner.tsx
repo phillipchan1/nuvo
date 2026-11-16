@@ -40,7 +40,7 @@ import GroomingSessionAction from "../floors/GroomingSessionAction";
 import { deckWeight } from "../../lib/pace";
 import { PIP_TONE, projectCardStatus, thinWord } from "./deckStatus";
 import GetReadyRail from "../plan/GetReadyRail";
-import { deckPlanLine, planCard, projectDeckCards, rowOffers, type OutcomeDraft } from "../../lib/deckReady";
+import { deckPlanLine, planCard, projectDeckCards, rowOffers, subjectOf, type OutcomeDraft } from "../../lib/deckReady";
 import type { ReadyCard } from "../../lib/readyCards";
 import { occupantSpan, walkOrder, type Occupant } from "../../lib/planProjects";
 import type { AskScaffold } from "../../lib/scaffoldAsk";
@@ -666,9 +666,11 @@ export default function OnDeckPlanner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [board, thin, H, drafts, maxPerWeek, weekLoad.join(",")],
   );
-  // Ask for the drafts when the stack opens: the nearest three with no outcome.
+  // Ask for the drafts when the stack — or the Shaped dial's list — opens:
+  // the nearest three with no outcome.
+  const [shapeOpen, setShapeOpen] = useState(false);
   useEffect(() => {
-    if (!readyMode) return;
+    if (!readyMode && !shapeOpen) return;
     const want = open
       .filter((l) => l.gaps[0]?.label === "no outcome" && !thin.has(l.project.id) && !drafts[l.project.id])
       .sort((a, b) => startOf(a.project.id) - startOf(b.project.id))
@@ -681,7 +683,7 @@ export default function OnDeckPlanner({
         () => setDrafts((d) => ({ ...d, [l.project.id]: { state: "error" } })),
       );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [readyMode]);
+  }, [readyMode, shapeOpen]);
   // ── Plan projects (D-216, docs/offer-rules.md §4) ─────────────────────────
   // The walk over the deck's not-Ready projects, rawest first. It opens only
   // from your press — the line, or its card in the stack (R9).
@@ -803,11 +805,39 @@ export default function OnDeckPlanner({
           // The line (D-207): the deck's Get ready stack, first card in words.
           // At rest the line is the deck's one door (D-216): the walk when
           // shaping leads, the stack otherwise; the offers ride their cards.
-          line,
+          // The dials carry shaping and fit and open their fixes (D-226), so
+          // the line only speaks for an overdue project, which no dial says.
+          line: line?.part === "repair" ? line : null,
           onLine: opens === "plan" ? openPlan : () => setReadyMode(true),
           // The readings (D-209).
           title: "On Deck",
           marks: placed.length > 0 ? deckMarks : undefined,
+          fixes: {
+            // Every project behind "N to shape", nearest first — its shaping
+            // card when it has one, else its first gap with the record to open.
+            "deck-ready": placed
+              .filter((l) => l.readyTier !== "ready" && l.readyTier !== "done" && l.project.shippedAt == null)
+              .sort((a, b) => startOf(a.project.id) - startOf(b.project.id))
+              .map(
+                (l): ReadyCard =>
+                  deckCards.find((c) => subjectOf(c) === l.project.id && (c.kind === "path" || (c.kind === "shape" && !c.key.startsWith("deck:fit:")))) ?? {
+                    key: `deck:shape:${l.project.id}`,
+                    kind: "shape",
+                    title: l.project.name,
+                    why: [l.gaps[0]?.label ? l.gaps[0].label[0].toUpperCase() + l.gaps[0].label.slice(1) : "Not shaped yet", board.weeks[startOf(l.project.id)] ? weekName(board.weeks[startOf(l.project.id)].weekStart) : ""].filter(Boolean).join(" · "),
+                    primary: { verb: "Open", name: l.project.name, run: () => openRecord("project", l.project.id) },
+                    projectId: l.project.id,
+                  },
+              ),
+            // only while the week reads over — "room for 39h" opening a list of
+            // moves would contradict itself (a crowded week keeps its chip)
+            fits: deckMarks.find((m) => m.key === "fits")?.todo?.endsWith("over")
+              ? deckCards.filter((c) => c.kind === "crowd" || c.key.startsWith("deck:fit:"))
+              : [],
+          },
+          onFixOpen: (id) => openRecord("project", id),
+          walk: notReady.length > 0 ? { label: "Plan projects", run: openPlan } : null,
+          onUnfold: (k) => setShapeOpen(k === "deck-ready"),
         }}
         poolLabel="Needs a week"
         poolCount={inbox.length}

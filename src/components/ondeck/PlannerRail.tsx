@@ -16,10 +16,12 @@
 // the things that float are the things you pick up, and if the container
 // floats too, nothing reads as graspable.
 
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Icon } from "../Icon";
 import { Button, Crown, CrownLine, IconButton, MarkSet, SectionHeader, Stop } from "../kit";
-import { marksReady, type Mark } from "../../lib/marks";
+import { marksReady, type Mark, type MarkKey } from "../../lib/marks";
+import type { ReadyCard } from "../../lib/readyCards";
+import { DeckFixList } from "./DeckFixList";
 import { DECK_REACH_KEY } from "../../lib/motion";
 import type { CrownLineData } from "../../lib/crownLine";
 import { RAIL_WIDTH_CSS } from "../../lib/railWidth";
@@ -51,6 +53,15 @@ export interface RailCrown {
   marks?: Mark[];
   /** the deck at rest: the Get ready stack's top card, in place of the line */
   deck?: ReactNode;
+  /** A dial's fixes (D-226): its "what's left" becomes the button that unfolds
+   *  these cards under the dials, each with its act on the row. */
+  fixes?: Partial<Record<MarkKey, readonly ReadyCard[]>>;
+  /** what a fix's name opens */
+  onFixOpen?: (id: string) => void;
+  /** the walk, offered at the foot of the Shaped dial's list */
+  walk?: { label: string; run: () => void } | null;
+  /** told when a dial's list opens or closes (the deck fetches ✦ drafts) */
+  onUnfold?: (k: MarkKey | null) => void;
 }
 
 export default function PlannerRail({
@@ -89,6 +100,19 @@ export default function PlannerRail({
   children: ReactNode;
 }) {
   const width = useMemo(RAIL_WIDTH_CSS, []);
+  // One dial's list open at a time; a second press on its line folds it.
+  const [unfold, setUnfold] = useState<MarkKey | null>(null);
+  const fixes = crown.fixes ?? {};
+  const acts: Partial<Record<MarkKey, () => void>> = {};
+  for (const m of crown.marks ?? [])
+    if (fixes[m.key]?.length)
+      acts[m.key] = () => {
+        const next = unfold === m.key ? null : m.key;
+        setUnfold(next);
+        crown.onUnfold?.(next);
+      };
+  const open = unfold ? fixes[unfold] ?? [] : [];
+  const shapedKey = crown.marks?.[0]?.key;
 
   return (
     <aside {...{ [dropAttr]: "" }} className="pr" data-over={over || undefined} style={{ width }}>
@@ -117,8 +141,19 @@ export default function PlannerRail({
               // A card that writes Reaches the deck (D-207) — it lands on Ready.
               attrsFor={(k) => (k === crown.marks![0].key ? { "data-crown-deck": "" } : undefined)}
               reachKeyFor={(k) => (k === crown.marks![0].key ? DECK_REACH_KEY : undefined)}
+              acts={acts}
             />
-            {!crown.deck && crown.line && <CrownLine line={crown.line} onPress={crown.onLine} />}
+            {open.length > 0 && crown.onFixOpen && (
+              <DeckFixList
+                cards={open}
+                label={crown.marks.find((m) => m.key === unfold)?.label ?? ""}
+                onOpen={crown.onFixOpen}
+                walk={unfold === shapedKey ? crown.walk : null}
+              />
+            )}
+            {/* The dials say what's left and open it, so the line only speaks
+                for what no dial carries, and never adds a "then:" (D-226). */}
+            {!crown.deck && crown.line && <CrownLine line={{ ...crown.line, then: null }} onPress={crown.onLine} />}
             {groomAction && <div className="pr-groom">{groomAction}</div>}
           </div>
           {crown.deck}

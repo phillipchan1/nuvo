@@ -52,7 +52,8 @@ import DeckCard, { type DeckTone } from "./DeckCard";
 import GroomingSessionAction from "../floors/GroomingSessionAction";
 import { initiativeCardStatus, INITIATIVE_STATE_LABEL } from "./deckStatus";
 import GetReadyRail from "../plan/GetReadyRail";
-import { deckPlanLine, initiativeDeckCards, planCard } from "../../lib/deckReady";
+import type { ReadyCard } from "../../lib/readyCards";
+import { deckPlanLine, initiativeDeckCards, planCard, subjectOf } from "../../lib/deckReady";
 import { walkOrder, type QuarterOccupant } from "../../lib/planProjects";
 import PlanInitiativesRail from "./PlanInitiativesRail";
 import { PaceTrack } from "../progress/PaceTrack";
@@ -493,7 +494,17 @@ export default function InitiativeDeck({ startIn }: { /** a harness's way into t
     return plan ? [...deckCards, plan] : deckCards;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deckCards, notReady.length]);
-  const { line, opens } = useMemo(() => deckPlanLine(deckCards, notReady.length, "initiative"), [deckCards, notReady.length]);
+  /** A bet's fix: its own deck card when one matches, else its record. */
+  const betFix = (id: string, name: string, match: (c: ReadyCard) => boolean, why: string): ReadyCard =>
+    deckCards.find((c) => subjectOf(c) === id && match(c)) ?? {
+      key: `bet:fix:${id}`,
+      kind: "shape",
+      title: name,
+      why,
+      primary: { verb: "Open", name, run: () => openRecord("initiative", id) },
+      projectId: null,
+    };
+  const { opens } = useMemo(() => deckPlanLine(deckCards, notReady.length, "initiative"), [deckCards, notReady.length]);
   const occupants: QuarterOccupant[] = openLanes.map((l) => ({
     id: l.initiative.id,
     name: l.initiative.name,
@@ -573,11 +584,31 @@ export default function InitiativeDeck({ startIn }: { /** a harness's way into t
           // The line (D-207): at risk first, then what needs shaping.
           // At rest the line is the deck's one door (D-216): the walk when
           // shaping leads, the stack otherwise; offers ride their cards.
-          line,
+          // The dials carry shaping and risk and open their fixes (D-226), so
+          // there is no line left to say.
+          line: null,
           onLine: opens === "plan" ? openPlan : () => setReadyMode(true),
           // The readings (D-209).
           title: "This quarter",
           marks: board.lanes.length > 0 ? betMarks : undefined,
+          fixes: {
+            // Every bet behind each number, its own card when it has one (the
+            // act that fixes it), else the record to open (D-226).
+            "bet-ready": board.lanes
+              .filter((l) => {
+                const a = initiativeReadinessAxes(data, l.initiative);
+                return !(a.defined && a.planned);
+              })
+              .map((l) => betFix(l.initiative.id, l.initiative.name, (c) => c.kind === "shape" || c.kind === "risk", "Not shaped yet")),
+            moving: (() => {
+              const moving = new Set(movingIds(data, now));
+              return board.lanes
+                .filter((l) => !moving.has(l.initiative.id))
+                .map((l) => betFix(l.initiative.id, l.initiative.name, () => true, "No work moving yet"));
+            })(),
+          },
+          onFixOpen: (id) => openRecord("initiative", id),
+          walk: notReady.length > 0 ? { label: "Plan initiatives", run: openPlan } : null,
         }}
         poolLabel="Needs a quarter"
         poolCount={board.inbox.length}

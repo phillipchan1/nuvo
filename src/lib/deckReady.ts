@@ -149,7 +149,16 @@ export function initiativeDeckCards(facts: readonly InitiativeDeckFact[], acts: 
       });
   for (const f of near)
     if (!f.risk && !f.overdue && (f.gap || f.stateWord))
-      out.push({ key: `bet:gap:${f.id}`, kind: "shape", title: f.name, why: `${cap(f.gap ?? f.stateWord ?? "")} · ${f.quarterLabel}`, primary: open(f), projectId: null });
+      out.push({
+        key: `bet:gap:${f.id}`,
+        kind: "shape",
+        title: f.name,
+        why: `${cap(f.gap ?? f.stateWord ?? "")} · ${f.quarterLabel}`,
+        // a bet with no work under it has a better act than opening it (D-226)
+        primary: fix(f),
+        secondary: f.canDraft && acts.draftProjects ? { label: `Open ${f.name}`, run: () => acts.open(f.id) } : undefined,
+        projectId: null,
+      });
   return out;
 }
 

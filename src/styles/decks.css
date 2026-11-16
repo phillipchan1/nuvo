@@ -948,3 +948,21 @@ html:root .lane-cell:focus-visible { outline: none; background: color-mix(in srg
 .pw-add { margin-top: 4px; }
 /* Nuvo's outcome draft under an empty outcome field (D-216) */
 .pw-suggest { min-width: 0; display: flex; }
+
+/* A dial's fixes, under the dials (D-226): the name and its why open the
+   record; the act sits on the row. Hairline rows, flat on the rail. */
+.deck-fixes { display: grid; gap: 2px; margin-top: 4px; }
+.deck-fixes > .k-btn { justify-self: start; margin-top: 2px; }
+.deck-fix { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px 4px 4px 0; border-radius: var(--r-ctl); }
+.deck-fix > svg { flex: none; color: var(--faint); }
+.deck-fix > .k-btn { flex: none; }
+.deck-fix-name {
+  display: grid; min-width: 0; flex: 1; gap: 1px; padding: 3px 6px; border-radius: var(--r-ctl);
+  text-align: left; background: none; border: 0; color: inherit; font: inherit;
+}
+@media (hover: hover) { .deck-fix-name:hover { background: var(--accent-soft); } }
+html:root .deck-fix-name:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+.deck-fix-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--ink); }
+.deck-fix-why { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted); }
+.deck-fix[data-kind="risk"] .deck-fix-why { color: var(--signal); }
+@media (max-width: 767px) { .deck-fix-name { min-height: 44px; } }
