@@ -89,6 +89,20 @@ const GROUPS: Group[] = [
     ],
   },
   {
+    // The rail is one walk (D-222): the week's projects, an open project's
+    // tasks, then Today & Inbox — the Table's keys, on the Schedule.
+    title: "The week's projects (rail)",
+    items: [
+      { keys: [["↑"], ["↓"]], sep: "/", label: "Walk projects and their tasks — on into Today & Inbox" },
+      { keys: [["→"]], label: "Open a project, then step into its tasks" },
+      { keys: [["←"]], label: "Close the project (from anywhere inside it)" },
+      { keys: [["↵"]], label: "Open the project, or the task" },
+      { keys: [["E"]], label: "Done (a task) · Ship (a project)" },
+      { keys: [["⌫"], ["."]], sep: "/", label: "Delete / the row's menu" },
+      { keys: [["Esc"]], label: "Step out of a project's tasks" },
+    ],
+  },
+  {
     title: "Today & Inbox",
     items: [
       { keys: [["N"]], label: "Plan for next week" },

@@ -7,7 +7,7 @@ import { TRASH_LIMIT, TRASH_RETENTION_DAYS, useTrashedTasks, type useTaskMutatio
 import TaskComposer, { type TaskComposerHandle } from "./tasks/TaskComposer";
 import TaskActionsMenu from "./tasks/TaskActionsMenu";
 import { TaskDateMenu, TaskMoveMenu, useRenameAct } from "./tasks/TaskMenus";
-import { orderBeside, useTaskListKeys } from "./tasks/useTaskListKeys";
+import { orderBeside, useTaskListKeys, type TaskListKeyActs } from "./tasks/useTaskListKeys";
 import { claimKeys, keyOwner } from "./tasks/keyOwner";
 import { restoreFromTrashPatch } from "../lib/types";
 import { useVerticalDirectory } from "../hooks/useVertical";
@@ -166,6 +166,14 @@ function LeftRail({
   // The cursor is drawn only while the keyboard is driving it. A click selects
   // without lifting (the lift means "this row's popover is open", below).
   const [keyCursor, setKeyCursor] = useState(false);
+  // The crown's half of the rail's keys (D-222): its own cursor (a project, or
+  // a task inside an open one), and which half holds the keys — the crown or
+  // the Today/Inbox tray. A press in either takes them; ↓ off the crown's last
+  // row and ↑ off the tray's first hand them across. A plain ref, read at
+  // keystroke time, for the reason keyOwner is one.
+  const [crownCursor, setCrownCursor] = useState<string | null>(null);
+  const crownHasKeys = useRef(false);
+  const [crownEntry, setCrownEntry] = useState<{ seq: number; at: "first" | "last" } | null>(null);
   const [labelPickerFor, setLabelPickerFor] = useState<Task | null>(null);
   const [remindPickerFor, setRemindPickerFor] = useState<Task | null>(null);
   const [schedulePickerFor, setSchedulePickerFor] = useState<Task | null>(null);
@@ -209,6 +217,12 @@ function LeftRail({
       const target = e.target as HTMLElement | null;
       if (target && railRef.current?.contains(target)) {
         claimKeys("rail");
+        // …and which half of it: the crown's projects or the tray's list.
+        if (target.closest(".crown")) crownHasKeys.current = true;
+        else if (target.closest(".rail-tray-handle, .rail-list, .rail-capture")) {
+          crownHasKeys.current = false;
+          setCrownCursor(null);
+        }
         return;
       }
       if (!target?.closest?.("[data-calendar-pane]")) return;
@@ -607,30 +621,9 @@ function LeftRail({
   const renameTask = useRenameAct(mutations);
   const railKeysOn =
     hotkeysEnabled && !rowMenu && !editingId && !contextMenu && !labelPickerFor && !schedulePickerFor && !remindPickerFor;
-  useTaskListKeys({
-    // …and only while the rail is the pane last pressed in (keyOwner): with a
-    // block selected on the grid, j / ⌫ / e belong to the block.
-    enabled: () => railKeysOn && keyOwner() === "rail",
-    // Only rows that are drawn: j past the last one should reach the capture
-    // box, not walk into a collapsed "done" tail.
-    rows: drawn,
-    cursor: {
-      // Keys act on a row you can SEE. A click selects without drawing the
-      // cursor (the lift means "its popover is open"), and that invisible
-      // selection used to stay armed: click a row, close its popover, click the
-      // calendar, press ⌫ — and the rail trashed the row nobody was looking at,
-      // then lit its neighbour for the next ⌫. An unlit click is only where j / k
-      // start from.
-      cursorId: keyCursor ? selectedId : null,
-      homeId: keyCursor ? null : selectedId,
-      setCursorId: (id) => {
-        setSelectedId(id);
-        setKeyCursor(Boolean(id));
-      },
-      selectedIds,
-      setSelectedIds,
-    },
-    acts: {
+  // The acts on a task row, shared by the tray's list and the crown's open
+  // projects (D-222) — one rail, one set of hands.
+  const rowActs = {
       open: (t) => onOpenTask(t, rowRect(t.id)),
       complete: (targets) =>
         targets.forEach((t) => {
@@ -652,6 +645,37 @@ function LeftRail({
         const r = rowRect(t.id);
         setContextMenu({ task: t, x: r.left + 24, y: r.bottom });
       },
+  } satisfies Pick<TaskListKeyActs<Task>, "open" | "complete" | "trash" | "date" | "move" | "rename" | "menu">;
+  const trayOpenRef = useRef(trayOpen);
+  trayOpenRef.current = trayOpen;
+  // The crown holds the keys after a press in it, or whenever the tray's list
+  // is folded away (keys must never walk rows you can't see).
+  const crownOwns = () => crownHasKeys.current || !trayOpenRef.current;
+  useTaskListKeys({
+    // …and only while the rail is the pane last pressed in (keyOwner): with a
+    // block selected on the grid, j / ⌫ / e belong to the block.
+    enabled: () => railKeysOn && keyOwner() === "rail" && !crownOwns(),
+    // Only rows that are drawn: j past the last one should reach the capture
+    // box, not walk into a collapsed "done" tail.
+    rows: drawn,
+    cursor: {
+      // Keys act on a row you can SEE. A click selects without drawing the
+      // cursor (the lift means "its popover is open"), and that invisible
+      // selection used to stay armed: click a row, close its popover, click the
+      // calendar, press ⌫ — and the rail trashed the row nobody was looking at,
+      // then lit its neighbour for the next ⌫. An unlit click is only where j / k
+      // start from.
+      cursorId: keyCursor ? selectedId : null,
+      homeId: keyCursor ? null : selectedId,
+      setCursorId: (id) => {
+        setSelectedId(id);
+        setKeyCursor(Boolean(id));
+      },
+      selectedIds,
+      setSelectedIds,
+    },
+    acts: {
+      ...rowActs,
       reorderBy: (t, delta) => {
         const moved = moveBy(t.id, delta);
         // Nothing moved: the row is at the end of its band, or its band won't
@@ -670,6 +694,13 @@ function LeftRail({
       },
       extra: (e, targets) => {
         if (e.metaKey || e.ctrlKey || e.altKey) return false;
+        // ↑ off the first row climbs into the week's projects (D-222).
+        if (!e.shiftKey && (e.key === "ArrowUp" || e.key === "k") && keyCursor && selectedId && drawn[0]?.id === selectedId) {
+          crownHasKeys.current = true;
+          setKeyCursor(false);
+          setCrownEntry((p) => ({ seq: (p?.seq ?? 0) + 1, at: "last" }));
+          return true;
+        }
         // The trash face: rows are already trashed — only restore and open apply.
         if (tab === "trash") {
           if (e.key === "u" && targets.length) {
@@ -980,6 +1011,8 @@ function LeftRail({
             <TaskRow
               key={t.id}
               {...rowProps(t)}
+              // the crown's own keyboard cursor lights its copy of the row
+              selected={rowProps(t).selected || crownCursor === t.id}
               ref={undefined}
               meta={undefined}
               offer={undefined}
@@ -998,6 +1031,28 @@ function LeftRail({
           today={today}
           deck={deck}
           rowCards={rowCards}
+          keys={{
+            enabled: () => railKeysOn && keyOwner() === "rail" && crownOwns(),
+            cursorId: crownCursor,
+            setCursorId: (id) => {
+              setCrownCursor(id);
+              if (id) {
+                crownHasKeys.current = true;
+                setKeyCursor(false);
+              }
+            },
+            taskActs: rowActs,
+            onLeaveDown: () => {
+              // On down into Today / Inbox — opening the tray if it was folded.
+              if (!drawn.length) return;
+              crownHasKeys.current = false;
+              setCrownCursor(null);
+              setTrayOpen(true);
+              setSelectedId(drawn[0].id);
+              setKeyCursor(true);
+            },
+            entry: crownEntry,
+          }}
         />
       </div>
       {/* The tray (D-209): Today and Inbox fold to this strip above Capture —

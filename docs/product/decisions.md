@@ -8590,3 +8590,39 @@ cancelling, the filter menu); then against the local Worker on a test account se
 local database — j/k through a project's real tasks, `a` adding "… fri 30m" (Fri, 30m), ⌫
 trashing it, Esc and ← back out, and the phone's Table at 375px with real rows. **Not yet run
 against production data, and not released.***
+
+---
+
+**D-222 · 2026-11-15 · The rail is one walk: the week's projects, their tasks, then Today & Inbox.**
+*(Operator: "I should be able to go up, down, left, right … the page should be context aware and
+have full keyboard support, since that's a power user's way of navigating.")* The Table got the
+outline's keys (D-220), and the rail's Today/Inbox list has always had the list grammar — but the
+week's projects above it were mouse-only: no cursor could land on one, and its tasks could only be
+reached by clicking a chevron.
+
+→ **The Table's grammar, on the rail's projects** — `useTaskListKeys` again, never a second keymap
+(D-146): ↑↓ walk the projects and any open project's tasks; **→** opens a project, then steps into
+its first task; **←** closes it from anywhere inside and lands on its heading; **↵** opens the
+project's record or the task; **e** finishes a task, or opens a project's ship assessment (the
+ring's act); **⌫** deletes (a task with undo; a project through the record menu's Delete step);
+**.** is the row's menu; **Esc** steps out of a project's tasks, then lets the cursor go. A task
+row's acts are the rail's own (`rowActs`, shared with the Today list) — one rail, one set of hands.
+→ **One walk, two halves.** ↓ off the last project lands on Today/Inbox's first row (opening the
+tray if it was folded); ↑ off the tray's first row climbs back to the last project. A press in
+either half gives it the keys, and while the tray is folded the projects hold them — keys never
+walk rows you can't see. Which pane (rail or grid) is still `keyOwner`'s answer.
+→ The lit project wears the same wash and ring as a lit task row. The shortcuts sheet (`?`) lists
+the rail's project keys.
+→ **One tooltip at a time** (same day, operator: "two things pop up … the default browser one and
+then our own"). `lib/tooltips` lifted only the innermost `title` under the pointer, so a project's
+name ("… — open") showed ours while the row around it ("Drag onto the calendar…") still showed the
+browser's. While ours is up, every titled ancestor is muted and given back after — app-wide, not
+just on the rail. Pinned in `tests/tooltips.test.ts`.
+
+Ledger: no row moved — it makes the slate (**W2**) reachable without a mouse. Strains nothing; adds
+no pool, no name.
+
+*Status: shipped. Pinned in `rail-offers` (↓ lights a project, → opens then steps in, ↵ / e act on
+the task, ← closes back, ↓ off the end hands on). Driven in the real `LeftRail` at `?rail=offers`:
+the full walk down into Today and back up. Not driven in the signed-in app — the local backend's
+database was rebuilt under another session's schema mid-way, so the dev login no longer exists.*

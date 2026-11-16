@@ -64,6 +64,7 @@ import { instantAt } from "./plan/destinations";
 import { OtherTimes } from "./nuvo/OtherTimes";
 import { useWeekComposer } from "../hooks/useFindTime";
 import { costFor } from "../lib/offerChoices";
+import { useTaskListKeys, type TaskListKeyActs } from "./tasks/useTaskListKeys";
 
 /** The week door's lifecycle, owned by Planner and worn by this header. */
 export interface WeekDoor {
@@ -90,6 +91,28 @@ function readOpen(): boolean {
   }
 }
 
+/** The rail's keyboard, reaching into the crown (D-222): one walk down the
+ *  rail — the week's projects, an open project's tasks, then Today/Inbox. The
+ *  rail owns the task acts (its rows ARE these rows), the crown owns the walk. */
+export interface CrownKeys {
+  /** asked at keystroke time — the rail is the pane last pressed, and the
+   *  crown (not the tray) holds the keys */
+  enabled: () => boolean;
+  /** the lit row: `p:<projectId>` for a project, the task's id for a task */
+  cursorId: string | null;
+  setCursorId: (id: string | null) => void;
+  /** the rail's own acts on a task row — the same ones its Today list uses */
+  taskActs: Pick<TaskListKeyActs<Task>, "open" | "complete" | "trash" | "date" | "move" | "rename" | "menu">;
+  /** ↓ past the last row: the keys go on down to Today / Inbox */
+  onLeaveDown: () => void;
+  /** the rail asks the crown to light a row (↑ off the top of the tray) */
+  entry?: { seq: number; at: "first" | "last" } | null;
+}
+
+type CrownKeyRow = { id: string; kind: "project" | "task"; status?: string | null; row: WeekCrownRow; task?: Task };
+const projectKey = (projectId: string) => `p:${projectId}`;
+const NO_SELECTION: ReadonlySet<string> = new Set();
+
 export default function WeekPanel({
   door,
   renderTask,
@@ -100,6 +123,7 @@ export default function WeekPanel({
   today,
   deck,
   rowCards,
+  keys,
 }: {
   door?: WeekDoor;
   renderTask: RenderCrownTask;
@@ -127,6 +151,8 @@ export default function WeekPanel({
    *  this week, and the composer's fit for it — rides its project's row as a
    *  chip instead of a card above the list (D-216, R6). */
   rowCards?: readonly ReadyCard[];
+  /** the rail's keyboard (D-222); omitted (a harness, the phone), no keys */
+  keys?: CrownKeys;
 }) {
   const { data, togglePushLanded } = useVertical();
   const { openFlow, openRecord, nav } = useAppNavigation();
@@ -192,6 +218,136 @@ export default function WeekPanel({
     const now = new Date();
     return weekMarks(crown, data, now, movingIds(data, now));
   }, [crown, data]);
+  // ── the keys (D-222) — the Table's grammar on the rail's projects ─────────
+  // Rows in the order they are drawn: each project, then — when it's open —
+  // its work (placed first, then loose; only loose when the Scheduled dial
+  // opened it). ↑↓ walk, → opens and steps in, ← closes from anywhere inside,
+  // ↵ opens (the record, or the task), Esc steps out of a project's tasks.
+  const keyRows = useMemo<CrownKeyRow[]>(() => {
+    if (!crown || !listOpen) return [];
+    const out: CrownKeyRow[] = [];
+    for (const r of crown.rows) {
+      out.push({ id: projectKey(r.projectId), kind: "project", row: r });
+      if (!openIds.has(r.rock.id) || !r.canExpand) continue;
+      if (!looseOnly.has(r.rock.id)) for (const p of r.placed) out.push({ id: p.task.id, kind: "task", status: p.task.status, row: r, task: p.task });
+      for (const t of r.loose) out.push({ id: t.id, kind: "task", status: t.status, row: r, task: t });
+    }
+    return out;
+  }, [crown, listOpen, openIds, looseOnly]);
+  const keyRowsRef = useRef(keyRows);
+  keyRowsRef.current = keyRows;
+  const setExpanded = (row: WeekCrownRow, on: boolean) => {
+    setLooseOnly((lo) => {
+      if (!lo.has(row.rock.id)) return lo;
+      const n = new Set(lo);
+      n.delete(row.rock.id);
+      return n;
+    });
+    setOpenIds((prev) => {
+      if (prev.has(row.rock.id) === on) return prev;
+      const n = new Set(prev);
+      if (on) n.add(row.rock.id);
+      else n.delete(row.rock.id);
+      return n;
+    });
+  };
+  const rowAt = (id: string) => {
+    const r = document.querySelector<HTMLElement>(`[data-crown-key="${CSS.escape(id)}"]`)?.getBoundingClientRect();
+    return r ? { x: r.left + 24, y: r.bottom } : { x: 240, y: 200 };
+  };
+  const tasksOf = (targets: CrownKeyRow[]) => targets.flatMap((k) => (k.task ? [k.task] : []));
+  useTaskListKeys<CrownKeyRow>({
+    enabled: () => Boolean(keys?.enabled()),
+    rows: keyRows,
+    cursor: { cursorId: keys?.cursorId ?? null, setCursorId: (id) => keys?.setCursorId(id), selectedIds: NO_SELECTION, setSelectedIds: () => {} },
+    acts: {
+      open: (k) => (k.task ? keys?.taskActs.open(k.task) : openRecord("project", k.row.projectId)),
+      complete: (targets) => {
+        const ts = tasksOf(targets);
+        if (ts.length) return keys?.taskActs.complete(ts);
+        // e on a project is its finish line: the ship assessment, as the ring.
+        const r = targets[0]?.row;
+        if (!r || r.state === "shipped") return;
+        if (r.rock.done_at) togglePushLanded(r.projectId);
+        else setShipId(r.projectId);
+      },
+      trash: (targets) => {
+        const ts = tasksOf(targets);
+        if (ts.length) return keys?.taskActs.trash(ts);
+        const k = targets[0];
+        if (k) recordMenu.askDelete("project", k.row.projectId, rowAt(k.id));
+      },
+      date: (targets) => {
+        const ts = tasksOf(targets);
+        if (ts.length) keys?.taskActs.date?.(ts);
+      },
+      move: (targets) => {
+        const ts = tasksOf(targets);
+        if (ts.length) keys?.taskActs.move?.(ts);
+      },
+      rename: (k) => {
+        if (k.task) keys?.taskActs.rename(k.task);
+      },
+      menu: (k) => {
+        if (k.task) return keys?.taskActs.menu?.(k.task);
+        const at = rowAt(k.id);
+        recordMenu.onContextMenu("project", k.row.projectId)({
+          preventDefault() {},
+          stopPropagation() {},
+          clientX: at.x,
+          clientY: at.y,
+        } as unknown as ReactMouseEvent);
+      },
+      toComposer: () => keys?.onLeaveDown(),
+      extra: (e) => {
+        if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false;
+        const rowsNow = keyRowsRef.current;
+        const k = rowsNow.find((x) => x.id === keys?.cursorId);
+        if (!k) return false;
+        const r = k.row;
+        switch (e.key) {
+          case "ArrowRight":
+          case "l":
+            if (k.kind === "task") return true;
+            if (!r.canExpand) return true;
+            if (!openIds.has(r.rock.id)) setExpanded(r, true);
+            else {
+              const first = rowsNow[rowsNow.indexOf(k) + 1];
+              if (first?.kind === "task") keys?.setCursorId(first.id);
+            }
+            return true;
+          case "ArrowLeft":
+          case "h":
+            // ← closes from anywhere in a project and lands on its heading.
+            if (openIds.has(r.rock.id)) setExpanded(r, false);
+            keys?.setCursorId(projectKey(r.projectId));
+            return true;
+          case "Escape":
+            // Inside a project, Esc steps out to it; on a project, the hook's
+            // own Esc lets the cursor go.
+            if (k.kind !== "task") return false;
+            keys?.setCursorId(projectKey(r.projectId));
+            return true;
+        }
+        return false;
+      },
+    },
+  });
+  // Asked in from the tray (↑ off its first row): light the first or last row.
+  const entrySeq = keys?.entry?.seq;
+  useEffect(() => {
+    if (entrySeq == null) return;
+    const rowsNow = keyRowsRef.current;
+    const at = rowsNow.length ? (keys?.entry?.at === "first" ? rowsNow[0] : rowsNow[rowsNow.length - 1]) : null;
+    keys?.setCursorId(at?.id ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entrySeq]);
+  // Keep the lit row in view as the keys walk.
+  const litId = keys?.cursorId ?? null;
+  useEffect(() => {
+    if (litId) document.querySelector(`[data-crown-key="${CSS.escape(litId)}"]`)?.scrollIntoView?.({ block: "nearest" });
+  }, [litId]);
+
   if (!data || !crown) return null;
   const shapeItems = marks[0]?.items ?? [];
   const weekReady = rows0(crown) && marksReady(marks);
@@ -350,6 +506,7 @@ export default function WeekPanel({
                   onOpenProject={(id) => openRecord("project", id)}
                   expanded={openIds.has(row.rock.id)}
                   looseOnly={looseOnly.has(row.rock.id)}
+                  lit={keys?.cursorId === projectKey(row.projectId)}
                   onExpand={() => {
                     // A hand on the chevron goes back to the whole list.
                     setLooseOnly((lo) => {
@@ -439,6 +596,7 @@ function ProjectStackRow({
   onOpenProject,
   expanded,
   looseOnly = false,
+  lit = false,
   onExpand,
 }: {
   /** the week's read model — this row computes nothing (see useWeekCrown) */
@@ -458,6 +616,8 @@ function ProjectStackRow({
   expanded: boolean;
   /** unfolded by the Scheduled dial: just the work with no time */
   looseOnly?: boolean;
+  /** the rail's keyboard cursor is on this project (D-222) */
+  lit?: boolean;
   onExpand: () => void;
 }) {
   const { rock, work, color, placed, loose, open, pct, rolls, continues, canExpand, weightMins, placedLabel } = row;
@@ -525,6 +685,8 @@ function ProjectStackRow({
             : undefined
         }
         className="crown-proj-row"
+        data-crown-key={`p:${row.projectId}`}
+        data-cursor={lit ? "" : undefined}
       >
         <div className="crown-proj-top">
           <button
@@ -636,7 +798,7 @@ function ProjectStackRow({
       {expanded && canExpand && (
         <div className="crown-proj-work">
           {!looseOnly && placed.map((p) => (
-            <div key={p.task.id}>
+            <div key={p.task.id} data-crown-key={p.task.id}>
               {renderTask(p.task, {
                 draggable: false,
                 whenShown: true,
@@ -645,7 +807,7 @@ function ProjectStackRow({
             </div>
           ))}
           {loose.map((t) => (
-            <div key={t.id}>
+            <div key={t.id} data-crown-key={t.id}>
               {renderTask(t, {
                 draggable: true,
                 // Project work placed by hand lands in the project's SITTING,

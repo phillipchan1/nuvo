@@ -61,7 +61,29 @@ function show(el: HTMLElement) {
   tip.style.top = `${pos.top}px`;
 }
 
+// A titled element inside another titled element (a row's name button inside a
+// row that says how to drag it) used to show BOTH: ours for the inner one, and
+// the browser's own for the outer, whose `title` was still on it. While ours is
+// up, every titled ancestor is muted too, and given back when it goes.
+let muted: HTMLElement[] = [];
+function muteAncestors(el: HTMLElement) {
+  for (let p = el.parentElement?.closest<HTMLElement>("[title]"); p; p = p.parentElement?.closest<HTMLElement>("[title]")) {
+    p.dataset.tipMuted = p.getAttribute("title") ?? "";
+    p.removeAttribute("title");
+    muted.push(p);
+  }
+}
+function unmute() {
+  for (const p of muted) {
+    const text = p.dataset.tipMuted;
+    if (text != null && !p.hasAttribute("title")) p.setAttribute("title", text);
+    delete p.dataset.tipMuted;
+  }
+  muted = [];
+}
+
 function release(el: HTMLElement | null) {
+  unmute();
   if (!el) return;
   const text = el.dataset.tip;
   if (text != null && !el.hasAttribute("title")) el.setAttribute("title", text);
@@ -105,11 +127,14 @@ export function installTooltips(doc: Document = document): void {
     (e) => {
       if (e.pointerType && e.pointerType !== "mouse" && e.pointerType !== "pen") return;
       const t = e.target as Element | null;
-      const el = (t?.closest?.("[title], [data-tip]") as HTMLElement | null) ?? null;
+      // `[data-tip-muted]`: an ancestor we muted for the element just left is
+      // still the element under the pointer — hide() gives its title back first.
+      const el = (t?.closest?.("[title], [data-tip], [data-tip-muted]") as HTMLElement | null) ?? null;
       if (el === current) return;
       hide();
       if (!el || !(el instanceof HTMLElement)) return;
       if (!el.dataset.tip && !adopt(el)) return;
+      muteAncestors(el);
       current = el;
       const warm = Date.now() < coldAt;
       showTimer = win.setTimeout(() => current === el && show(el), warm ? 0 : DELAY_MS);

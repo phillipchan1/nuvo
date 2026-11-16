@@ -529,3 +529,67 @@ describe("the Nuvo panel retired (D-205)", () => {
     expect(sheet).not.toMatch(/NuvoOffers|useNuvoOffers/);
   });
 });
+
+
+// ── the rail's keys reach the week's projects (D-222) ─────────────────────────
+
+function KeyedCrown({ acts, onLeaveDown }: { acts: Record<string, ReturnType<typeof vi.fn>>; onLeaveDown: () => void }) {
+  const [cursor, setCursor] = useState<string | null>(null);
+  return (
+    <WeekPanel
+      renderTask={(t) => <TaskRow key={t.id} task={t} labels={[]} selected={cursor === t.id} onSelect={() => {}} onOpen={() => {}} onToggleDone={() => {}} />}
+      keys={{
+        enabled: () => true,
+        cursorId: cursor,
+        setCursorId: setCursor,
+        taskActs: acts as never,
+        onLeaveDown,
+      }}
+    />
+  );
+}
+
+describe("the rail's keys walk the week's projects like the Table (D-222)", () => {
+  beforeEach(() => localStorage.clear());
+  const press = (key: string) => fireEvent.keyDown(window, { key });
+  const lit = (c: HTMLElement) => c.querySelector(".crown-proj-row[data-cursor]")?.closest("[data-crown-project]")?.textContent ?? null;
+
+  it("↓ lights a project, → opens it and steps in, ↵ and e act on the task, ← closes back to it, ↓ off the end leaves", async () => {
+    const acts = { open: vi.fn(), complete: vi.fn(), trash: vi.fn(), date: vi.fn(), move: vi.fn(), rename: vi.fn(), menu: vi.fn() };
+    const leave = vi.fn();
+    const { container } = render(
+      <QueryClientProvider client={offersClient(offersToday())}>
+        <VerticalStoreProvider value={store}>
+          <AppNavigationProvider>
+            <KeyedCrown acts={acts} onLeaveDown={leave} />
+          </AppNavigationProvider>
+        </VerticalStoreProvider>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(screen.getByText("Quarterly taxes")).toBeTruthy());
+    press("ArrowDown");
+    expect(lit(container)).toMatch(/Launch pricing page/);
+    press("ArrowDown");
+    press("ArrowDown");
+    expect(lit(container)).toMatch(/Quarterly taxes/);
+    // → opens it (its tasks appear) …
+    const before = container.querySelectorAll(".crown-proj-work .task-row").length;
+    act(() => press("ArrowRight"));
+    await waitFor(() => expect(container.querySelectorAll(".crown-proj-work .task-row").length).toBeGreaterThan(before));
+    // … → again steps into its first task
+    act(() => press("ArrowRight"));
+    expect(container.querySelector(".crown-proj-work .task-row[data-selected]")).not.toBeNull();
+    expect(lit(container)).toBeNull();
+    press("Enter");
+    expect(acts.open).toHaveBeenCalledTimes(1);
+    press("e");
+    expect(acts.complete).toHaveBeenCalledTimes(1);
+    // ← closes the project from inside it, and lands on its heading
+    act(() => press("ArrowLeft"));
+    expect(lit(container)).toMatch(/Quarterly taxes/);
+    expect(container.querySelector(".crown-proj-work")).toBeNull();
+    // ↓ past the last row hands the keys on down
+    act(() => press("ArrowDown"));
+    expect(leave).toHaveBeenCalledTimes(1);
+  });
+});
