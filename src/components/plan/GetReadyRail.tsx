@@ -17,6 +17,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IconButton, OfferCard } from "../kit";
+import { CardOtherTimes } from "../nuvo/OtherTimes";
 import { Icon } from "../Icon";
 import { landBlock, motionMs, motionOff } from "../../lib/motion";
 import { READY_MAX, type ReadyCard } from "../../lib/readyCards";
@@ -213,6 +214,7 @@ export default function GetReadyRail({
                 onPress={(el) => press(c, "primary", el)}
                 onNotNow={c.secondary?.label === "Not now" ? () => press(c, "secondary") : undefined}
                 secondary={c.secondary && c.secondary.label !== "Not now" ? { label: c.secondary.label, onPress: () => press(c, "secondary") } : undefined}
+                other={<CardOtherTimes card={c} />}
               />
             </div>
           ))

@@ -67,8 +67,9 @@ export function useRepairs(repairs: Repair[], acts: RepairActs) {
     setApplied((prev) => prev.filter((_, j) => j !== i));
     toast("Undone · back where it was");
   };
-  const take = (r: Repair, auto = false) => {
-    const o = fitOf(r, ix);
+  /** `at`: a time chosen in Other times instead of the fit on show (R13) */
+  const take = (r: Repair, auto = false, at?: { dayISO: string; startMin: number; durationMin: number }) => {
+    const o = at ?? fitOf(r, ix);
     const start = instantOf(o.dayISO, o.startMin);
     const undoIt = acts.apply(r, start);
     handled.current.add(r.key);

@@ -12,6 +12,7 @@ import { useCallback, useEffect } from "react";
 import Sheet from "./Sheet";
 import { SHEET_BODY, SHEET_SCROLL } from "./sheetKit";
 import { OfferCard } from "../kit";
+import { CardOtherTimes } from "../nuvo/OtherTimes";
 import { haptic } from "../../lib/haptics";
 import type { MemoryApi } from "../memory/MemoryPage";
 import { useTaskMutations } from "../../hooks/useTasks";
@@ -61,6 +62,7 @@ export function ReadyStackSheet({ cards, onClose }: { cards: readonly ReadyCard[
                       ? { label: c.secondary.label, onPress: () => press(c, "secondary", null) }
                       : undefined
                   }
+                  other={<CardOtherTimes card={c} phone touch />}
                 />
               </div>
             ))}

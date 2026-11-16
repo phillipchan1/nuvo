@@ -82,6 +82,8 @@ export interface ReadyCard {
 
 export interface ReadyActs {
   move: (repairKey: string, from: HTMLElement | null) => void;
+  /** a broken block moved to a time chosen in Other times instead (R13) */
+  moveAt?: (repairKey: string, at: Where, from: HTMLElement | null) => void;
   leave: (repairKey: string) => void;
   repairAll: () => void;
   hold: (taskId: string, from: HTMLElement | null) => void;
@@ -100,6 +102,8 @@ export interface ReadyInput {
   todayISO: string;
   repairs?: readonly {
     key: string;
+    /** the broken row — a task, or a sitting */
+    id?: string;
     title: string;
     why: "missed" | "meeting";
     event?: string | null;
@@ -165,6 +169,10 @@ export function composeReadyCards(input: ReadyInput): ReadyCard[] {
       why: `${r.why === "missed" ? "Missed" : `${r.event || "A meeting"} landed on it`} · was ${whereSpan(r.from)}`,
       primary: { verb: "Move to", name: whereSpan(r.to), run: (el) => acts.move(r.key, el) },
       at: r.to,
+      // Other times asks the composer about this block — a task, or a sitting
+      // standing in for one (R13: every time offer carries a second answer)
+      taskId: r.id ?? undefined,
+      placeAt: acts.moveAt ? (at, el) => acts.moveAt!(r.key, at, el) : undefined,
       secondary: { label: "Keep it there", run: () => acts.leave(r.key) },
       projectId: r.projectId,
     });

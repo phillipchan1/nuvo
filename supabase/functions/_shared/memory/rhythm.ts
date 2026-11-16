@@ -67,8 +67,11 @@ export type Observation =
       startMin: number;
       endMin: number;
       domainId: string | null;
-      /** Every occurrence came from one recurring calendar series: it is already
-       *  protected time, so a slot would double-book it. */
+      /** It is already a repeating event on your calendar, so it is already
+       *  protected time and a slot would double-book it: every occurrence came
+       *  from a series (any number of them: a series split by a "this and
+       *  following" edit, or the same meeting on two calendars, is still one
+       *  meeting), or the latest one did, so the weeks ahead are already held. */
       fromSeries: boolean;
     }
   | { kind: "window"; key: string; confidence: Confidence; pips: boolean[]; hits: number; of: number; weekdays: number[]; startMin: number; endMin: number }
@@ -141,7 +144,7 @@ function habits(input: RhythmInput, inWindow: (RhythmEvent & { w: number; wd: nu
     const confidence = confidenceOf(hits / of, anyWeeks, 0.85, 0.6);
     if (!confidence) continue;
     const used = list.filter((e) => weekdays.includes(e.wd));
-    const series = new Set(used.map((e) => e.seriesId));
+    const latest = used.reduce((a, e) => (e.day > a.day ? e : a), used[0]);
     const domains = used.map((e) => e.domainId).filter((d): d is string => !!d);
     out.push({
       kind: "habit",
@@ -155,7 +158,7 @@ function habits(input: RhythmInput, inWindow: (RhythmEvent & { w: number; wd: nu
       startMin: round(median(used.map((e) => e.startMin)), 15),
       endMin: round(median(used.map((e) => e.endMin)), 15),
       domainId: domains.length ? mostCommon(domains) : null,
-      fromSeries: series.size === 1 && !series.has(null),
+      fromSeries: used.every((e) => e.seriesId != null) || latest.seriesId != null,
     });
   }
   return out;

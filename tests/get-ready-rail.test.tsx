@@ -12,6 +12,8 @@ import GetReadyRail, { READY_HOLD_MS } from "../src/components/plan/GetReadyRail
 import { ReadyStackSheet } from "../src/components/mobile/MobileGetReady";
 import type { ReadyCard } from "../src/lib/readyCards";
 
+vi.mock("../src/hooks/useTasks", async (orig) => ({ ...(await orig<typeof import("../src/hooks/useTasks")>()), useAllTasks: () => ({ data: [] }) }));
+
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
@@ -114,6 +116,28 @@ describe("Get ready — the phone's sheet", () => {
     expect(first.querySelector(".tap")).toBeTruthy();
     fireEvent.click(Array.from(first.querySelectorAll("button")).find((b) => b.textContent === "Not now")!);
     expect(notNow).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Get ready — every time card carries Other times (R13)", () => {
+  const timed = (over: Partial<ReadyCard>): ReadyCard => ({
+    ...card(1),
+    at: { dayISO: "2026-11-16", startMin: 660, durationMin: 45 },
+    taskId: "t1",
+    placeAt: vi.fn(),
+    ...over,
+  });
+  it("a hold, and a repair, both on the rail and on the phone; a card that isn't a time has none", () => {
+    const repair = timed({ key: "repair:r1", kind: "repair", primary: { verb: "Move to", name: "Tue 9–10am", run: vi.fn() }, secondary: { label: "Keep it there", run: vi.fn() } });
+    const plain = card(3);
+    const { unmount } = render(<GetReadyRail cards={[timed({}), repair, plain]} onClose={() => {}} crown={<span />} />);
+    const other = (root: ParentNode) => Array.from(root.querySelectorAll(".k-offer-card")).map((c) => Boolean(c.querySelector('[aria-label="Other times"]')));
+    expect(other(document)).toEqual([true, true, false]);
+    unmount();
+    render(<ReadyStackSheet cards={[timed({}), repair, plain]} onClose={() => {}} />);
+    expect(other(document)).toEqual([true, true, false]);
+    // under a finger it is a 44px target, like the act beside it
+    expect(document.querySelector('[aria-label="Other times"]')!.classList.contains("tap")).toBe(true);
   });
 });
 

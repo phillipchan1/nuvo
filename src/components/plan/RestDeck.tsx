@@ -13,6 +13,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Icon } from "../Icon";
 import { OfferCard } from "../kit";
+import { CardOtherTimes } from "../nuvo/OtherTimes";
 import type { ReadyCard } from "../../lib/readyCards";
 import { useReadyStack } from "./GetReadyRail";
 import { haptic } from "../../lib/haptics";
@@ -83,6 +84,7 @@ export default function RestDeck({
           // is the stack's own (a two-week snooze).
           onNotNow={ordered.length > 1 ? later : top.secondary?.label === "Not now" ? () => press("secondary") : undefined}
           secondary={top.secondary && top.secondary.label !== "Not now" ? { label: top.secondary.label, onPress: () => press("secondary") } : undefined}
+          other={<CardOtherTimes card={top} touch={touch} />}
         />
       </div>
     </section>

@@ -1,4 +1,4 @@
-import { forwardRef } from "react";
+import { forwardRef, type ReactNode } from "react";
 import { Icon } from "../Icon";
 import { Button, Dest, IconButton } from "./Button";
 import { cx } from "./cx";
@@ -29,6 +29,9 @@ export interface OfferCardProps {
   onNotNow?: () => void;
   /** a second act that is a state, said in words ("Leave it where it is") */
   secondary?: { label: string; onPress: () => void };
+  /** the second answer every time offer carries (R13): the host's Other
+   *  times control, beside the act it's an alternative to */
+  other?: ReactNode;
   focused?: boolean;
   leaving?: boolean;
   arriving?: boolean;
@@ -38,7 +41,7 @@ export interface OfferCardProps {
 }
 
 export const OfferCard = forwardRef<HTMLDivElement, OfferCardProps>(function OfferCard(
-  { title, why, verb, name, shortcut, onPress, onNotNow, secondary, focused, leaving, arriving, touch, onFocusCard },
+  { title, why, verb, name, shortcut, onPress, onNotNow, secondary, other, focused, leaving, arriving, touch, onFocusCard },
   ref,
 ) {
   const tap = touch ? "tap" : undefined;
@@ -76,6 +79,7 @@ export const OfferCard = forwardRef<HTMLDivElement, OfferCardProps>(function Off
         >
           {name ? <Dest verb={verb} name={name} /> : verb}
         </Button>
+        {other}
         {secondary && (
           <Button kind="ghost" size={touch ? "md" : "sm"} className={tap} shortcut={focused && !touch && !onNotNow ? "⌫" : undefined} onClick={secondary.onPress}>
             {secondary.label}

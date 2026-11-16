@@ -120,7 +120,9 @@ export function useReady({
     if (!learned?.available) return null;
     return (
       learned.questions
-        .filter((i) => i.observation && i.described.confidence === "sure")
+        // a card is an act: a habit that's already a repeating event changes
+        // nothing when kept, so it waits on the Memory page instead
+        .filter((i) => i.observation && i.described.confidence === "sure" && !(i.observation.kind === "habit" && i.observation.fromSeries))
         .sort((a, b) => RANK[a.observation!.kind] - RANK[b.observation!.kind])[0] ?? null
     );
   }, [learned]);
@@ -150,6 +152,7 @@ export function useReady({
         const fit = fitOf(r, repairState?.ix ?? {});
         return {
           key: r.key,
+          id: r.id,
           title: r.title,
           why: r.why === "missed" ? ("missed" as const) : ("meeting" as const),
           event: r.event ?? null,
@@ -184,6 +187,13 @@ export function useReady({
           if (!rs || !r) return;
           reachFromCard(from, r.task?.project_id ?? r.slot?.project_id ?? null);
           rs.take(r);
+        },
+        moveAt: (key, at, from) => {
+          const rs = L().repairState;
+          const r = rs?.open.find((x) => x.key === key);
+          if (!rs || !r) return;
+          reachFromCard(from, r.task?.project_id ?? r.slot?.project_id ?? null);
+          rs.take(r, false, at);
         },
         leave: (key) => {
           const rs = L().repairState;
