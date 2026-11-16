@@ -29,6 +29,16 @@ export function asBytes(value: unknown): Uint8Array | null {
     return new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
   }
   if (typeof value === "string") {
+    // `to_jsonb(row)` (getOwnedEvent) renders bytea as "\\x<hex>", not base64.
+    // Reading that as base64 returned null, so every iCloud event edit said
+    // "iCloud credential missing" while sync (plain SELECT, real bytes) worked.
+    if (value.startsWith("\\x")) {
+      const hex = value.slice(2);
+      if (hex.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(hex)) return null;
+      const out = new Uint8Array(hex.length / 2);
+      for (let i = 0; i < out.length; i++) out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+      return out;
+    }
     try {
       const bin = atob(value);
       const out = new Uint8Array(bin.length);

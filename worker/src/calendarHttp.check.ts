@@ -210,6 +210,20 @@ const m365Row = await db.query<{ sync_failures: number; needs_reconnect: boolean
 );
 ok(Number(m365Row.rows[0]?.sync_failures) === 0 && m365Row.rows[0]?.needs_reconnect === false, "m365 row untouched while feature off");
 
+// iCloud edit reads the account through to_jsonb(a.*), which renders bytea as
+// "\\x<hex>". The sealed app password must survive that, or every edit says
+// "iCloud credential missing" while sync (plain SELECT) keeps working.
+{
+  const { sealAccountSecret, getOwnedEvent, openAccountSecret } = await import("./calendar/store.ts");
+  const { makeStore } = await import("./store.ts");
+  await sealAccountSecret(sql, ICLOUD_A, A, env, "abcd-efgh-ijkl-mnop");
+  await db.query("UPDATE external_events SET account_id = $1 WHERE id = $2", [ICLOUD_A, EVENT_A]);
+  const evt = await getOwnedEvent(makeStore(sql, A), EVENT_A);
+  ok(Boolean(evt?.account.refresh_token_enc), "to_jsonb account keeps the sealed password bytes");
+  const pw = evt ? await openAccountSecret(evt.account, env) : null;
+  ok(pw === "abcd-efgh-ijkl-mnop", `iCloud edit path opens the app password (got ${pw === null ? "null" : "other"})`);
+}
+
 restoreFetch();
 await db.close();
 
