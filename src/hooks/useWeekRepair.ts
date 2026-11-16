@@ -145,8 +145,15 @@ export function useWeekRepair({
         e.self_rsvp !== "declined" &&
         inWeek(new Date(e.start_at)),
     );
-    const meetingOn = (s: Date, e: Date) =>
-      meetings.find((m) => new Date(m.start_at) < e && new Date(m.end_at) > s);
+    // A meeting LANDS on a block only if it arrived (or changed) after you
+    // last placed the block (D-235). One that was already there when you put
+    // the block on top of it is a choice you made, not a break — that's how a
+    // gym block you dragged over a 25-minute call got "moved to Friday 4pm".
+    // No timestamp on either side → it counts, as before.
+    const arrivedAfter = (m: ExternalEvent, placedAt: string | null | undefined) =>
+      !m.last_synced_at || !placedAt || new Date(m.last_synced_at).getTime() > new Date(placedAt).getTime();
+    const meetingOn = (s: Date, e: Date, placedAt?: string | null) =>
+      meetings.find((m) => new Date(m.start_at) < e && new Date(m.end_at) > s && arrivedAfter(m, placedAt));
 
     // The start of the next block after `endMs` on the same day — once you've
     // moved on to it, the one before is behind you (the kernel's missed rule).
@@ -178,7 +185,7 @@ export function useWeekRepair({
           broken.push({ key: `task:${t.id}@${t.start_time}`, kind: "task", id: t.id, title: t.title, why: "missed", from, task: t });
         continue;
       }
-      const m = meetingOn(s, e);
+      const m = meetingOn(s, e, t.updated_at);
       if (m) broken.push({ key: `task:${t.id}@${t.start_time}`, kind: "task", id: t.id, title: t.title, why: "landed", event: m.title || "A meeting", from, task: t });
     }
     for (const sl of slots) {
@@ -210,7 +217,7 @@ export function useWeekRepair({
         continue;
       }
       if (sl.recurrence_id) continue; // a standing block keeps its hour
-      const m = meetingOn(s, e);
+      const m = meetingOn(s, e, sl.updated_at);
       if (m)
         broken.push({
           key: `slot:${sl.id}@${sl.start_time}`,
@@ -262,7 +269,10 @@ export function useWeekRepair({
       // A missed block is put back TODAY while today has room (D-207's point,
       // D-232): the composer alone spreads work to the emptiest day, which is
       // right for planning a week and wrong for "this slipped this morning".
-      const soon = b.why === "missed" ? alternativesFor({ ...input, workingDays: [at.getDay()] }, asTask, b.from, 2) : [];
+      // A block a meeting landed on stays on ITS day while that day has room
+      // (D-235) — a gym block on Monday moved to Friday 4pm isn't a repair.
+      const homeDay = b.why === "missed" ? at : new Date(`${b.from.dayISO}T00:00:00`);
+      const soon = alternativesFor({ ...input, workingDays: [homeDay.getDay()] }, asTask, b.from, 2);
       const rest = alternativesFor(input, asTask, b.from, 4).filter((o) => !soon.some((x) => x.dayISO === o.dayISO && x.startMin === o.startMin));
       let options = [...soon, ...rest].slice(0, 4);
       // The composer can find nothing — a project's sitting wants a 45-minute

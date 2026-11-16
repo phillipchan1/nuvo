@@ -295,6 +295,10 @@ export interface ExternalEvent {
   recurring_event_id?: string | null;
   /** The user's own RSVP on this event (null = organizer / no attendees = confirmed). */
   self_rsvp?: AttendeeStatus | null;
+  /** When the sync last WROTE this row. Google and Microsoft 365 write only
+   *  what changed, so there it reads "when this meeting last arrived or
+   *  changed"; iCloud rewrites every row each sync (D-235). */
+  last_synced_at?: string | null;
 }
 
 export type RecurrenceScope = "THIS" | "FOLLOWING" | "ALL";

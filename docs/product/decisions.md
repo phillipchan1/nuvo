@@ -8969,3 +8969,34 @@ Anchor: D4. Strains nothing new. No new name.
 the operator's real week, exported read-only from the signed-in web app at 10:14: two repairs
 came back, not Mathy; with the fix, three. Pinned in `tests/missed-blocks.test.tsx` ("a full week
 never swallows a missed block"); the test fails without the fallback.*
+
+**D-235 · 2026-11-16 · A meeting "lands on" a block only if it came after you placed the block.**
+*(Operator, 10:44 on a Monday, looking at a Get ready card titled "Slot · OE Initiative Updates
+landed… · Move to Fri 4–5pm": "its suggesting moving a read only calendar event… intelligence
+needs to be more robust".)*
+
+→ **What happened.** The card was moving the operator's own Gym + Shower block, not the meeting,
+but it was titled "Slot" (fixed in D-234), so it read as moving the calendar event. And the
+"break" wasn't one: the operator had dragged that block onto 11–12 at 10:30, on top of a
+25-minute meeting that had sat there since 8:08. Repair treated a choice as an accident, and its
+answer (Friday 4pm, for a gym block on a Monday) showed it.
+
+→ **Landed now means arrived later.** A meeting breaks a block only if it was synced in, or
+changed, after the block was last placed (`last_synced_at` against the block's `updated_at`).
+Google and Microsoft 365 write a row only when it changes, so there it reads "when this meeting
+arrived or last changed". iCloud rewrites every row each sync, so its meetings keep the old
+behaviour (they always count), as does anything missing either timestamp. Never a false silence.
+
+→ **A landed block stays on its own day first,** as a missed one stays on today (D-232): up to
+two times on that day, then the rest of the week.
+
+Anchor: D4 · A4 (am I lying to myself about this week: a repair that cries wolf teaches you to
+ignore the line). Strains **P7** a little: the rule is sharpest on Google/M365 and falls back on
+iCloud, and says so here. No new name.
+
+*Status: built 2026-11-16 on `claude/repair-landed`. Checked against the live account read-only:
+the Gym block was placed at 10:30 (`updated_at` 18:30Z); "OE Initiative Updates" last changed at
+8:08 (16:08Z), so it isn't a break. Pinned in `tests/missed-blocks.test.tsx` (placed after → no
+repair · arrived after → a repair on its own day, named "Gym + 1 more" · no timestamps → counts).
+The events query now reads `last_synced_at`; the worker's REST layer has no read allowlist on
+`external_events`, so the column is selectable.*

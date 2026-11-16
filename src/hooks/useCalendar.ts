@@ -140,7 +140,7 @@ export async function fetchExternalEventsRange(
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from("external_events")
-      .select("id, account_id, provider_event_id, calendar_id, title, start_at, end_at, all_day, location, busy, self_rsvp, recurring_event_id")
+      .select("id, account_id, provider_event_id, calendar_id, title, start_at, end_at, all_day, location, busy, self_rsvp, recurring_event_id, last_synced_at")
       .lt("start_at", rangeEndISO)
       .gt("end_at", rangeStartISO)
       .order("start_at")

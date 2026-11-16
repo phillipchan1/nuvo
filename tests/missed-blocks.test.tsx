@@ -138,3 +138,35 @@ describe("a full week never swallows a missed block (the operator's Monday, D-23
     for (const o of r.options) expect(o.startMin % 60).toBe(30); // never on a meeting
   });
 });
+
+describe("a meeting lands on a block only if it came after you placed it (D-235)", () => {
+  const ev = (start: string, end: string, synced: string) =>
+    ({ id: "m", title: "OE Initiative Updates", start_at: start, end_at: end, all_day: false, busy: true, calendar_id: "c", account_id: "a", provider_event_id: "m", self_rsvp: null, last_synced_at: synced }) as unknown as import("../src/lib/types").ExternalEvent;
+  const gym = (placed: string) => slot("", iso(16, 11), 60, { updated_at: placed } as Partial<Slot>);
+  const run = (sl: Slot, meeting: import("../src/lib/types").ExternalEvent) =>
+    renderHook(() =>
+      useWeekRepair({
+        tasks: [task("Gym", { slot_id: sl.id, project_id: null }), task("Shower", { slot_id: sl.id, project_id: null })],
+        events: [meeting], slots: [sl], hiddenCalendarIds: [], hiddenEventKeys: [],
+        workStartMin: 8 * 60, workEndMin: 17 * 60, workingDays: [1, 2, 3, 4, 5], now: NOW, enabled: true,
+      }),
+    ).result.current;
+
+  it("a block you dragged onto a meeting already there is your choice — no repair", () => {
+    // the meeting last changed at 8:08, the block was placed at 10:30
+    expect(run(gym(iso(16, 10, 30)), ev(iso(16, 11, 35), iso(16, 12), iso(16, 8, 8)))).toEqual([]);
+  });
+
+  it("a meeting that arrives after the block is a repair, kept on the block's own day", () => {
+    const [r] = run(gym(iso(16, 8)), ev(iso(16, 11, 35), iso(16, 12), iso(16, 9, 30)));
+    expect(r.why).toBe("landed");
+    expect(r.title).toBe("Gym + 1 more"); // the block, by what's in it — never "Slot"
+    expect(r.options[0].dayISO).toBe("2026-11-16");
+  });
+
+  it("no timestamp on either side → it still counts, as before", () => {
+    const m = ev(iso(16, 11, 35), iso(16, 12), "");
+    (m as { last_synced_at?: string | null }).last_synced_at = null;
+    expect(run(gym(iso(16, 10, 30)), m)).toHaveLength(1);
+  });
+});
