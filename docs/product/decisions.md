@@ -8943,3 +8943,29 @@ Anchor: no ledger row; a consistency fix (P11 — one way to say one thing). No 
 
 *Status: built 2026-11-16 on `claude/readiness-dials`. Driven at `?rail=offers` (open ⌄, folded ›)
 and shown at `?kit`.*
+
+**D-234 · 2026-11-16 · A missed block is never dropped for want of a perfect time.**
+*(Reported by the operator at 10:15 the morning D-232 shipped: "still not seeing a repair coming
+through for missed mathy work".)*
+
+→ **D-232's repair was computed, then silently thrown away.** Read off the live account: the
+8:30 Mathy block (untitled, a project's, two undone tasks) was found missed, but the composer
+wanted what it always wants for project work: a 45-minute morning sitting with room around
+meetings. The operator's week had no such hole left anywhere. `useWeekRepair` dropped any repair
+with no options, so the block vanished without a word. P7 (only works with clean data), in the
+exact case the repair exists for: a full week is when things slip.
+
+→ **Now the composer's answer comes first, and if it has none, the plain gaps do**
+(`plainGaps`): the first open stretch of the block's own length on each working day, today first,
+never on a meeting or a block. On the operator's real week that offered Wed 1:30pm and Thu 8am.
+The composer is unchanged; this only stops a repair from vanishing.
+
+→ **An untitled block is named from what's in it** in every repair ("Create a candidate-name list
++ 1 more"), never "landed on Slot".
+
+Anchor: D4. Strains nothing new. No new name.
+
+*Status: built 2026-11-16 on `claude/repair-line`. Reproduced first by running `useWeekRepair` on
+the operator's real week, exported read-only from the signed-in web app at 10:14: two repairs
+came back, not Mathy; with the fix, three. Pinned in `tests/missed-blocks.test.tsx` ("a full week
+never swallows a missed block"); the test fails without the fallback.*

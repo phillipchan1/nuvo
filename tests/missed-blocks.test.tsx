@@ -109,3 +109,32 @@ describe("a missed block goes back today while today has room", () => {
     expect(r.options[0].dayISO).not.toBe("2026-11-16");
   });
 });
+
+describe("a full week never swallows a missed block (the operator's Monday, D-234)", () => {
+  // every hour 8am–5pm holds a 30-minute meeting: no 45-minute morning hole a
+  // project's sitting wants, only half-hour gaps
+  const meetings = [16, 17, 18, 19, 20].flatMap((d) =>
+    [8, 9, 10, 11, 12, 13, 14, 15, 16].map((h) => ({
+      id: `m${d}-${h}`, title: "Meeting", start_at: iso(d, h), end_at: iso(d, h, 30), all_day: false, busy: true,
+      calendar_id: "c", account_id: "a", provider_event_id: `m${d}-${h}`, self_rsvp: "accepted",
+    })),
+  ) as unknown as import("../src/lib/types").ExternalEvent[];
+  const mathy = slot("", iso(16, 8, 30), 30);
+  const run = () =>
+    renderHook(() =>
+      useWeekRepair({
+        tasks: [task("Create a candidate-name list", { slot_id: mathy.id }), task("Write brand meaning", { slot_id: mathy.id, energy: "deep" } as Partial<Task>)],
+        events: meetings, slots: [mathy], hiddenCalendarIds: [], hiddenEventKeys: [],
+        workStartMin: 8 * 60, workEndMin: 17 * 60, workingDays: [1, 2, 3, 4, 5], now: NOW, enabled: true,
+      }),
+    ).result.current;
+
+  it("is still named, with the first plain gaps it fits — today first", () => {
+    const [r] = run();
+    expect(r.kind).toBe("slot");
+    expect(r.title).toBe("Create a candidate-name list + 1 more");
+    expect(r.options.length).toBeGreaterThan(0);
+    expect(r.options[0]).toMatchObject({ dayISO: "2026-11-16", startMin: 10 * 60 + 30, durationMin: 30 });
+    for (const o of r.options) expect(o.startMin % 60).toBe(30); // never on a meeting
+  });
+});

@@ -47,6 +47,58 @@ export interface Repair {
 
 const minsOf = (d: Date) => d.getHours() * 60 + d.getMinutes();
 
+/** What to call a block in a repair: its title, else what's in it — never
+ *  the word "Slot" (an untitled block said "landed on Slot"). */
+const blockName = (sl: Slot, inside: readonly Task[]): string =>
+  sl.title || (inside.length === 0 ? "A block" : inside.length === 1 ? inside[0].title : `${inside[0].title} + ${inside.length - 1} more`);
+
+/** The first gap of `size` minutes on each working day from now to the week's
+ *  end — no project minimum, no morning window, no padding. The fallback for a
+ *  block the composer can't seat (D-234). Earliest first, one per day, four. */
+export function plainGaps(
+  blocks: readonly Task[],
+  meetings: readonly ExternalEvent[],
+  task: Task,
+  size: number,
+  now: Date,
+  weekEnd: Date,
+  workStartMin: number,
+  workEndMin: number,
+  workingDays: readonly number[],
+): Placement[] {
+  const busy: [number, number][] = [];
+  for (const b of blocks) {
+    if (!b.start_time) continue;
+    const st = new Date(b.start_time).getTime();
+    busy.push([st, st + (b.duration_minutes ?? 30) * 60_000]);
+  }
+  for (const m of meetings) busy.push([new Date(m.start_at).getTime(), new Date(m.end_at).getTime()]);
+  const out: Placement[] = [];
+  const day = new Date(now);
+  day.setHours(0, 0, 0, 0);
+  for (; day < weekEnd && out.length < 4; day.setDate(day.getDate() + 1)) {
+    if (!workingDays.includes(day.getDay())) continue;
+    const isToday = toDateISO(day) === toDateISO(now);
+    let from = isToday ? Math.max(workStartMin, Math.ceil((minsOf(now) + 5) / 15) * 15) : workStartMin;
+    while (from + size <= workEndMin) {
+      const s0 = new Date(day);
+      s0.setMinutes(from);
+      const a = s0.getTime();
+      const b = a + size * 60_000;
+      const hit = busy.filter(([x, y]) => x < b && y > a);
+      if (!hit.length) {
+        out.push({ task, dayISO: toDateISO(day), startMin: from, durationMin: size, reason: "the first open time" });
+        break;
+      }
+      // jump past the latest thing in the way, onto the quarter hour
+      const past = minsOf(new Date(Math.max(...hit.map(([, y]) => y))));
+      from = Math.max(from + 15, Math.ceil(past / 15) * 15);
+      if (new Date(Math.max(...hit.map(([, y]) => y))).getDate() !== day.getDate()) break;
+    }
+  }
+  return out;
+}
+
 export function useWeekRepair({
   tasks,
   events,
@@ -144,7 +196,7 @@ export function useWeekRepair({
         const inside = tasks.filter((t) => t.slot_id === sl.id && t.status !== "trashed");
         const undone = inside.filter((t) => t.status !== "done");
         if (!undone.length) continue;
-        const name = sl.title || (undone.length === 1 ? undone[0].title : `${undone[0].title} + ${undone.length - 1} more`);
+        const name = blockName(sl, undone);
         const whole = !sl.recurrence_id && undone.length === inside.length;
         const at0 = { dayISO: toDateISO(s), startMin: minsOf(s) };
         if (whole) {
@@ -164,7 +216,7 @@ export function useWeekRepair({
           key: `slot:${sl.id}@${sl.start_time}`,
           kind: "slot",
           id: sl.id,
-          title: sl.title || "Slot",
+          title: blockName(sl, tasks.filter((t) => t.slot_id === sl.id && t.status !== "trashed" && t.status !== "done")),
           why: "landed",
           event: m.title || "A meeting",
           from: { dayISO: toDateISO(s), startMin: minsOf(s), durationMin: sl.duration_minutes },
@@ -212,7 +264,12 @@ export function useWeekRepair({
       // right for planning a week and wrong for "this slipped this morning".
       const soon = b.why === "missed" ? alternativesFor({ ...input, workingDays: [at.getDay()] }, asTask, b.from, 2) : [];
       const rest = alternativesFor(input, asTask, b.from, 4).filter((o) => !soon.some((x) => x.dayISO === o.dayISO && x.startMin === o.startMin));
-      const options = [...soon, ...rest].slice(0, 4);
+      let options = [...soon, ...rest].slice(0, 4);
+      // The composer can find nothing — a project's sitting wants a 45-minute
+      // morning hole with room around meetings, and a full week has none. A
+      // missed block is still a fact (D-234): offer the plain gaps it fits,
+      // today first, rather than dropping the repair without a word.
+      if (!options.length) options = plainGaps(input.blocks, meetings, asTask, size, at, weekEnd, workStartMin, workEndMin, workingDays);
       if (!options.length) continue;
       const first = options[0];
       taken.push(asBusyBlock(`taken-${b.id}`, "", first.dayISO, first.startMin, first.durationMin));
