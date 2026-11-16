@@ -2188,20 +2188,42 @@ function CalendarPane({
     const prev = gridIdsRef.current;
     gridIdsRef.current = next;
     if (selectionLost(prev, next, gridSelRef.current.cursor)) clearGridSelection();
-    const sweep = () => {
+  }, [gridEvents]);
+
+  // Once nothing is in hand, whatever a gesture left behind goes: a grid sync
+  // that was paused and never resumed (its stash held the removal, so a deleted
+  // block stayed up as an empty shell), FullCalendar's select-mirror with no
+  // composer open, and any "in hand" drag leftover. Runs after every sync and
+  // whenever the composer closes — the moments the grid is supposed to be calm.
+  const draftOpenRef = useRef(false);
+  draftOpenRef.current = Boolean(draft);
+  useEffect(() => {
+    const settle = () => {
       const root = wrapRef.current;
-      if (!root || pressedRef.current || gridSyncPausedRef.current || gestureRef.current?.live) return;
+      const api = calRef.current?.getApi();
+      if (!root || !api || pressedRef.current || gestureRef.current?.live) return;
       if (document.body.classList.contains("cal-dragging")) return;
+      if (gridSyncPausedRef.current) resumeGridSync();
+      if (!draftOpenRef.current) api.unselect();
       sweepStrayGhosts(root);
     };
-    const raf = requestAnimationFrame(sweep);
-    const late = window.setTimeout(sweep, 400);
+    const raf = requestAnimationFrame(settle);
+    const late = window.setTimeout(settle, 400);
+    // …and after any press ends, once its own handlers (a drop, a composer
+    // opening) have had their turn.
+    let afterPress = 0;
+    const onUp = () => {
+      window.clearTimeout(afterPress);
+      afterPress = window.setTimeout(settle, 350);
+    };
+    document.addEventListener("pointerup", onUp, true);
     return () => {
       cancelAnimationFrame(raf);
       window.clearTimeout(late);
+      window.clearTimeout(afterPress);
+      document.removeEventListener("pointerup", onUp, true);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gridEvents]);
+  }, [gridEvents, draft, resumeGridSync]);
 
   const findTask = (id: string) => tasksRef.current.find((t) => t.id === id);
   const findEvent = (id: string) => eventsRef.current.find((e) => e.id === id);
