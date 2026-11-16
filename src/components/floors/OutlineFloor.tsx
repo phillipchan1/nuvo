@@ -55,7 +55,9 @@ import { pressable } from "../../lib/a11y";
 /** A heading row — what the outline's own keys walk. */
 type Head = {
   id: string;
-  kind: "group" | "initiative" | "project";
+  /** `add` — an open initiative's "Add a project" row: a stop the keys walk
+   *  onto, where the field takes over (the project twin of a list's add box). */
+  kind: "group" | "initiative" | "project" | "add";
   parent: string | null;
   group?: OutlineGroup;
   initiative?: InitiativeItem;
@@ -133,7 +135,7 @@ export default function OutlineFloor({
   /** The phone's scroller has no floor padding to step back out of. */
   flush?: boolean;
 }) {
-  const { data, updateProject, updateInitiative } = useVertical();
+  const { data, updateProject, updateInitiative, addProject } = useVertical();
   const { data: allTasks } = useAllTasks();
   const mutations = useTaskMutations();
   const nav = useAppNavigation();
@@ -200,11 +202,15 @@ export default function OutlineFloor({
         }
         const iOpen = isOpen(it.initiative.id);
         out.push({ id: it.initiative.id, kind: "initiative", parent: gid, initiative: it, depth: 0, open: iOpen });
-        if (iOpen) for (const p of it.projects) pushProject(p, it.initiative.id, 1);
+        if (iOpen) {
+          for (const p of it.projects) pushProject(p, it.initiative.id, 1);
+          if (view !== "completed")
+            out.push({ id: `add:${it.initiative.id}`, kind: "add", parent: it.initiative.id, initiative: it, depth: 1, open: false });
+        }
       }
     }
     return out;
-  }, [groups, folded, isOpen]);
+  }, [groups, folded, isOpen, view]);
 
   // ── the keys ───────────────────────────────────────────────────────────────
   const [cursorId, setCursorId] = useState<string | null>(null);
@@ -285,6 +291,14 @@ export default function OutlineFloor({
   const current = heads.find((h) => h.id === cursorId) ?? null;
   const recordOf = (h: Head) => (h.kind === "project" ? "project" : "initiative") as "project" | "initiative";
 
+  // An initiative's "Add a project" row: the cursor arriving on it hands the
+  // keys to its field, as a list's add box does.
+  const addRefs = useRef(new Map<string, HTMLInputElement>());
+  useEffect(() => {
+    if (!cursorId?.startsWith("add:") || onTop) return;
+    addRefs.current.get(cursorId)?.focus({ preventScroll: false });
+  }, [cursorId, onTop]);
+
   useTaskListKeys<Head>({
     enabled: () => !phone && !onTop && active === null && !recordMenuOpen && !shipId,
     rows: heads,
@@ -292,6 +306,7 @@ export default function OutlineFloor({
     acts: {
       open: (h) => {
         if (h.kind === "group") return setFolded(toggle(folded, h.group!.key));
+        if (h.kind === "add") return addRefs.current.get(h.id)?.focus();
         openRecord(recordOf(h), h.id);
       },
       complete: (targets) => {
@@ -299,7 +314,7 @@ export default function OutlineFloor({
         if (p) setShipId(p.id);
       },
       trash: (targets) => {
-        const h = targets.find((x) => x.kind !== "group");
+        const h = targets.find((x) => x.kind === "project" || x.kind === "initiative");
         if (!h) return;
         learn();
         askDelete(recordOf(h), h.id, rowAt(h.id));
@@ -320,12 +335,20 @@ export default function OutlineFloor({
         sel?.addRange(range);
       },
       menu: (h) => {
-        if (h.kind === "group") return;
+        if (h.kind === "group" || h.kind === "add") return;
         const at = rowAt(h.id);
         onContextMenu(recordOf(h), h.id)({ preventDefault() {}, stopPropagation() {}, clientX: at.x, clientY: at.y } as unknown as ReactMouseEvent);
       },
       add: (h) => {
-        if (h?.kind !== "project" || view === "completed") return;
+        if (view === "completed" || !h) return;
+        // on an initiative, `a` adds a project — its add row, opened
+        if (h.kind === "initiative") {
+          learn();
+          setOpen(h.id, true);
+          setCursorId(`add:${h.id}`);
+          return;
+        }
+        if (h.kind !== "project") return;
         learn();
         setOpen(h.id, true);
         enter(h.id, "composer");
@@ -352,6 +375,7 @@ export default function OutlineFloor({
         switch (e.key) {
           case "ArrowRight":
           case "l":
+            if (h.kind === "add") return true;
             if (!h.open) {
               if (h.kind === "group") setFolded(toggle(folded, h.group!.key));
               else setOpen(h.id, true);
@@ -680,7 +704,11 @@ export default function OutlineFloor({
                           {it.projects.map((p) => (
                             <Fragment key={p.project.id}>{projectBlock(p, 1)}</Fragment>
                           ))}
-                          {it.projects.length === 0 && <div className="ol-empty" style={{ ["--depth" as string]: 1 }}>No projects yet</div>}
+                          {view !== "completed" ? (
+                            addProjectRow(it)
+                          ) : it.projects.length === 0 ? (
+                            <div className="ol-empty" style={{ ["--depth" as string]: 1 }}>No projects yet</div>
+                          ) : null}
                         </>
                       )}
                     </div>
@@ -750,6 +778,73 @@ export default function OutlineFloor({
         left: minsLabel(item.projects.reduce((a, p) => a + p.minutes, 0)),
         progress: <span className="fl-cell">{`${shipped}/${all.length}`}</span>,
       })
+    );
+  }
+
+  // The initiative's add row — one plain field (iOS dictation needs one, P5),
+  // ↵ files a project under it and stays for the next, Todoist-style. ↑ / ↓
+  // on an empty field walk on; Esc goes back to the initiative.
+  function addProjectRow(item: InitiativeItem) {
+    const i = item.initiative;
+    const id = `add:${i.id}`;
+    const at = heads.findIndex((h) => h.id === id);
+    const walk = (by: 1 | -1) => {
+      const next = heads[at + by];
+      if (!next) return;
+      // up onto an open project lands in its add box, the row drawn above
+      if (by === -1 && next.kind === "project" && next.open) return void enter(next.id, "composer");
+      setCursorId(next.id);
+    };
+    return (
+      <div className="ol-addrow" data-head={id} data-lit={cursorId === id || undefined} style={{ ["--depth" as string]: 1 }}>
+        <Icon name="plus" size={13} className="ol-addrow-glyph" />
+        <input
+          ref={(el) => {
+            if (el) addRefs.current.set(id, el);
+            else addRefs.current.delete(id);
+          }}
+          className="ol-addrow-input"
+          placeholder={item.projects.length ? "Add a project…" : "Add the first project…"}
+          aria-label={`Add a project to ${i.name}`}
+          enterKeyHint="enter"
+          onFocus={() => {
+            setActive(null);
+            if (cursorId !== id) setCursorId(id);
+          }}
+          onKeyDown={(e) => {
+            const el = e.currentTarget;
+            const text = el.value.trim();
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              if (!text) return;
+              el.value = "";
+              learn();
+              void addProject(i.domainId, i.id, { name: text });
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              if (el.value) el.value = "";
+              else {
+                el.blur();
+                setCursorId(i.id);
+              }
+            } else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && !el.value) {
+              e.preventDefault();
+              el.blur();
+              walk(e.key === "ArrowDown" ? 1 : -1);
+            }
+          }}
+          onBlur={(e) => {
+            // a name typed and left (a tap away on the phone) still lands
+            const text = e.currentTarget.value.trim();
+            if (text) {
+              e.currentTarget.value = "";
+              void addProject(i.domainId, i.id, { name: text });
+            }
+          }}
+        />
+        {hints && cursorId === id && !phone && <HeadHint keys={["↵", "add", "esc", "back"]} />}
+      </div>
     );
   }
 
@@ -930,8 +1025,8 @@ export default function OutlineFloor({
                     ? ["↓", "into it", "←", "close", "a", "add task"]
                     : ["→", "open", "a", "add task", "⌫", "delete"]
                   : open
-                    ? ["↓", "into it", "←", "close", "↵", "open record"]
-                    : ["→", "open", "↵", "open record", "⌫", "delete"]
+                    ? ["↓", "into it", "←", "close", "a", "add project"]
+                    : ["→", "open", "a", "add project", "⌫", "delete"]
               }
             />
           )}

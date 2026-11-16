@@ -8570,7 +8570,11 @@ heading. **← closes at every depth** (2026-11-15): from a heading, or from ins
 tasks, ← folds the project and lands on its heading — Esc only steps out. The hints say "←
 close" on anything open, and stay for 40 uses (twelve went by in a minute of walking). **The
 add box no longer names its project when focused** inside the Table: the heading above says
-it, and the extra line appearing as ↓ passed through the box shoved every row below it down.
+it, and the extra line appearing as ↓ passed through the box shoved every row below it down. **Initiatives add projects inline** (2026-11-15, parity): an open initiative ends in an
+"Add a project…" row — the project twin of a list's add box. The keys walk onto it like any
+row (its field takes over), `a` on an initiative jumps to it, ↵ files a project under the
+initiative (in its domain) and stays for the next, ↑/↓ on an empty field walk on, Esc goes
+back to the initiative. It replaces the dead "No projects yet" line, which offered no way in.
 
 **Not yet:** a task's **steps** (D-103) show in its popover (↵), not inline — no disclosure in
 the outline, and Tab does not turn a task into a step. That needs a row disclosure in `TaskRow`
