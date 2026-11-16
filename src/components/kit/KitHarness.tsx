@@ -313,7 +313,7 @@ function Column({ theme }: { theme: "light" | "dark" }) {
         <div style={{ display: "grid", gap: 8, width: 300, maxWidth: "100%", minWidth: 0 }}>
           <OfferCard title="Draft board memo" why="Today · no time yet" verb="Schedule" name="2–2:30pm" shortcut="↵" focused onPress={() => {}} onNotNow={() => {}} />
           <OfferCard title="Call the plumber about the garage sink" why="In the inbox" verb="→" name="Garage studio and the long workbench" onPress={() => {}} onNotNow={() => {}} />
-          <OfferCard title="Pricing review" why="Design sync landed on it · was Tue 10–11am" verb="Move to" name="Wed 9–10am" onPress={() => {}} secondary={{ label: "Keep it there", onPress: () => {} }} />
+          <OfferCard title="Pricing review" why="Design sync landed on it · was Tue 10–11am" verb="Move to" name="Wed 9–10am" onPress={() => {}} secondary={{ label: "Keep it there", onPress: () => {} }} other={<Button kind="ghost" size="sm">Other times</Button>} />
           <OfferCard title="Launch site" why="3h held · 20m of work" verb="Suggest tasks" touch onPress={() => {}} onNotNow={() => {}} />
         </div>
       </Block>

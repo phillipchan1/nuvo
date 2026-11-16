@@ -8761,3 +8761,43 @@ Strains **P9** a little less than before (one line fewer, nothing unasked). No n
 four (overdue and crowded ones included), 1 to shape on the initiative deck offers Suggest projects,
 1 not moving lists its bet; no "then:". ✦ outcome drafts not driven (the harness has no agent).
 Pinned in `tests/deck-ready.test.ts`.*
+
+**D-228 · 2026-11-16 · Every Get ready card that gives work a time carries Other times, a broken block included; a meeting is never offered as a standing slot.**
+*(Asked by the operator, on two Get ready cards: "it only allows me one option here. We should provide optionality everywhere because I was going to put this somewhere else, but I have no recourse", and of a Memory card: "I don't know why it's suggesting a standing slot for this meeting… What do I gain from adding a slot in this exact time spot?")*
+
+**Why.** R13 (D-216) says every time offer carries a second answer. The rail's chips and the crown
+had one, but Get ready's cards never drew it, on any surface. Their model already carried `at`,
+`taskId` and `placeAt`, and nothing read them. A repair card ("Move to …") had nothing either,
+though the composer already holds its other fits (`r.options`). Separately, Memory's habit read
+called something "already a repeating event" only when all eight weeks came from **one** series. A
+meeting whose series was split by a "this and following" edit, or that sits on two of your
+calendars, failed that test, and Keep offered a standing slot on top of the meeting itself. That
+slot would double-book the time and gains nothing.
+
+**What.**
+- `OfferCard` (kit) gained an `other` slot beside its act. `CardOtherTimes` (`nuvo/OtherTimes.tsx`)
+  fills it on all three Get ready surfaces: the rail (`GetReadyRail`), the phone sheet
+  (`MobileGetReady`, a 44px target opening the PickSheet) and the rest deck (`RestDeck`). It shows
+  only on a card that gives work a time. Its options say the card's own verb (**Move to …** on a
+  repair, **Schedule …** on a hold).
+- A repair card asks the composer about its block. A sitting stands in as a task of its length.
+  A chosen time goes through the same `take` (new `moveAt` act, `take(r, auto, at)`), with the
+  same Undo.
+- `rhythm.ts` (the shared kernel, both runtimes): `fromSeries` is now true when every occurrence
+  came from a series, any number of them, or when the latest one did, so the weeks ahead are
+  already held. One-offs with no series still offer a slot.
+- Get ready no longer offers a habit that's already a repeating event. Keeping it writes nothing,
+  so it isn't a card. It stays on the Memory page.
+
+**Anchor.** Closes no new row. It makes W2's offers honest where they're made: a first answer with
+no second is the app deciding (**P4**). It strains **P9** a little, since one more control rides
+every time card. The four no's: no new pool or name (*Other times* is D-216's), works with messy
+data (split series are exactly the messy case, P7), and it isn't built on the operator's account
+(P16). The fixtures are synthetic.
+
+*Status: built 2026-11-16 on `claude/ready-other-times`. Driven at `?rail=ready` (desktop: the
+repair's Other times lists Move to ×3 + Pick a time yourself, and choosing #2 moves it there) and
+`?rail=ready-phone` at 375px (every time card has it, 44px, the sheet opens, no overflow). The live
+account had nothing on this week to drive. Pinned in `tests/get-ready-rail.test.tsx` and
+`tests/memory-rhythm.test.ts` (split series, a later series, one-offs). The rest deck is covered
+by typecheck and its test, not driven.*

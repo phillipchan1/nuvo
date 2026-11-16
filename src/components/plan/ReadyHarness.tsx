@@ -27,6 +27,7 @@ export function useHarnessReadyCards(say: (s: string) => void) {
     const gone = (k: string) => setDone((d) => new Set(d).add(k));
     const acts: ReadyActs = {
       move: (k) => (say(`moved ${k}`), gone(`repair:${k}`)),
+      moveAt: (k, at) => (say(`moved ${k} to ${at.dayISO} ${at.startMin}m`), gone(`repair:${k}`)),
       leave: (k) => (say(`left ${k}`), gone(`repair:${k}`)),
       repairAll: () => say("→ Repair mode"),
       hold: (id) => (say(`held ${id}`), gone(`hold:${id}`)),
@@ -45,6 +46,7 @@ export function useHarnessReadyCards(say: (s: string) => void) {
       repairs: [
         {
           key: "r1",
+          id: "t-pricing",
           title: "Pricing page review with the whole leadership team",
           why: "meeting",
           event: "Board prep",

@@ -99,6 +99,29 @@ describe("rhythm · habits", () => {
     expect(choir && choir.kind === "habit" && choir.fromSeries).toBe(true);
   });
 
+  it("a meeting is never offered as a slot because its series split or sits on two calendars", () => {
+    // weeks 0–3 on one series, 4–7 on the series a "this and following" edit
+    // made; the same meeting also on a second calendar in week 6
+    const events = [
+      ...Array.from({ length: 8 }, (_, w) => ev(w, 0, 11.75, 14.25, "Frontier staff meeting", "community", w < 4 ? "series-a" : "series-b")),
+      ev(6, 0, 11.75, 14.25, "Frontier staff meeting", "community", "series-c"),
+    ];
+    const staff = readRhythm(base({ events, workDomainIds: ["work"] })).find((o) => o.kind === "habit");
+    expect(staff && staff.kind === "habit" && staff.fromSeries).toBe(true);
+  });
+
+  it("one-off events that became a series are held already — the latest occurrence says so", () => {
+    const events = Array.from({ length: 8 }, (_, w) => ev(w, 2, 7, 8, "Gym", "health", w >= 6 ? "series-gym" : null));
+    const gym = readRhythm(base({ events })).find((o) => o.kind === "habit");
+    expect(gym && gym.kind === "habit" && gym.fromSeries).toBe(true);
+  });
+
+  it("one-off events with no series still offer a standing slot", () => {
+    const events = Array.from({ length: 8 }, (_, w) => ev(w, 2, 7, 8, "Gym", "health"));
+    const gym = readRhythm(base({ events })).find((o) => o.kind === "habit");
+    expect(gym && gym.kind === "habit" && gym.fromSeries).toBe(false);
+  });
+
   it("twice in eight weeks is not a pattern", () => {
     const events = [ev(1, 2, 19, 20, "Pottery", "home"), ev(5, 2, 19, 20, "Pottery", "home")];
     expect(readRhythm(base({ events }))).toEqual([]);

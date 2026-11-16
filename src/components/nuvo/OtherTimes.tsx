@@ -28,6 +28,8 @@ import { parseDateISO, toDateISO } from "../../lib/dates";
 import { mondayOf } from "../../../supabase/functions/_shared/planningRules.ts";
 import { isTypingIn } from "../../lib/a11y";
 import type { Task } from "../../lib/types";
+import { useAllTasks } from "../../hooks/useTasks";
+import type { ReadyCard } from "../../lib/readyCards";
 
 interface Option {
   key: string;
@@ -67,8 +69,14 @@ export function OtherTimes({
   onHold,
   phone = false,
   compact = false,
+  touch = false,
+  verb = "Schedule",
   noes = [],
 }: {
+  /** the verb the first answer's act says — a repair moves, a hold schedules */
+  verb?: string;
+  /** under a finger: a 44px target beside a card's 44px act */
+  touch?: boolean;
   task: Task;
   /** where the chip's first answer lands */
   first: Where;
@@ -96,7 +104,7 @@ export function OtherTimes({
       <Button
         ref={btn}
         kind="ghost"
-        size="xs"
+        size={touch ? "md" : compact ? "xs" : "sm"}
         data-card-control=""
         aria-label="Other times"
         title={`Other times for ${task.title}`}
@@ -107,12 +115,12 @@ export function OtherTimes({
           setOpen((v) => !v);
         }}
         onPointerDown={(e) => e.stopPropagation()}
-        className="offer-other"
+        className={touch ? "offer-other tap" : "offer-other"}
       >
         {compact ? <span aria-hidden>⋯</span> : "Other times"}
       </Button>
       {phone
-        ? open && <PhoneChooser task={task} first={first} onHold={onHold} noes={noes} onClose={reset} />
+        ? open && <PhoneChooser task={task} first={first} onHold={onHold} noes={noes} onClose={reset} verb={verb} />
         : (open || picking) && (
             // The menu is a portal, but React still bubbles its clicks through
             // the row it was opened from — so "Pick a time yourself…" also
@@ -141,6 +149,7 @@ export function OtherTimes({
               }}
               onCancel={reset}
               noes={noes}
+              verb={verb}
             />
             </span>
           )}
@@ -163,7 +172,9 @@ function DeskChooser({
   onHold,
   onCancel,
   noes,
+  verb,
 }: {
+  verb: string;
   noes: { label: string; run: () => void }[];
   task: Task;
   first: Where;
@@ -284,7 +295,7 @@ function DeskChooser({
               disabled={o.past}
               onSelect={(e) => onHold(o.at, e.currentTarget)}
             >
-              Schedule {whenLabel(o.at, today)}
+              {verb} {whenLabel(o.at, today)}
             </MenuItem>
           </div>
         ))}
@@ -321,7 +332,9 @@ function PhoneChooser({
   onHold,
   noes,
   onClose,
+  verb,
 }: {
+  verb: string;
   task: Task;
   first: Where;
   onHold: (at: Where, from: HTMLElement | null) => void;
@@ -337,7 +350,7 @@ function PhoneChooser({
         // is not an option among them, so it carries no mark
         ...options.map((o, i) => ({
           id: o.key,
-          name: `Schedule ${whenLabel(o.at, today)}`,
+          name: `${verb} ${whenLabel(o.at, today)}`,
           sub: hintOf(o),
           lead: (
             <span className="offer-num" data-on={i === 0 || undefined}>
@@ -357,4 +370,27 @@ function PhoneChooser({
       onClose={onClose}
     />
   );
+}
+
+/** A Get ready card's Other times (R13) — every card that gives work a time
+ *  carries it, on every surface that shows the card. A sitting (a slot being
+ *  repaired) stands in as a task of its length: the composer only needs what
+ *  it is called and how long it runs. Nothing for a card that isn't a time. */
+export function CardOtherTimes(props: { card: ReadyCard; phone?: boolean; touch?: boolean }) {
+  // only a card that gives work a time reads anything
+  const { card } = props;
+  return card.taskId && card.at && card.placeAt ? <CardOtherTimesLive {...props} /> : null;
+}
+
+function CardOtherTimesLive({ card, phone = false, touch = false }: { card: ReadyCard; phone?: boolean; touch?: boolean }) {
+  const { data: tasks } = useAllTasks();
+  const task = useMemo<Task | null>(() => {
+    if (!card.taskId || !card.at) return null;
+    return (
+      tasks?.find((t) => t.id === card.taskId) ??
+      ({ id: card.taskId, title: card.title, duration_minutes: card.at.durationMin, status: "planned" } as Task)
+    );
+  }, [tasks, card.taskId, card.title, card.at]);
+  if (!task || !card.at || !card.placeAt) return null;
+  return <OtherTimes task={task} first={card.at} onHold={card.placeAt} phone={phone} touch={touch} verb={card.primary.verb} />;
 }
