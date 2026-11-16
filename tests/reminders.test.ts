@@ -22,6 +22,7 @@ import {
   describeLeadShort,
   describeLeadsShort,
   dueNow,
+  firedReminderKey,
   leadsFromRow,
   nextFireAt,
   normalizeReminderPrefs,
@@ -148,7 +149,7 @@ describe("planning", () => {
     // The earlier fire must not mark the later one as already spoken.
     const dayBefore = plan.find((r) => r.leadMinutes === 1440)!;
     const tenMin = plan.find((r) => r.leadMinutes === 10)!;
-    expect(dueNow(plan, tenMin.fireAtMs, new Set([dayBefore.key]))).toEqual([tenMin]);
+    expect(dueNow(plan, tenMin.fireAtMs, new Set([firedReminderKey(dayBefore)]))).toEqual([tenMin]);
   });
 
   it("caps an override at five leads", () => {
@@ -195,7 +196,7 @@ describe("delivery selection", () => {
 
   it("never fires the same planned reminder twice", () => {
     const p = plan();
-    expect(dueNow(p, T0 + 21 * 60_000, new Set([p[0].key]))).toEqual([]);
+    expect(dueNow(p, T0 + 21 * 60_000, new Set([firedReminderKey(p[0])]))).toEqual([]);
   });
 
   it("a laptop waking after hours asleep stays quiet", () => {
@@ -228,7 +229,7 @@ describe("delivery selection", () => {
       ON,
     );
     expect(nextFireAt(p, T0, new Set())).toBe(T0 + 20 * 60_000);
-    expect(nextFireAt(p, T0, new Set([plannedReminderKey("b", 10)]))).toBe(T0 + 50 * 60_000);
+    expect(nextFireAt(p, T0, new Set([firedReminderKey(p.find((r) => r.key === plannedReminderKey("b", 10))!)]))).toBe(T0 + 50 * 60_000);
     expect(nextFireAt(p, T0 + 3 * 60 * 60_000, new Set())).toBeNull();
   });
 

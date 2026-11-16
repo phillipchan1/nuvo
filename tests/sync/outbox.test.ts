@@ -9,6 +9,7 @@ import {
   enqueue,
   isParked,
   MAX_ATTEMPTS,
+  PARK_FLOOR_MS,
   outboxStatus,
   parkedOps,
   pendingOps,
@@ -254,15 +255,40 @@ describe("drain ordering", () => {
 });
 
 describe("attempt budget", () => {
-  it("parks an op after MAX_ATTEMPTS retriable failures rather than retrying forever", async () => {
+  // Deliberately changed: retriable failures (offline, 5xx, a write freeze, an
+  // expired bearer) used to park after MAX_ATTEMPTS alone — eight blips of a
+  // flaky network, about four minutes — and a parked op never left again on its
+  // own. Now the count parks only once the op has also been failing for
+  // PARK_FLOOR_MS, so a write the server keeps 500ing on still can't hold the
+  // queue forever.
+  it("does not park on MAX_ATTEMPTS retriable failures inside the time floor", async () => {
     const op = await enqueue(newTask("a", "A"));
 
-    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+    for (let i = 0; i < MAX_ATTEMPTS * 3; i++) {
       await recordFailure({ ...op, seq: op.seq }, "offline", false);
     }
 
-    expect(await pendingOps()).toEqual([]);
-    expect(await parkedOps()).toHaveLength(1);
+    expect(await pendingOps()).toHaveLength(1);
+    expect(await parkedOps()).toEqual([]);
+  });
+
+  it("parks a retriable failure only once it is MAX_ATTEMPTS deep and PARK_FLOOR_MS old", async () => {
+    const op = await enqueue(newTask("a", "A"));
+    const t0 = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(t0);
+    try {
+      await recordFailure({ ...op, seq: op.seq }, "offline", false);
+      clock.mockReturnValue(t0 + PARK_FLOOR_MS - 1);
+      for (let i = 1; i < MAX_ATTEMPTS; i++) await recordFailure({ ...op, seq: op.seq }, "offline", false);
+      expect(await parkedOps()).toEqual([]);
+
+      clock.mockReturnValue(t0 + PARK_FLOOR_MS);
+      await recordFailure({ ...op, seq: op.seq }, "offline", false);
+      expect(await pendingOps()).toEqual([]);
+      expect(await parkedOps()).toHaveLength(1);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it("unpark returns an op to the queue", async () => {

@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { useEffect, useMemo, useState } from "react";
 import { Icon } from "./Icon";
 import type { ReactNode } from "react";
@@ -263,6 +264,12 @@ function SchedulePane({
     writeRevealConfig(next);
   };
 
+  // A working day that ends before it starts has no hours in it; the field
+  // goes back to what was saved (TimeInput reverts an uncommitted draft).
+  const workStart = settings?.work_start_minutes ?? 480;
+  const workEnd = settings?.work_end_minutes ?? 990;
+  const refuseInvertedHours = () => toast.error("Working hours have to end after they start");
+
   const dayStart = settings?.day_start_hour ?? 6;
   const dayEnd = settings?.day_end_hour ?? 24;
   const viewStart = Math.max(0, dayStart - 1);
@@ -307,16 +314,16 @@ function SchedulePane({
       <Row title="Working hours" desc="Where Nuvo proposes focus blocks.">
         <TimeInput
           step={900}
-          minutes={settings?.work_start_minutes ?? 480}
-          onCommit={(m) => updateSettings({ work_start_minutes: m })}
+          minutes={workStart}
+          onCommit={(m) => (m < workEnd ? updateSettings({ work_start_minutes: m }) : refuseInvertedHours())}
           className="!w-32"
           aria-label="Working hours start"
         />
         <span className="text-caption text-muted">to</span>
         <TimeInput
           step={900}
-          minutes={settings?.work_end_minutes ?? 990}
-          onCommit={(m) => updateSettings({ work_end_minutes: m })}
+          minutes={workEnd}
+          onCommit={(m) => (m > workStart ? updateSettings({ work_end_minutes: m }) : refuseInvertedHours())}
           className="!w-32"
           aria-label="Working hours end"
         />

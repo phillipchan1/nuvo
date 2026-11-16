@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { addDays } from "date-fns";
 import { allowAnytimeLanding, localMidnight, spanFromCalendarDrop } from "../src/lib/dates";
 
 const PANE = readFileSync(resolve(__dirname, "../src/components/CalendarPane.tsx"), "utf8");
@@ -30,20 +29,21 @@ describe("allowAnytimeLanding", () => {
 });
 
 describe("spanFromCalendarDrop", () => {
-  it("writes exclusive-end midnights for an all-day span", () => {
+  // The one all-day shape: each civil date at UTC midnight (`allDayInstant`).
+  it("writes exclusive-end dates for an all-day span", () => {
     const start = localMidnight(new Date(2026, 8, 15));
     const end = localMidnight(new Date(2026, 8, 18));
     expect(spanFromCalendarDrop(start, end, true)).toEqual({
-      start_at: start.toISOString(),
-      end_at: end.toISOString(),
+      start_at: "2026-09-15T00:00:00.000Z",
+      end_at: "2026-09-18T00:00:00.000Z",
     });
   });
 
   it("defaults a missing all-day end to one day", () => {
     const start = localMidnight(new Date(2026, 8, 15));
     expect(spanFromCalendarDrop(start, null, true)).toEqual({
-      start_at: start.toISOString(),
-      end_at: addDays(start, 1).toISOString(),
+      start_at: "2026-09-15T00:00:00.000Z",
+      end_at: "2026-09-16T00:00:00.000Z",
     });
   });
 

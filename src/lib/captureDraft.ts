@@ -127,8 +127,15 @@ export function draftFromCapture(
   // it asked to be somewhere else.
   const typedWhen = Boolean(p.doDate || p.startTime);
   const slot = ctx.slot && !typedWhen ? ctx.slot : null;
-  const doDate = p.doDate ?? slot?.do_date ?? ctx.doDate ?? null;
-  const start = p.startTime ?? (slot ? null : ctx.startTime ?? null);
+  // A bare clock ("dentist 3pm") names no day: the host's day is the day, and
+  // the clock lands on it. The parser's own guess (today) is the last resort.
+  const hostDay = ctx.slot?.do_date ?? ctx.doDate ?? null;
+  const typedDay = p.doDate && (p.dayCertain || !hostDay) ? p.doDate : null;
+  const doDate = typedDay ?? slot?.do_date ?? hostDay ?? null;
+  // Every clock lands on the day the task lands on — a typed "tomorrow" keeps a
+  // tapped clock but moves it onto tomorrow, as the slot path does.
+  const clock = p.startTime ?? (slot ? null : ctx.startTime ?? null);
+  const start = clock && doDate ? atClock(doDate, clock) : clock;
   const length =
     p.durationMinutes ?? (start && !p.startTime ? (ctx.durationMinutes ?? env.defaultDurationMins) : duration);
 
@@ -222,9 +229,11 @@ export function slotFromCapture(
   // slot, not one titled "9am 2h".
   const title = (routed ? p.title : p.route ? captureTitle(p, raw) : p.title).trim();
 
-  const day = p.doDate ?? when.doDate ?? env.todayISO;
+  // A bare clock names no day — the surface's day is the day (as for a task).
+  const day = (p.doDate && (p.dayCertain || !when.doDate) ? p.doDate : null) ?? when.doDate ?? env.todayISO;
   // A typed day keeps the surface's clock; a typed time is the clock.
-  const start = p.startTime ?? (when.start ? atClock(day, when.start) : null);
+  const clock = p.startTime ?? when.start;
+  const start = clock ? atClock(day, clock) : null;
   if (!start) return null;
   const duration = p.durationMinutes ?? when.durationMinutes ?? DEFAULT_SLOT_MINUTES;
   const color = domain_id ? colorOfDomain(domain_id) : null;

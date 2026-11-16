@@ -26,6 +26,7 @@ import WeekSetMoment from "../plan/WeekSetMoment";
 import { useMemo, useState } from "react";
 import { Icon } from "../Icon";
 import { format } from "date-fns";
+import { toast } from "sonner";
 import { useVertical } from "../../hooks/useVertical";
 import { useDeferProject } from "../../hooks/useProjectTime";
 import { useWeekDraft } from "../../hooks/useWeekDraft";
@@ -106,6 +107,8 @@ export default function MobilePlanWeek({
     applying,
     committed,
   } = draft;
+  // a failed write is said, never swallowed — the plan stays open to try again
+  const finish = () => commit().catch((e) => toast.error(e instanceof Error ? e.message : "Couldn't commit the week"));
 
   // The week's projects — derived from the On Deck spans, never stored. Bringing a
   // project in / taking it off IS the placement write, same as the deck's drop.
@@ -164,7 +167,7 @@ export default function MobilePlanWeek({
           dense
         />
       }
-      onCommit={() => void commit()}
+      onCommit={() => void finish()}
       applying={applying}
     >
       {step === "projects" && (

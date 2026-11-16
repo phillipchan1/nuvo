@@ -106,6 +106,21 @@ export function clientConnection(
 }
 
 /**
+ * Postgres `date` (OID 1082) stays the calendar string `YYYY-MM-DD`, exactly
+ * as PostgREST served it. postgres.js's default parses it into a JS Date at
+ * UTC midnight, so `t.do_date === today` never matched and JSON said
+ * `…T00:00:00.000Z`. Timestamps (1114/1184) keep the default Date parser.
+ */
+export const PG_TYPES = {
+  date_ymd: {
+    to: 1082,
+    from: [1082],
+    serialize: (x: unknown) => (x instanceof Date ? x.toISOString().slice(0, 10) : String(x)),
+    parse: (x: string) => x,
+  },
+};
+
+/**
  * Fresh client per request. Workers cannot reuse TCP sockets across requests.
  * `max: 1` — this is one of two sockets a data request opens (see openAuth).
  * Production multiplexes both through Hyperdrive (docs/cloudflare-cutover.md).
@@ -119,6 +134,7 @@ function openSqlDefault(env: Env): Sql {
     prepare: false,
     connect_timeout: CONNECT_TIMEOUT_SECONDS,
     ssl,
+    types: PG_TYPES,
   });
 }
 

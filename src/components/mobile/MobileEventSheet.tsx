@@ -18,8 +18,10 @@ import { eventSeriesKey } from "../../lib/eventActuals";
 import { conferenceName, joinUrl } from "../../../supabase/functions/_shared/conferencing.ts";
 import {
   allDayInclusiveEnd,
+  allDayInstant,
   allDayRangeFromStart,
   defaultTimedRange,
+  eventStartDay,
   nextWeekISO,
   parseDateISO,
   toDateISO,
@@ -45,8 +47,8 @@ import { eventKey } from "../../lib/now";
 // The sheet had its own copy of the clock format. The calendar it opens over
 // spells a time one way (`span` / `at` in dayPlan), so the sheet says it that
 // way too — a second definition is how the two drifted apart to begin with.
-import { span } from "./dayPlan";
-import Sheet from "./Sheet";
+import { moveStartTo, setEndTo, span } from "./dayPlan";
+import Sheet, { flushFocus } from "./Sheet";
 import {
   ActionRow,
   AutoText,
@@ -129,7 +131,10 @@ export default function MobileEventSheet({
   // The phone is where a video meeting actually gets joined, so the sheet pulls
   // the raw event for its conference link the same way the desktop inspector
   // does. Null for a task block — hooks can't hide behind the branch below.
-  const { data: raw } = useEventDetails(tap.kind === "event" ? tap.id : null, account?.email);
+  // `detailsReady`: the description is in hand. Until then (or if the read
+  // failed) there's no notes field to type in — an empty field typed into and
+  // saved would overwrite the provider's real body (the agenda, the Zoom link).
+  const { data: raw, isSuccess: detailsReady } = useEventDetails(tap.kind === "event" ? tap.id : null, account?.email);
   // Re-read when the calendar cache changes: turning a single event into a
   // series re-keys its row to an occurrence, and the sheet has to notice it is
   // now recurring (scope prompts, the series rule) without being reopened.
@@ -192,11 +197,24 @@ export default function MobileEventSheet({
   const [title, setTitle] = useState(tap.kind === "event" ? tap.title : "");
   const [location, setLocation] = useState(tap.kind === "event" ? (tap.location ?? "") : "");
   const [notes, setNotes] = useState("");
-  const [startAt, setStartAt] = useState(tap.kind === "event" ? tap.start.toISOString() : "");
-  const [endAt, setEndAt] = useState(tap.kind === "event" ? tap.end.toISOString() : "");
+  // An all-day tap carries local midnights (`allDayTap`); the sheet holds the
+  // span in the one stored all-day shape (`allDayInstant`) so its edits and its
+  // reads agree with the row's.
+  const [startAt, setStartAt] = useState(
+    tap.kind !== "event" ? "" : tap.allDay ? allDayInstant(toDateISO(tap.start)) : tap.start.toISOString(),
+  );
+  const [endAt, setEndAt] = useState(
+    tap.kind !== "event" ? "" : tap.allDay ? allDayInstant(toDateISO(tap.end)) : tap.end.toISOString(),
+  );
   const [allDay, setAllDay] = useState(tap.kind === "event" ? Boolean(tap.allDay) : false);
-  const { pending: editScope, commit: commitScoped, confirm: confirmScope, cancel: cancelScope, dismiss: dismissScope } =
-    useRecurringScope(recurring);
+  const {
+    pending: editScope,
+    commit: commitScoped,
+    confirm: confirmScope,
+    cancel: cancelScope,
+    dismiss: dismissScope,
+    isPending: scopePending,
+  } = useRecurringScope(recurring);
 
   // What was last SENT, per field. The old checks compared against `tap` — a
   // snapshot taken when the sheet opened — so renaming "A" to "B" and then back
@@ -214,7 +232,11 @@ export default function MobileEventSheet({
 
   // Seed notes once the raw payload (with the description) arrives — same
   // plain-text flattening the desktop inspector uses for a Google HTML body.
+  // Never over a field you've typed into: a refetch (or this sheet's own
+  // optimistic echo) would replace your words with the provider's.
+  const notesTouched = useRef(false);
   useEffect(() => {
+    if (notesTouched.current) return;
     const plain = plainTextFromHtml(raw?.description ?? "");
     sent.current.notes = plain;
     setNotes(plain);
@@ -236,49 +258,80 @@ export default function MobileEventSheet({
   // hadn't been tabbed out of was lost. A repeating event can't be written
   // without its this-or-all question, so closing waits for that answer instead
   // of dropping the edit or asking after the sheet is gone.
+  //
+  // EVERY way out goes through `leave` — ✕, the scrim, a swipe, and each act
+  // that closes the sheet (make it a task, duplicate, move, hide, RSVP, Ask
+  // Nuvo…). Those used to call `onClose` straight past the flush, so an edit
+  // typed and then followed by one of them was lost. `act` runs once the
+  // writes are queued (after the answer, on a repeating event), so a move or
+  // a copy never races ahead of the rename it should carry.
   const flushRef = useRef<() => boolean>(() => false);
-  const closeAfterScope = useRef(false);
-  const close = () => {
-    if (flushRef.current()) {
-      closeAfterScope.current = true;
+  const afterScope = useRef<(() => void) | null>(null);
+  const leave = (act?: () => void) => {
+    flushFocus();
+    const waiting = flushRef.current() || scopePending();
+    const go = () => {
+      act?.();
+      onClose();
+    };
+    if (waiting) {
+      afterScope.current = go;
       return;
     }
-    onClose();
+    go();
   };
+  const close = () => leave();
   useEffect(() => {
-    if (!editScope && closeAfterScope.current) {
-      closeAfterScope.current = false;
-      onClose();
+    if (!editScope && afterScope.current) {
+      const go = afterScope.current;
+      afterScope.current = null;
+      go();
     }
-  }, [editScope, onClose]);
+  }, [editScope]);
 
   const { title: sheetTitle, onContentScroll } = useSheetTitle(
     tap.kind === "slot" ? "Block" : "Event",
     tap.kind === "event" ? title : "",
   );
 
-  const handleAskNuvo = () => {
+  /** The event as the fields say it NOW — `tap` is the snapshot the sheet
+   *  opened on, so an act that copied it (Ask Nuvo, copy, make it a task)
+   *  carried the old name, place and time after you'd changed them. */
+  const current = () => {
+    const shownAllDay = tap.kind === "event" ? allDay : false;
+    return {
+      name: title.trim() || sent.current.title,
+      place: location.trim(),
+      start: shownAllDay ? parseDateISO(eventStartDay(startAt, true)) : new Date(startAt),
+      end: shownAllDay ? parseDateISO(eventStartDay(endAt, true)) : new Date(endAt),
+      allDay: shownAllDay,
+    };
+  };
+
+  /** `name`: a slot sheet hands up its own (just-committed) title. */
+  const handleAskNuvo = (name?: string) => {
     if (!onAskNuvo) return;
-    const seed =
-      tap.kind === "event"
-        ? `I have "${tap.title}"${!tap.allDay ? ` at ${span(tap.start, tap.end)}` : ""}${tap.location ? ` at ${tap.location}` : ""}. Help me prepare.`
-        : tap.kind === "slot"
-          ? `I have a block "${tap.title}" at ${span(tap.start, tap.end)} holding ${tap.childCount} task${tap.childCount === 1 ? "" : "s"}. Help me think about it.`
-          : `I have a task block: "${tap.title}" at ${span(tap.start, tap.end)}. Help me think about it.`;
+    const now = tap.kind === "event" ? current() : null;
+    const shownName = now?.name ?? name ?? tap.title;
+    const seed = now
+      ? `I have "${now.name}"${!now.allDay ? ` at ${span(now.start, now.end)}` : ""}${now.place ? ` at ${now.place}` : ""}. Help me prepare.`
+      : tap.kind === "slot"
+        ? `I have a block "${shownName}" at ${span(tap.start, tap.end)} holding ${tap.childCount} task${tap.childCount === 1 ? "" : "s"}. Help me think about it.`
+        : `I have a task block: "${shownName}" at ${span(tap.start, tap.end)}. Help me think about it.`;
     // The seed carries the whole block (title, time, place) so Nuvo doesn't have
     // to go looking; the transcript shows what the user actually pressed.
-    onAskNuvo(seed, `Help me prepare for “${tap.title}”`);
-    onClose();
+    leave(() => onAskNuvo(seed, `Help me prepare for “${shownName}”`));
   };
 
   const copyDetails = () => {
-    const loc = tap.kind === "event" && tap.location ? `\n${tap.location}` : "";
-    const isAllDay = tap.kind === "event" && tap.allDay;
-    const time = isAllDay ? fmtDay(tap.start) : `${fmtDay(tap.start)} · ${span(tap.start, tap.end)}`;
-    void navigator.clipboard.writeText(`${tap.title}\n${time}${loc}`);
+    const now = current();
+    const loc = now.place ? `\n${now.place}` : "";
+    const time = now.allDay ? fmtDay(now.start) : `${fmtDay(now.start)} · ${span(now.start, now.end)}`;
+    // Now, inside the tap: the clipboard refuses a write without a user gesture.
+    void navigator.clipboard.writeText(`${now.name}\n${time}${loc}`);
     // It closed in silence before — nothing said the copy had happened.
     toast.success("Copied");
-    onClose();
+    leave();
   };
 
   if (tap.kind === "event") {
@@ -293,24 +346,16 @@ export default function MobileEventSheet({
           await rsvpEvent({ id: tap.id, responseStatus: status, scope });
         } finally {
           setRsvping(false);
-          onClose();
+          leave();
         }
       }, undefined, "answer");
     };
 
-    const toDateInput = (iso: string) => {
-      const d = new Date(iso);
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    };
+    // An all-day span reads its stored date, a timed one its local day.
+    const toDateInput = (iso: string) => eventStartDay(iso, allDay);
     const toTimeInput = (iso: string) => {
       const d = new Date(iso);
       return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-    };
-    const applyTime = (iso: string, hhmm: string) => {
-      const [h, m] = hhmm.split(":").map(Number);
-      const d = new Date(iso);
-      d.setHours(h, m, 0, 0);
-      return d.toISOString();
     };
 
     const writeSchedule = (
@@ -385,54 +430,46 @@ export default function MobileEventSheet({
       );
     };
 
-    // Each commit says whether it queued a write — `close` needs to know, so a
-    // repeating event can finish its this-or-all question before the sheet goes.
-    const commitTitle = (): boolean => {
-      const next = title.trim();
+    // The text fields commit as ONE patch — every field that differs from what
+    // was last sent — so a field's blur and the close's flush both build the
+    // whole edit. On a repeating event that is one "this or all?" and one write
+    // carrying every field: separate commits each queued their own question and
+    // only the last survived, so closing with two edited fields saved one.
+    // (The shared `"text"` key makes the flush's patch replace the blur's.)
+    // Says whether it queued a write — `leave` needs to know, so a repeating
+    // event can finish its question before the sheet goes.
+    const commitText = (): boolean => {
+      if (!editable) return false;
+      const patch: { title?: string; location?: string | null; description?: string } = {};
+      const nextTitle = title.trim();
       // An emptied title isn't a rename: put the old one back, don't blank an event.
-      if (!next) {
-        setTitle(sent.current.title);
-        return false;
-      }
-      if (next === sent.current.title) return false;
-      const prev = sent.current.title;
+      if (!nextTitle) setTitle(sent.current.title);
+      else if (nextTitle !== sent.current.title) patch.title = nextTitle;
+      const nextLocation = location.trim();
+      if (nextLocation !== sent.current.location) patch.location = nextLocation || null;
+      // Never before the description is in hand: there was nothing to edit yet.
+      if (detailsReady && notes !== sent.current.notes) patch.description = notes;
+      if (!Object.keys(patch).length) return false;
+      const prev = { ...sent.current };
       commitScoped(
         (scope) => {
-          sent.current.title = next;
-          updateEvent({ id: tap.id, patch: { title: next }, scope });
+          if (patch.title !== undefined) sent.current.title = patch.title;
+          if (patch.location !== undefined) sent.current.location = nextLocation;
+          if (patch.description !== undefined) sent.current.notes = patch.description;
+          updateEvent({ id: tap.id, patch, scope });
         },
-        () => setTitle(prev),
-      );
-      return true;
-    };
-    const commitLocation = (): boolean => {
-      const next = location.trim();
-      if (next === sent.current.location) return false;
-      const prev = sent.current.location;
-      commitScoped(
-        (scope) => {
-          sent.current.location = next;
-          updateEvent({ id: tap.id, patch: { location: next || null }, scope });
+        () => {
+          if (patch.title !== undefined) setTitle(prev.title);
+          if (patch.location !== undefined) setLocation(prev.location);
+          if (patch.description !== undefined) setNotes(prev.notes);
         },
-        () => setLocation(prev),
-      );
-      return true;
-    };
-    const commitNotes = (): boolean => {
-      if (notes === sent.current.notes) return false;
-      const prev = sent.current.notes;
-      commitScoped(
-        (scope) => {
-          sent.current.notes = notes;
-          updateEvent({ id: tap.id, patch: { description: notes }, scope });
-        },
-        () => setNotes(prev),
+        "edit",
+        "text",
       );
       return true;
     };
     flushRef.current = () => {
-      if (!editable) return false;
-      const queued = [commitTitle(), commitLocation(), commitNotes()].some(Boolean);
+      const queued = commitText();
       return recurring && queued;
     };
     const handleDelete = () => {
@@ -462,35 +499,51 @@ export default function MobileEventSheet({
     };
     const hiddenNow = Boolean(hidable.provider_event_id) && isHidden(hidable);
     const canHideSeries = Boolean(eventSeriesKey(hidable));
+    // Every act below leaves through `leave`: it commits what's typed first,
+    // and builds from the fields as they stand, not the snapshot it opened on.
     const hideAs = (scope: RecurrenceScope) => {
       hide(hidable, scope);
       toast.success(scope === "ALL" ? "Series hidden" : "Event hidden", {
         description: "Bring it back from Settings → Schedule.",
       });
-      onClose();
+      leave();
     };
     const onHide = () => {
       if (hiddenNow) {
         const k = hiddenKeyFor(hidable);
         if (k) unhide(k);
-        onClose();
+        leave();
         return;
       }
       if (canHideSeries) setPick("hide");
       else hideAs("THIS");
     };
     const toTask = () => {
-      mutations.create(taskFromEvent({ title: tap.title, start_at: tap.start.toISOString(), end_at: tap.end.toISOString() }));
-      hide(hidable, "THIS");
-      toast.success("Task created", { description: "The event is hidden — it stays on your calendar." });
-      onClose();
+      const now = current();
+      leave(() => {
+        mutations.create(taskFromEvent({ title: now.name, start_at: now.start.toISOString(), end_at: now.end.toISOString() }));
+        hide(hidable, "THIS");
+        toast.success("Task created", { description: "The event is hidden — it stays on your calendar." });
+      });
     };
     const duplicate = () => {
       if (!cachedEvent) return;
-      onClose();
-      void createEvent(duplicateEventInput(cachedEvent))
-        .then(() => toast.success("Duplicated"))
-        .catch(() => toast.error(`Couldn't copy ${tap.title || "the event"}`));
+      const now = current();
+      // The copy is of the event as the sheet shows it — a rename typed a
+      // moment ago included — not of the row cached when it opened.
+      const input = duplicateEventInput({
+        ...cachedEvent,
+        title: now.name,
+        location: now.place || null,
+        start_at: startAt,
+        end_at: endAt,
+        all_day: allDay,
+      });
+      leave(() => {
+        void createEvent(input)
+          .then(() => toast.success("Duplicated"))
+          .catch(() => toast.error(`Couldn't copy ${now.name || "the event"}`));
+      });
     };
     const moveGroups = writableCalendarTargets(accounts, tap.calendarId, hiddenCalendarIds);
     const moveRows = moveGroups.flatMap((g) =>
@@ -505,10 +558,13 @@ export default function MobileEventSheet({
     const moveTo = (id: string) => {
       if (!id || id === currentTarget) return;
       const [targetAccountId, targetCalendarId] = id.split("|");
-      void Promise.resolve(moveEventToCalendar({ id: tap.id, targetAccountId, targetCalendarId })).catch(() =>
-        toast.error("Couldn't move the event"),
-      );
-      onClose();
+      // After the edit is queued: a move to another account copies the row, and
+      // the copy should carry the rename.
+      leave(() => {
+        void Promise.resolve(moveEventToCalendar({ id: tap.id, targetAccountId, targetCalendarId })).catch(() =>
+          toast.error("Couldn't move the event"),
+        );
+      });
     };
     // Only Google mints a Meet link, and only on an event that has no way in yet.
     const canAddMeet = editable && account?.provider === "google" && !meetLink && raw !== undefined;
@@ -541,7 +597,7 @@ export default function MobileEventSheet({
     // The ONE muted line under the name — what the read needs before any control
     // does: when it is, and whether it repeats (said even on a read-only event;
     // a fact the card knows must never go unsaid because you can't edit it).
-    const startD = new Date(startAt);
+    const startD = allDay ? parseDateISO(eventStartDay(startAt, true)) : new Date(startAt);
     const endD = new Date(endAt);
     const shownDay = editable ? startD : tap.start;
     const shownAllDay = editable ? allDay : Boolean(tap.allDay);
@@ -594,7 +650,7 @@ export default function MobileEventSheet({
               <AutoText
                 value={title}
                 onChange={setTitle}
-                onBlur={commitTitle}
+                onBlur={commitText}
                 label="Event title"
                 single
                 className="ph-mast-title"
@@ -630,7 +686,7 @@ export default function MobileEventSheet({
           {(meetLink || canAddMeet) && (
             <SheetStrip>
               {meetLink && (
-                <TouchLink href={meetLink} kind="primary" onClick={onClose} icon={<Icon name="video" size={16} />}>
+                <TouchLink href={meetLink} kind="primary" onClick={() => leave()} icon={<Icon name="video" size={16} />}>
                   Join {conferenceName(raw, tap.location)}
                 </TouchLink>
               )}
@@ -678,8 +734,9 @@ export default function MobileEventSheet({
                     step={900}
                     value={toTimeInput(startAt)}
                     onChange={(e) => {
-                      const next = applyTime(startAt, e.target.value);
-                      if (next !== startAt) commitSchedule({ start_at: next, end_at: endAt, all_day: false });
+                      // The end moves with the start: the length is kept.
+                      const next = moveStartTo(startAt, endAt, e.target.value);
+                      if (next.start_at !== startAt) commitSchedule({ ...next, all_day: false });
                     }}
                     aria-label="Start time"
                     className="ph-field"
@@ -692,8 +749,9 @@ export default function MobileEventSheet({
                     step={900}
                     value={toTimeInput(endAt)}
                     onChange={(e) => {
-                      const next = applyTime(endAt, e.target.value);
-                      if (next !== endAt) commitSchedule({ start_at: startAt, end_at: next, all_day: false });
+                      // An end at or before the start is refused, not saved.
+                      const next = setEndTo(startAt, endAt, e.target.value);
+                      if (next && next.end_at !== endAt) commitSchedule({ ...next, all_day: false });
                     }}
                     aria-label="End time"
                     className="ph-field"
@@ -711,7 +769,7 @@ export default function MobileEventSheet({
                 <AutoText
                   value={location}
                   onChange={setLocation}
-                  onBlur={commitLocation}
+                  onBlur={commitText}
                   placeholder="Add location"
                   label="Location"
                   single
@@ -800,13 +858,20 @@ export default function MobileEventSheet({
               opened and the whole thing pushed every act below it off the screen.
               It now reads with links live, folded past eight lines; Edit (or an
               empty note) turns it into the field — the desktop popover's rule. */}
-          {editable && (editingNotes || !notes.trim()) ? (
+          {editable && !detailsReady ? null : editable && (editingNotes || !notes.trim()) ? (
             <SheetSection label="Notes">
               <AutoText
                 value={notes}
-                onChange={setNotes}
+                onChange={(v) => {
+                  notesTouched.current = true;
+                  setNotes(v);
+                }}
+                // In the field means editing it: an EMPTY note's field swapped to
+                // the read face on the first letter typed (`!notes.trim()` went
+                // false) and was torn out from under the finger.
+                onFocus={() => setEditingNotes(true)}
                 onBlur={() => {
-                  commitNotes();
+                  commitText();
                   setEditingNotes(false);
                 }}
                 label="Notes"
@@ -838,11 +903,11 @@ export default function MobileEventSheet({
 
           <SheetSection>
             <RowList>
-              {onAskNuvo && <ActionRow glyph="✦" label="Ask Nuvo to help prepare" onClick={handleAskNuvo} />}
+              {onAskNuvo && <ActionRow glyph="✦" label="Ask Nuvo to help prepare" onClick={() => handleAskNuvo()} />}
               {/* Turning a meeting into your own work: the task takes the hour and
                   the event steps aside (hidden, never deleted). Timed only — an
                   all-day event has no hour to hand over. */}
-              {!tap.allDay && <ActionRow icon="check" label="Make it a task" onClick={toTask} />}
+              {!allDay && <ActionRow icon="check" label="Make it a task" onClick={toTask} />}
               {editable && cachedEvent && <ActionRow icon="copy" label="Duplicate" onClick={duplicate} />}
               {editable && moveRows.length > 1 && (
                 <ActionRow icon="calendar" label="Move to another calendar…" onClick={() => setPick("move")} />
@@ -1036,7 +1101,8 @@ function MobileSlotSheet({
   mutations: Mutations;
   slotMutations: ReturnType<typeof useSlotMutations>;
   onClose: () => void;
-  onAskNuvo?: () => void;
+  /** Handed the block's name as it stands (the field's, just committed). */
+  onAskNuvo?: (name: string) => void;
   onEditTask?: (taskId: string) => void;
 }) {
   const { slot } = tap;
@@ -1081,7 +1147,11 @@ function MobileSlotSheet({
     sentTitle.current = next;
     slotMutations.updateSlot({ id: slot.id, patch: { title: next } });
   };
+  // Every way out — ✕, a move chip, duplicate, opening a task, Ask Nuvo, the
+  // reschedule and defer panels — commits the title first: they used to call
+  // `onClose` straight past it, and a rename typed before them was lost.
   const closeFlushing = () => {
+    flushFocus();
     commitTitle();
     onClose();
   };
@@ -1096,7 +1166,7 @@ function MobileSlotSheet({
     slotMutations.updateSlot({ id: slot.id, patch: { do_date: dateISO, start_time: next.toISOString() } });
     // `tap` is a snapshot, so the sheet would go on saying the OLD day beside a
     // block that has visibly moved. Like the task sheet's plan chips: act, close.
-    onClose();
+    closeFlushing();
   };
 
   // One meaning with the desktop popover's delete (`deleteSlotScoped`): a
@@ -1130,7 +1200,12 @@ function MobileSlotSheet({
       ];
 
   const duplicate = () => {
-    slotMutations.createSlot(duplicateSlotInput(slot));
+    flushFocus();
+    commitTitle();
+    // The copy carries the name as the field has it now. An unnamed block that
+    // still shows its project's name stays unnamed — that name follows the project.
+    const renamed = sentTitle.current !== shownName || Boolean((slot.title ?? "").trim());
+    slotMutations.createSlot(duplicateSlotInput(renamed ? { ...slot, title: sentTitle.current } : slot));
     toast.success("Duplicated");
     onClose();
   };
@@ -1187,7 +1262,7 @@ function MobileSlotSheet({
                   whenShown
                   onSelect={() => {}}
                   onOpen={() => {
-                    onClose();
+                    closeFlushing();
                     onEditTask?.(c.id);
                   }}
                   onToggleDone={() => (c.status === "done" ? mutations.uncomplete(c) : mutations.complete(c))}
@@ -1216,7 +1291,7 @@ function MobileSlotSheet({
               Pick time…
             </Chip>
           </ChipGrid>
-          {showReschedule && <SlotReschedulePicker slot={slot} slotMutations={slotMutations} onDone={onClose} />}
+          {showReschedule && <SlotReschedulePicker slot={slot} slotMutations={slotMutations} onDone={closeFlushing} />}
         </SheetSection>
 
         {/* Length — the desktop resizes by drag or ⌥⇧-arrows; the phone had no
@@ -1259,14 +1334,24 @@ function MobileSlotSheet({
 
         <SheetSection>
           <RowList>
-            {onAskNuvo && <ActionRow glyph="✦" label="Ask Nuvo" onClick={onAskNuvo} />}
+            {onAskNuvo && (
+              <ActionRow
+                glyph="✦"
+                label="Ask Nuvo"
+                onClick={() => {
+                  flushFocus();
+                  commitTitle();
+                  onAskNuvo(sentTitle.current);
+                }}
+              />
+            )}
             <ActionRow icon="copy" label="Duplicate" onClick={duplicate} />
             {/* Project time's own way out — the same panel the Schedule's block
                 and the Week's Plan row open. Delete only removes the block. */}
             {slot.project_id &&
               (deferring ? (
                 <div className="py-2">
-                  <SlotDeferPanel slot={slot} onDone={onClose} />
+                  <SlotDeferPanel slot={slot} onDone={closeFlushing} />
                 </div>
               ) : (
                 <ActionRow icon="arrow-right" label="Can’t get to this…" onClick={() => setDeferring(true)} />

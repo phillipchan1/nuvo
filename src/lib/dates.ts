@@ -91,6 +91,14 @@ export function allDayDates(startAt: string, endAt: string): { start: string; en
   return { start, end: end > start ? end : toDateISO(addDays(parseDateISO(start), 1)) };
 }
 
+/** The day an event's row starts on, as `YYYY-MM-DD`: the stored date for an
+ *  all-day row (as `allDayDates` reads it), the local day of a timed one. An
+ *  inspector seeded from `new Date(start_at)` showed a UTC-midnight all-day
+ *  event on the previous day west of Greenwich. */
+export function eventStartDay(startAt: string, allDay: boolean): string {
+  return allDay ? allDayDates(startAt, startAt).start : toDateISO(new Date(startAt));
+}
+
 /** The same clock on another day — a timed task you move by hand keeps the
  *  hour you gave it (D-154). Rollover is the exception: it clears the hour
  *  (D-141). Null for an untimed task. */
@@ -224,16 +232,36 @@ export function localMidnight(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
-/** All-day events span whole calendar days; provider end dates are exclusive. */
+/**
+ * The ONE shape an all-day day is written in: its civil date at UTC midnight,
+ * `2026-11-19T00:00:00.000Z` — the shape ICS and M365 rows already arrive in.
+ *
+ * Every reader takes the leading date (`allDayDates`, the server's
+ * `googleStartEnd`, iCloud's `toIcalDate`), so the instant must carry the
+ * intended date in its first ten characters. Local midnight via `toISOString()`
+ * did that only west of Greenwich: in Paris, Thu Nov 19 left as
+ * `2026-11-18T23:00:00.000Z` and landed on Wednesday — in Google, in iCloud and
+ * on this device's own optimistic row.
+ */
+export function allDayInstant(dateISO: string): string {
+  return `${dateISO}T00:00:00.000Z`;
+}
+
+/** All-day events span whole calendar days; provider end dates are exclusive.
+ *  The days are the LOCAL calendar days of the Dates passed in (a picker's or
+ *  FullCalendar's local midnight), written in the one all-day shape. */
 export function allDayRangeFromStart(startDay: Date, inclusiveEndDay?: Date): { start_at: string; end_at: string } {
   const start = localMidnight(startDay);
   const last = localMidnight(inclusiveEndDay && inclusiveEndDay >= startDay ? inclusiveEndDay : startDay);
-  return { start_at: start.toISOString(), end_at: addDays(last, 1).toISOString() };
+  return { start_at: allDayInstant(toDateISO(start)), end_at: allDayInstant(toDateISO(addDays(last, 1))) };
 }
 
-/** Inclusive last day for an all-day event whose stored end_at is exclusive. */
+/** Inclusive last day (local midnight) for an all-day event whose stored
+ *  end_at is exclusive. Reads the stored date, as `allDayDates` does — read as
+ *  an instant, a UTC-midnight row ended a day early west of Greenwich. */
 export function allDayInclusiveEnd(isoEnd: string): Date {
-  return addDays(localMidnight(new Date(isoEnd)), -1);
+  const date = civilDateOf(isoEnd);
+  return addDays(date ? parseDateISO(date) : localMidnight(new Date(isoEnd)), -1);
 }
 
 /** Default timed block when flipping an all-day event to a specific time. */
@@ -247,8 +275,9 @@ export function defaultTimedRange(day: Date): { start_at: string; end_at: string
 
 /**
  * Persist a FullCalendar drop/resize as start_at / end_at.
- * All-day ends stay exclusive (the midnight after the last day), matching
- * `allDayRangeFromStart` and Google/iCloud date-only events.
+ * All-day ends stay exclusive (the day after the last day), written in the one
+ * all-day shape (`allDayInstant`), matching `allDayRangeFromStart` and
+ * Google/iCloud date-only events.
  */
 export function spanFromCalendarDrop(
   start: Date | null,
@@ -260,7 +289,7 @@ export function spanFromCalendarDrop(
     const first = localMidnight(start);
     const exclusive = end ? localMidnight(end) : addDays(first, 1);
     if (exclusive.getTime() <= first.getTime()) return null;
-    return { start_at: first.toISOString(), end_at: exclusive.toISOString() };
+    return { start_at: allDayInstant(toDateISO(first)), end_at: allDayInstant(toDateISO(exclusive)) };
   }
   if (!end) return null;
   return { start_at: start.toISOString(), end_at: end.toISOString() };

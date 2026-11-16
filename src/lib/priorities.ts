@@ -3,7 +3,7 @@
 // share one definition. A priority (big rock) owns tasks directly via
 // tasks.big_rock_id, and can optionally spotlight a linked bet/project's work.
 
-import { domainById, initiativeById, isProjectInFlight, projectById, tasksOf, type Project, type VerticalData, type VTask } from "./vertical";
+import { domainById, initiativeById, isProjectInFlight, projectById, resolveInitiativeId, tasksOf, type Project, type VerticalData, type VTask } from "./vertical";
 import { portfolioDemand, type ProjectPace } from "./pace";
 import { carriedWeeks, isCompleteStatus, isOnDeckThisWeek, isOnSlate, slateOrder } from "../../supabase/functions/_shared/planningRules.ts";
 import { isTended } from "./tending";
@@ -28,7 +28,10 @@ export function priorityWork(data: VerticalData, rock: BigRock): RockWork {
   const serves = (t: VTask) =>
     t.bigRockId === rock.id ||
     (proj != null && t.projectId === proj.id) ||
-    (init != null && (t.initiativeId === init.id || (t.projectId ? projectById(data, t.projectId)?.initiativeId === init.id : false)));
+    // a parented task belongs to its project's initiative (`resolveInitiativeId`)
+    // — its own `initiativeId` is a copy that goes stale when the project moves
+    // to another bet, and kept crediting the bet it left
+    (init != null && resolveInitiativeId(t.initiativeId, t.projectId, (id) => projectById(data, id)?.initiativeId) === init.id);
   const tasks = data.tasks.filter(serves);
   return {
     tasks,

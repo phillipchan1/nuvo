@@ -29,7 +29,7 @@
 
 import { replaceEqualDeep, type QueryClient } from "@tanstack/react-query";
 import { drain, type Transport } from "./engine";
-import { outboxSnapshot, refreshOutboxStatus, setOutboxStatus } from "./outbox";
+import { outboxSnapshot, refreshOutboxStatus, retryParked, setOutboxStatus } from "./outbox";
 import { SYNC_TABLES, type OpKind, type SyncTable } from "./ops";
 import { isTableLive } from "./liveHealth";
 
@@ -645,7 +645,11 @@ export async function syncNow({ qc, transport }: SyncRunOptions): Promise<void> 
  * visibility are the events that actually correlate with "the user is here and
  * expects their work to have gone through".
  */
-export function startSync(opts: SyncRunOptions): { stop: () => void; kick: () => Promise<void> } {
+export function startSync(opts: SyncRunOptions): {
+  stop: () => void;
+  kick: () => Promise<void>;
+  nudge: () => Promise<void>;
+} {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let backoff = 0;
@@ -686,12 +690,27 @@ export function startSync(opts: SyncRunOptions): { stop: () => void; kick: () =>
     });
   };
 
+  /**
+   * A freshly queued write: drain now, and if that pass is interrupted, the
+   * backoff below retries it. Calling `syncNow` directly (as `queueWrite` used
+   * to) left a write that hit a blip sitting in the outbox until the next
+   * focus or reconnect. No catch-up refetch — that is for coming back, not for
+   * every keystroke.
+   */
+  const nudge = () => {
+    backoff = 0;
+    return run();
+  };
+
   const onVisible = () => {
     if (document.visibilityState === "visible") void kick();
   };
 
   const onEvent = () => void kick();
-  window.addEventListener("online", onEvent);
+  // Back online is also when a server-side fix may have landed: give every
+  // parked op its one automatic retry (see `retryParked`).
+  const onOnline = () => void retryParked().then(kick, kick);
+  window.addEventListener("online", onOnline);
   window.addEventListener("focus", onEvent);
   document.addEventListener("visibilitychange", onVisible);
 
@@ -707,18 +726,22 @@ export function startSync(opts: SyncRunOptions): { stop: () => void; kick: () =>
   // for an event that may never come. The catch-up refetch has to wait for
   // that same read: running it earlier would treat every query as owed and
   // skip the launch refresh this exists to restore.
-  void refreshOwing().then(() => {
-    catchUpAfterOwingKnown(opts.qc);
-    void kick();
-  });
+  // Parked ops get their one automatic retry on launch, before the first read.
+  void retryParked()
+    .catch(() => 0)
+    .then(() => refreshOwing())
+    .then(() => {
+      catchUpAfterOwingKnown(opts.qc);
+      void kick();
+    });
 
   const stop = () => {
     stopped = true;
     if (timer) clearTimeout(timer);
     clearInterval(pullTimer);
-    window.removeEventListener("online", onEvent);
+    window.removeEventListener("online", onOnline);
     window.removeEventListener("focus", onEvent);
     document.removeEventListener("visibilitychange", onVisible);
   };
-  return { stop, kick };
+  return { stop, kick, nudge };
 }

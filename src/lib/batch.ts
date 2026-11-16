@@ -13,7 +13,7 @@
 import type { ExternalEvent, Task } from "./types";
 import type { Energy } from "./energy";
 import { composeWeek, type DayContext } from "./compose";
-import { domainById, initiativeById, projectById, type VerticalData } from "./vertical";
+import { domainById, initiativeById, projectById, taskDomainId, type VerticalData } from "./vertical";
 import { titleCase } from "./text";
 import { ACTION_KIND_NAME, actionKindOf } from "./actionKind";
 
@@ -63,13 +63,10 @@ const CAP_PROJECT = 120;
 type Cls = "deep" | "decide" | "shallow";
 const classOf = (e: Energy | null): Cls => (e === "deep" ? "deep" : e === "decide" ? "decide" : "shallow");
 
+/** A parented task counts toward its PARENT's domain — `tasks.domain_id` is a
+ *  denormalized copy that goes stale on re-homing (D-088). One rule: taskDomainId. */
 export function resolveDomainId(data: VerticalData, t: Task): string | null {
-  return (
-    t.domain_id ??
-    projectById(data, t.project_id)?.domainId ??
-    initiativeById(data, t.initiative_id)?.domainId ??
-    null
-  );
+  return taskDomainId(data, t);
 }
 
 function chunkByCap(tasks: Task[], cap: number): Task[][] {

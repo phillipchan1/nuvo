@@ -22,7 +22,7 @@ describe("trashTaskScoped", () => {
     const m = { trash: vi.fn() }; const r = recM();
     trashTaskScoped(m as never, r as never, rec, task, "THIS");
     expect(r.skipOccurrence).toHaveBeenCalledWith(rec, "2026-11-05");
-    expect(m.trash).toHaveBeenCalledWith(task);
+    expect(m.trash.mock.calls[0][0]).toBe(task);
   });
   it("FOLLOWING and ALL end the series", () => {
     const m = { trash: vi.fn() }; const r = recM();

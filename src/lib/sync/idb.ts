@@ -57,7 +57,8 @@ export function resetIdbForTests() {
 }
 
 function openDb(): Promise<IDBDatabase | null> {
-  dbPromise ??= new Promise<IDBDatabase | null>((resolve) => {
+  if (dbPromise) return dbPromise;
+  const opening = new Promise<IDBDatabase | null>((resolve) => {
     if (typeof indexedDB === "undefined") {
       durable = false;
       resolve(null);
@@ -88,28 +89,50 @@ function openDb(): Promise<IDBDatabase | null> {
     // storage while it was busily persisting to it. Caught in the running app,
     // not by a unit test: the fake IndexedDB resolves before a timer can matter.
     let settled = false;
+    let timedOut = false;
     const finish = (db: IDBDatabase | null) => {
       if (settled) return;
       settled = true;
       resolve(db);
     };
 
-    req.onsuccess = () => finish(req.result);
+    req.onsuccess = () => {
+      if (!timedOut) return finish(req.result);
+      // A slow open that finished after we gave up: adopt it. Memoizing the
+      // timeout's null ran the whole session from memory — every write
+      // "not durable" — because Safari took four seconds to restore a tab.
+      if (dbPromise === opening || dbPromise === gaveUp) {
+        dbPromise = Promise.resolve(req.result);
+        // Ops still held in memory move back on the next read
+        // (`reclaimMemoryOps`), which restores `durable` then.
+        if (!memory || memory.ops.size === 0) durable = true;
+      }
+    };
     req.onerror = () => {
       durable = false;
+      // Not memoized: the next call tries again rather than writing off
+      // storage for the life of the process over one failed open.
+      if (dbPromise === opening || dbPromise === gaveUp) dbPromise = null;
       finish(null);
     };
     // Safari has shipped builds where `open` neither resolves nor errors while
     // the tab is being restored. Nothing about the app should wait forever on
-    // storage, so give up and run from memory.
+    // storage, so give up *for now* and run from memory — without waiting
+    // another three seconds on every call while the open is still pending.
     setTimeout(() => {
       if (settled) return;
+      timedOut = true;
       durable = false;
+      if (dbPromise === opening) dbPromise = gaveUp;
       finish(null);
     }, SETTLE_MS);
   });
-  return dbPromise;
+  dbPromise = opening;
+  return opening;
 }
+
+/** What callers get while an open that timed out is still pending. */
+const gaveUp: Promise<IDBDatabase | null> = Promise.resolve(null);
 
 /**
  * The outcome of one transaction.

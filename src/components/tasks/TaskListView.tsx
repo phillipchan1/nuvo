@@ -25,9 +25,9 @@ import { shiftId } from "../../lib/taskOrder";
 import type { CaptureContext } from "../../lib/captureDraft";
 import TaskRow, { type TaskMeta, type TaskRowHandle } from "../TaskRow";
 import TaskComposer, { type TaskComposerHandle } from "./TaskComposer";
-import TaskActionsMenu from "./TaskActionsMenu";
+import TaskActionsMenu, { useTrashTask } from "./TaskActionsMenu";
 import { TaskDateMenu, TaskMoveMenu, useRenameAct } from "./TaskMenus";
-import { orderBeside, useTaskListKeys } from "./useTaskListKeys";
+import { placeBeside, useTaskListKeys } from "./useTaskListKeys";
 import type { PathDraft } from "./usePathDraft";
 
 export interface TaskListViewProps {
@@ -122,6 +122,7 @@ export default function TaskListView({
   // opens the task sheet. Same row, same add box.
   const phone = useIsMobile();
   const renameTask = useRenameAct(mutations);
+  const trashTask = useTrashTask(mutations);
 
   const [cursorId, setCursorId] = useState<string | null>(null);
   const [ownSelected, setOwnSelected] = useState<Set<string>>(new Set());
@@ -252,7 +253,7 @@ export default function TaskListView({
           if (h) h.triggerToggle();
           else mutations.complete(t, { undo: "toast" });
         }),
-      trash: (targets) => targets.forEach((t) => mutations.trash(t, { undo: "toast" })),
+      trash: (targets) => targets.forEach((t) => trashTask(t, { undo: "toast" })),
       date: (targets) => setMenu({ kind: "date", targets, anchor: rowRect(targets[0].id) }),
       move: (targets) => setMenu({ kind: "move", targets, anchor: rowRect(targets[0].id) }),
       rename: (t) => setEditingId(t.id),
@@ -283,9 +284,12 @@ export default function TaskListView({
           }
         : undefined,
       add: (anchor, where) => {
-        const sortOrder = anchor ? orderBeside(tasks, anchor, where) : undefined;
+        const placed = anchor ? placeBeside(tasks, anchor, where) : undefined;
+        // A tied run (fresh captures share one sort_order) spreads first, in the
+        // order on screen, so the new row has room right beside the anchor.
+        if (placed?.spread.length && !drafting) mutations.reorder(tasks, ids, { undo: false });
         composer.current?.focus(
-          anchor && sortOrder != null ? { sortOrder, label: `${where} “${anchor.title}”` } : undefined,
+          anchor && placed ? { sortOrder: placed.sortOrder, label: `${where} “${anchor.title}”` } : undefined,
         );
       },
     },

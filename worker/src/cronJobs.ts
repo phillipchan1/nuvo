@@ -34,7 +34,9 @@ import { runIcloudContacts, runIcloudSync } from "./calendar/icloud.ts";
 import { runIcsSync } from "./calendar/icsFeed.ts";
 import { runM365Sync } from "./calendar/m365.ts";
 import { m365Enabled } from "./lib/ms.ts";
+import { claimDueAccounts } from "./calendar/store.ts";
 import { runCalendarDispatch, runGoogleCronJob } from "./google/cron.ts";
+import { claimDueGoogleAccounts } from "./google/owned.ts";
 import { runGoogleSync } from "./google/sync.ts";
 import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
 import { requestIo, requireStore, type AppEnv } from "./session.ts";
@@ -114,6 +116,11 @@ function blocked(job: string): CronResult {
   return { job, status: 501, stay_on_supabase: true };
 }
 
+/** Log one tenant's failure without ids or row data, and keep going. */
+function logUserFailure(job: string, err: unknown): void {
+  console.error(`[cron] ${job}: one user failed`, err instanceof Error ? err.name : "error");
+}
+
 function todayLA(): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Los_Angeles",
@@ -128,8 +135,13 @@ async function runRollover(sql: Sql): Promise<{ rolled: number; today: string; u
   const users = (await sql`SELECT id FROM users`) as { id: string }[];
   let rolled = 0;
   for (const user of users) {
-    // One definition of "what carries" (D-145 / D-147) — see rollover.ts.
-    rolled += (await rolloverUserTasks(sql, user.id, today)).length;
+    // One user's failure must not stop everyone after them.
+    try {
+      // One definition of "what carries" (D-145 / D-147) — see rollover.ts.
+      rolled += (await rolloverUserTasks(sql, user.id, today)).length;
+    } catch (err) {
+      logUserFailure("rollover", err);
+    }
   }
   return { rolled, today, users: users.length };
 }
@@ -138,14 +150,18 @@ async function runPurgeTrash(sql: Sql): Promise<{ deleted: number; users: number
   const users = (await sql`SELECT id FROM users`) as { id: string }[];
   let deleted = 0;
   for (const user of users) {
-    const rows = (await sql`
-      DELETE FROM tasks
-      WHERE user_id = ${user.id}
-        AND status = 'trashed'
-        AND COALESCE(trashed_at, updated_at) < now() - interval '30 days'
-      RETURNING id
-    `) as { id: string }[];
-    deleted += rows.length;
+    try {
+      const rows = (await sql`
+        DELETE FROM tasks
+        WHERE user_id = ${user.id}
+          AND status = 'trashed'
+          AND COALESCE(trashed_at, updated_at) < now() - interval '30 days'
+        RETURNING id
+      `) as { id: string }[];
+      deleted += rows.length;
+    } catch (err) {
+      logUserFailure("purge-trash", err);
+    }
   }
   return { deleted, users: users.length };
 }
@@ -154,13 +170,17 @@ async function runReminderPrune(sql: Sql): Promise<{ deleted: number; users: num
   const users = (await sql`SELECT id FROM users`) as { id: string }[];
   let deleted = 0;
   for (const user of users) {
-    const rows = (await sql`
-      DELETE FROM reminder_deliveries
-      WHERE user_id = ${user.id}
-        AND fire_at < now() - interval '2 days'
-      RETURNING reminder_key
-    `) as { reminder_key: string }[];
-    deleted += rows.length;
+    try {
+      const rows = (await sql`
+        DELETE FROM reminder_deliveries
+        WHERE user_id = ${user.id}
+          AND fire_at < now() - interval '2 days'
+        RETURNING reminder_key
+      `) as { reminder_key: string }[];
+      deleted += rows.length;
+    } catch (err) {
+      logUserFailure("reminder-deliveries-prune", err);
+    }
   }
   return { deleted, users: users.length };
 }
@@ -169,26 +189,32 @@ const DUE_BATCH = 100;
 
 // M365 off (no MS_*): its skip never moves next_sync_at, so leaving m365 in
 // would re-enqueue the same rows every minute ahead of real work.
+//
+// Claims (bumps next_sync_at) exactly like the in-process dispatcher, so a
+// due account is sent ONCE per interval — not again every minute while its
+// message waits in the queue. The consumer's markSyncResult then sets the
+// real next time; a lost message just waits out one interval.
 export async function enqueueDueCalendarAccounts(sql: Sql, env: Env): Promise<number> {
   const queue = env.CALENDAR_SYNC_QUEUE;
   if (!queue) return 0;
-  const rows = (await sql`
-    SELECT id, user_id, provider
-    FROM calendar_accounts
-    WHERE NOT needs_reconnect
-      AND (next_sync_at IS NULL OR next_sync_at <= now())
-      AND (${m365Enabled(env)} OR provider <> 'm365')
-    ORDER BY next_sync_at ASC NULLS FIRST
-    LIMIT ${DUE_BATCH}
-  `) as { id: string; user_id: string; provider: string }[];
+  const google = await claimDueGoogleAccounts(sql, DUE_BATCH);
+  const others = await claimDueAccounts(sql, m365Enabled(env) ? ["m365", "icloud", "ics"] : ["icloud", "ics"], DUE_BATCH);
+  const rows = [
+    ...google.map((r) => ({ id: r.id, user_id: r.user_id, provider: "google" })),
+    ...others.map((a) => ({ id: a.id, user_id: a.user_id, provider: a.provider })),
+  ];
   let n = 0;
   for (const row of rows) {
-    await queue.send({
-      account_id: row.id,
-      user_id: row.user_id,
-      provider: row.provider,
-    } satisfies CalendarSyncMessage);
-    n += 1;
+    try {
+      await queue.send({
+        account_id: row.id,
+        user_id: row.user_id,
+        provider: row.provider,
+      } satisfies CalendarSyncMessage);
+      n += 1;
+    } catch (err) {
+      console.error("[cron] calendar-dispatch: enqueue failed", err instanceof Error ? err.name : "error");
+    }
   }
   return n;
 }
@@ -268,7 +294,15 @@ export async function handleScheduled(
 ): Promise<CronResult[]> {
   const jobs = jobsForSchedule(event.cron);
   const out: CronResult[] = [];
-  for (const job of jobs) out.push(await run(job));
+  // Jobs on one tick are independent: one throwing must not skip the rest.
+  for (const job of jobs) {
+    try {
+      out.push(await run(job));
+    } catch (err) {
+      console.error(`[cron] ${job} failed`, err instanceof Error ? err.name : "error");
+      out.push({ job, status: 500, ok: false, reason: "error" });
+    }
+  }
   return out;
 }
 

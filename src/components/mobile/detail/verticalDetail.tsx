@@ -650,8 +650,11 @@ function KrNumber({ value, accent, onCommit }: { value: number; accent?: string;
       inputMode="decimal"
       defaultValue={value}
       onBlur={(e) => {
-        const next = Number(e.target.value);
-        if (!Number.isNaN(next) && next !== value) onCommit(next);
+        const next = readNumber(e.target.value);
+        // Cleared or junk is not a number — put the last one back rather than
+        // save the 0 that Number("") would make of it.
+        if (next == null) { e.target.value = String(value); return; }
+        if (next !== value) onCommit(next);
       }}
       className="w-12 shrink-0 bg-transparent tabular-nums outline-none"
       style={accent ? { color: accent } : undefined}
@@ -855,7 +858,10 @@ export function TextField({
       defaultValue={value}
       onBlur={(e) => {
         const next = e.target.value.trim();
-        if (next && next !== value) onCommit(next);
+        // A name can't be emptied — put the old one back, don't leave a blank
+        // field that was never saved.
+        if (!next) { e.target.value = value; return; }
+        if (next !== value) onCommit(next);
       }}
       className={`w-full bg-transparent outline-none ${className}`}
       style={style}
@@ -921,6 +927,13 @@ export function AreaField({
 /** An editable number that sits INSIDE a sentence ("23.5h / 20h this week") —
  *  so it stays a 44px target and keeps a hairline to say it's editable, but it
  *  doesn't grow a filled box that outweighs the figure it qualifies. */
+/** A typed number, or null when the field holds none ("" is not 0). */
+function readNumber(raw: string): number | null {
+  if (!raw.trim()) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
 export function NumberField({ value, onCommit, accent }: { value: number; onCommit: (v: number) => void; accent?: string }) {
   return (
     <input
@@ -932,8 +945,11 @@ export function NumberField({ value, onCommit, accent }: { value: number; onComm
       defaultValue={value}
       aria-label="Weekly target hours"
       onBlur={(e) => {
-        const next = Number(e.target.value);
-        if (!Number.isNaN(next) && next !== value) onCommit(next);
+        const typed = readNumber(e.target.value);
+        // Blank restores the target; a week has no negative hours.
+        const next = typed == null ? value : Math.max(0, typed);
+        e.target.value = String(next);
+        if (next !== value) onCommit(next);
       }}
       className="ph-field tabular-nums"
       style={{ width: 64, paddingLeft: 8, paddingRight: 8, ...(accent ? { color: accent } : {}) }}

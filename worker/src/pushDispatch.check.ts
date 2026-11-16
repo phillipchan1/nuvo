@@ -9,6 +9,7 @@ import { makePgliteSql } from "./pgliteSql.ts";
 import { installRequestIoForTests } from "./requestIo.ts";
 import app from "./index.ts";
 import { runCronJob } from "./cronJobs.ts";
+import { PG_TYPES } from "./db.ts";
 import { installPushFetchForTests, runPushDispatch } from "./pushDispatch.ts";
 import { sendWebPush, webPushConfigured, webPushSelfTest } from "./lib/webpush.ts";
 
@@ -122,10 +123,11 @@ ok(brokenSelf.ok === false, "selfTest broken key fails");
 ok(brokenSelf.error === "VAPID keys could not sign", "selfTest error is generic — no raw crypto or exception text");
 
 const posts: { url: string; headers: Headers; status: number }[] = [];
+let pushDown = false;
 const mockFetch = async (input: string, init?: RequestInit) => {
   const headers = new Headers(init?.headers);
   const gone = input.includes("gone");
-  const status = gone ? 410 : 201;
+  const status = gone ? 410 : pushDown ? 503 : 201;
   posts.push({ url: input, headers, status });
   return new Response("", { status });
 };
@@ -161,7 +163,8 @@ const gone = await sendWebPush(
 );
 ok(gone.ok === false && gone.gone === true && gone.status === 410, "sendWebPush: 410 is gone");
 
-const db = new PGlite();
+// Parse `date` exactly as the Worker's postgres.js client does (db.ts PG_TYPES).
+const db = new PGlite({ parsers: { 1082: PG_TYPES.date_ymd.parse } });
 await applyIsolationSchema(db);
 const sql = makePgliteSql(db);
 
@@ -349,6 +352,76 @@ ok(
   Number((await db.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM push_subscriptions WHERE user_id = $1`, [B])).rows[0]?.n ?? 0) === 1,
   "gone: B's subscription remains",
 );
+
+// ── Deadline reminders: the window, the order, and the claim ──────────────
+// A user with 600 far-future deadlines and ONE due now: the near one must not
+// fall off LIMIT 500 (no ORDER BY + `OR deadline IS NOT NULL` dropped it).
+await db.query(
+  `UPDATE user_settings SET reminder_prefs = $2::jsonb WHERE user_id = $1`,
+  [A, JSON.stringify({ enabled: true, block_leads: [5], deadline_leads: [0], deadline_time_minutes: 17 * 60 })],
+);
+await db.query(
+  `INSERT INTO tasks (user_id, title, status, deadline)
+   SELECT $1, 'far ' || g, 'planned', DATE '2099-01-01' + g FROM generate_series(1, 600) g`,
+  [A],
+);
+const NEAR = "aaaaaaaa-dddd-4000-8000-000000000001";
+await db.query(
+  `INSERT INTO tasks (id, user_id, title, status, deadline) VALUES ($1, $2, 'file taxes', 'planned', '2026-10-26')`,
+  [NEAR, A],
+);
+const nearKey = (await db.query<{ n: number }>(
+  `SELECT COUNT(*)::int AS n FROM reminder_deliveries WHERE user_id = $1 AND reminder_key LIKE $2`,
+  [A, `%${NEAR}%`],
+));
+ok(Number(nearKey.rows[0]?.n ?? 0) === 0, "deadline: not claimed before dispatch");
+const nearClaims = async () => Number((await db.query<{ n: number }>(
+  `SELECT COUNT(*)::int AS n FROM reminder_deliveries WHERE user_id = $1 AND reminder_key LIKE $2`,
+  [A, `%${NEAR}%`],
+)).rows[0]?.n ?? 0);
+
+// Every device failing transiently (503) gives the claim back…
+pushDown = true;
+posts.length = 0;
+const downRun = await runPushDispatch(sql, env, { nowMs, fetchImpl: mockFetch });
+pushDown = false;
+ok(posts.some((p) => p.url === "https://push.example.test/user-a" && p.status === 503), "deadline: the near deadline was attempted despite 600 far ones");
+ok((await nearClaims()) === 0, "push 503 on every device: claim released for the next minute");
+ok(downRun.notified === 0, `push 503: not counted as notified (got ${downRun.notified})`);
+
+// …so the next minute delivers it, and then it stays claimed.
+posts.length = 0;
+const upRun = await runPushDispatch(sql, env, { nowMs, fetchImpl: mockFetch });
+ok(posts.some((p) => p.url === "https://push.example.test/user-a" && p.status === 201), "deadline: retried and delivered after the outage");
+ok((await nearClaims()) === 1 && upRun.notified === 1, `deadline: delivered once and claimed (claims ${await nearClaims()}, notified ${upRun.notified})`);
+
+// A gone (410) device keeps the claim — nothing left to retry to.
+await db.query(`DELETE FROM reminder_deliveries WHERE user_id = $1 AND reminder_key LIKE $2`, [A, `%${NEAR}%`]);
+await db.query(`UPDATE push_subscriptions SET endpoint = 'https://push.example.test/gone-a2' WHERE user_id = $1`, [A]);
+posts.length = 0;
+await runPushDispatch(sql, env, { nowMs, fetchImpl: mockFetch });
+ok(posts.some((p) => p.url === "https://push.example.test/gone-a2" && p.status === 410), "gone-only: mock returned 410");
+ok((await nearClaims()) === 1, "gone-only: claim kept (no retry loop)");
+
+// One user's failure doesn't stop the next user's reminders.
+{
+  const failing = (async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    const text = strings.join("?");
+    if (text.includes("FROM push_subscriptions") && values.includes(A)) throw new Error("boom");
+    return sql(strings, ...(values as never[]));
+  }) as unknown as typeof sql;
+  await db.query(`DELETE FROM reminder_deliveries WHERE user_id = $1`, [B]);
+  posts.length = 0;
+  let threw = false;
+  try {
+    const iso = await runPushDispatch(failing, env, { nowMs, fetchImpl: mockFetch });
+    ok(iso.notified === 1, `isolation: B still notified when A throws (got ${iso.notified})`);
+  } catch {
+    threw = true;
+  }
+  ok(!threw, "isolation: one user throwing does not abort the dispatch");
+  ok(posts.some((p) => p.url === "https://push.example.test/user-b"), "isolation: B's device still pushed");
+}
 
 const unauth = await app.request("http://localhost:8787/api/cron/push-dispatch", {
   method: "POST",

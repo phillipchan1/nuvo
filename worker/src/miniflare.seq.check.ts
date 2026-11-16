@@ -19,10 +19,27 @@ function ok(cond: boolean, msg: string) {
 }
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
-const pgUrl =
-  process.env.WORKER_SEQ_DATABASE_URL?.trim() ||
-  process.env.DATABASE_URL?.trim() ||
-  "postgresql://postgres:postgres@127.0.0.1:5432/nuvo";
+// This check DROPS the public schema of the database it is given. With no URL
+// set it must never default to `nuvo` — the local dev database `wrangler dev`
+// reads (wrangler.jsonc localConnectionString), which holds the dev account a
+// developer signs in with. Its own throwaway database instead, made on demand.
+// CI passes DATABASE_URL explicitly (a fresh service container), unchanged.
+const SCRATCH_DB = "nuvo_check";
+const LOCAL_ADMIN = "postgresql://postgres:postgres@127.0.0.1:5432/postgres";
+const explicitUrl = process.env.WORKER_SEQ_DATABASE_URL?.trim() || process.env.DATABASE_URL?.trim();
+const pgUrl = explicitUrl || `postgresql://postgres:postgres@127.0.0.1:5432/${SCRATCH_DB}`;
+
+if (!explicitUrl) {
+  const admin = postgres(LOCAL_ADMIN, { max: 1, connect_timeout: 3, ssl: false, onnotice: () => {} });
+  try {
+    const [row] = await admin`SELECT 1 AS ok FROM pg_database WHERE datname = ${SCRATCH_DB}`;
+    if (!row) await admin.unsafe(`CREATE DATABASE ${SCRATCH_DB}`);
+  } catch {
+    // no local Postgres — canConnect below reports the skip
+  } finally {
+    await admin.end({ timeout: 2 }).catch(() => undefined);
+  }
+}
 
 async function canConnect(url: string): Promise<boolean> {
   const sql = postgres(url, { max: 1, connect_timeout: 3, ssl: postgresSsl(url) });

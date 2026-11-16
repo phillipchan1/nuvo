@@ -28,8 +28,8 @@ import { invalidateWhenSafe } from "../lib/sync";
 import { useVertical } from "../hooks/useVertical";
 import { useSettings } from "../hooks/useSettings";
 import { domainById, initiativeById, isProjectComplete, projectById, taskDomainId, taskInitiativeId } from "../lib/vertical";
-import { allDayInclusiveEnd, allDayRangeFromStart, defaultTimedRange, fmtDuration, parseDateISO, sameClockOn, toDateISO, todayISO } from "../lib/dates";
-import { at, span } from "./mobile/dayPlan";
+import { allDayInclusiveEnd, allDayRangeFromStart, defaultTimedRange, eventStartDay, fmtDuration, parseDateISO, sameClockOn, toDateISO, todayISO } from "../lib/dates";
+import { at, moveStartTo, setEndTo, span } from "./mobile/dayPlan";
 import { useWeekCommitAct } from "./tasks/TaskActionsMenu";
 import { deriveSlotTitle } from "../lib/slots";
 import { DomainPicker } from "./floors/parts";
@@ -67,6 +67,7 @@ import type { TaskComposerHandle } from "./tasks/TaskComposer";
 import TaskListView from "./tasks/TaskListView";
 import DomainSymbol from "./domain/DomainSymbol";
 import EventDomainControl from "./domain/EventDomainControl";
+import { flushFocus } from "./mobile/Sheet";
 
 /** Minutes after local midnight for an ISO instant (for series templates). */
 function localMinutes(iso: string): number {
@@ -366,6 +367,10 @@ export function TaskPopover({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        // The fields save on blur, and closing never blurs them (React stops
+        // dispatching while it unmounts; WebKit fires no blur on a removed
+        // field) — so Escape in the title dropped what was typed. Commit first.
+        if (popRef.current) flushFocus(popRef.current);
         if (onBack) onBack();
         else onClose();
       }
@@ -653,7 +658,8 @@ export function TaskPopover({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onBlur={commitTitle}
-            onKeyDown={(e) => e.key === "Enter" && commitTitle()}
+            // Not while an IME is composing: that Enter picks a candidate.
+            onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229 && commitTitle()}
             className="insp-title-input"
             placeholder="Task title"
             aria-label="Task title"
@@ -1090,6 +1096,8 @@ function TimePicker({
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
+      // The picker owns Escape first (D-051): it closes the list, not the card.
+      e.stopPropagation();
       setOpen(false);
       return;
     }
@@ -1355,14 +1363,20 @@ export function EventPopover({
   );
 
   const ownerAccount = (accounts ?? []).find((a) => a.id === event.account_id);
-  const { data: raw, isLoading: detailsLoading } = useEventDetails(event.id, ownerAccount?.email);
+  const { data: raw, isLoading: detailsLoading, isSuccess: detailsReady } = useEventDetails(event.id, ownerAccount?.email);
   const recurring =
     isExternalEventRecurring(event, {
       raw: raw as { recurrence?: string[]; recurringEventId?: string } | null,
       provider: ownerAccount?.provider ?? "google",
     });
-  const { pending: editScope, commit: commitScoped, confirm: confirmScope, cancel: cancelScope, dismiss: dismissScope } =
-    useRecurringScope(recurring);
+  const {
+    pending: editScope,
+    commit: commitScoped,
+    confirm: confirmScope,
+    cancel: cancelScope,
+    dismiss: dismissScope,
+    isPending: scopePending,
+  } = useRecurringScope(recurring);
   const inlineRule = useMemo(
     () => readEventRRule((raw as { recurrence?: string[] } | null)?.recurrence),
     [raw],
@@ -1378,7 +1392,14 @@ export function EventPopover({
   // and the description arrive a round trip after it opens.
   const popW = INSPECTOR_W;
 
+  // Which text fields are being typed in. A background change to ONE field
+  // (a sync, the provider echoing another edit) used to reset EVERY field's
+  // local state — wiping the title you were mid-way through typing because the
+  // location changed. A new event resets everything; otherwise each field
+  // follows its own prop, and only while you're not in it.
+  const typing = useRef<{ title?: boolean; location?: boolean; notes?: boolean }>({});
   useEffect(() => {
+    typing.current = {};
     setTitle(event.title);
     setStartAt(event.start_at);
     setEndAt(event.end_at);
@@ -1389,7 +1410,22 @@ export function EventPopover({
     setHideMode(false);
     setMeetError(null);
     setAllGuests(false);
-  }, [event.id, event.title, event.start_at, event.end_at, event.all_day, event.location]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event.id]);
+  useEffect(() => {
+    if (!typing.current.title) setTitle(event.title);
+  }, [event.title]);
+  useEffect(() => {
+    if (!typing.current.location) setLocation(event.location ?? "");
+  }, [event.location]);
+  // The schedule commits on change (no typing state); it follows the row
+  // unless a this-or-all question is still holding an edit of it.
+  useEffect(() => {
+    if (scopePending()) return;
+    setStartAt(event.start_at);
+    setEndAt(event.end_at);
+    setAllDay(event.all_day);
+  }, [event.start_at, event.end_at, event.all_day, scopePending]);
 
   useEffect(() => {
     dismissScope();
@@ -1399,6 +1435,7 @@ export function EventPopover({
   // Notes edit as plain text — matching Apple Calendar / Fantastical — so a
   // Google HTML description is flattened to text for editing.
   useEffect(() => {
+    if (typing.current.notes) return;
     setNotes(plainTextFromHtml(raw?.description ?? ""));
   }, [event.id, raw?.description]);
   useEffect(() => setEditingNotes(false), [event.id]);
@@ -1418,11 +1455,17 @@ export function EventPopover({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !editScope) onClose();
+      if (e.key !== "Escape" || editScope) return;
+      // Commit the field being typed in first — title, place and notes save on
+      // blur, and a closing card never blurs them, so Escape dropped the edit.
+      if (popRef.current) flushFocus(popRef.current);
+      // A repeating event's edit just asked "this or all?" — stay for the answer.
+      if (scopePending()) return;
+      onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, editScope]);
+  }, [onClose, editScope, scopePending]);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -1447,14 +1490,14 @@ export function EventPopover({
       // edit that commits on blur (title, notes, location…) is silently
       // dropped whenever the popover is dismissed by clicking the grid —
       // force it through before closing.
-      if (popRef.current.contains(document.activeElement)) {
-        (document.activeElement as HTMLElement | null)?.blur();
-      }
+      flushFocus(popRef.current);
+      // A repeating event's edit just asked "this or all?" — stay for the answer.
+      if (scopePending()) return;
       onClose();
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
-  }, [onClose, editScope]);
+  }, [onClose, editScope, scopePending]);
 
   // Compute fixed position: prefer right of event, fall back to left
   const pos = useAnchoredPosition({
@@ -1515,20 +1558,23 @@ export function EventPopover({
   const iOrganize = raw?.organizer?.self === true;
   const cancelNotifies = cancelNotifiesGuests(raw) > 0;
 
+  // The day it starts on: an all-day row's stored date (an ICS / M365 row at
+  // UTC midnight read as an instant was the previous day west of Greenwich).
+  const startDay = parseDateISO(eventStartDay(startAt, allDay));
   // The masthead's one line. Reads off the live edit state, so it stays true
   // while you're changing the time rather than lagging a round-trip behind.
   const whenSummary = allDay
-    ? `${format(new Date(startAt), "EEE MMM d")}${
-        toDateISO(new Date(startAt)) !== toDateISO(allDayInclusiveEnd(endAt))
+    ? `${format(startDay, "EEE MMM d")}${
+        toDateISO(startDay) !== toDateISO(allDayInclusiveEnd(endAt))
           ? ` – ${format(allDayInclusiveEnd(endAt), "EEE MMM d")}`
           : ""
       } · All day`
-    : `${format(new Date(startAt), "EEE MMM d")} · ${span(new Date(startAt), new Date(endAt))}`;
+    : `${format(startDay, "EEE MMM d")} · ${span(new Date(startAt), new Date(endAt))}`;
   // "Repeats weekly" is a fact about the event, so it reads in the masthead
   // whether or not you can edit it. Recurring with no rule in hand yet (the
   // series master is still being fetched) still says so, plainly.
   const repeatLabel = repeatRule
-    ? describeRule(repeatRule, toDateISO(new Date(startAt)))
+    ? describeRule(repeatRule, toDateISO(startDay))
     : recurring
       ? "Repeats"
       : null;
@@ -1554,16 +1600,8 @@ export function EventPopover({
     const d = new Date(iso);
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   };
-  const applyTime = (iso: string, hhmm: string) => {
-    const [h, m] = hhmm.split(":").map(Number);
-    const d = new Date(iso);
-    d.setHours(h, m, 0, 0);
-    return d.toISOString();
-  };
-  const toDateInput = (iso: string) => {
-    const d = new Date(iso);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  };
+  // An all-day span reads its stored date, a timed one its local day.
+  const toDateInput = (iso: string) => eventStartDay(iso, allDay);
   const writeSchedule = (
     patch: { all_day?: boolean; start_at: string; end_at: string },
     scope: RecurrenceScope = "THIS",
@@ -1725,7 +1763,9 @@ export function EventPopover({
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              onFocus={() => (typing.current.title = true)}
               onBlur={() => {
+                typing.current.title = false;
                 const next = title.trim();
                 if (!next || next === event.title) return;
                 commitScoped(
@@ -1813,14 +1853,14 @@ export function EventPopover({
           {editable && (
             <PopRow icon="clock" label="When">
               <PopDate label="Date" value={toDateInput(startAt)} onChange={commitDate}>
-                {format(new Date(startAt), "EEE MMM d")}
+                {format(startDay, "EEE MMM d")}
               </PopDate>
               {allDay ? (
                 <>
                   <span className="insp-sep">–</span>
                   <PopDate
                     label="End date"
-                    value={toDateInput(allDayInclusiveEnd(endAt).toISOString())}
+                    value={toDateISO(allDayInclusiveEnd(endAt))}
                     min={toDateInput(startAt)}
                     onChange={commitAllDayEnd}
                   >
@@ -1833,9 +1873,10 @@ export function EventPopover({
                     value={toTimeInput(startAt)}
                     ariaLabel="Start time"
                     onSelect={(hhmm) => {
-                      const next = applyTime(startAt, hhmm);
-                      if (next !== event.start_at || allDay !== event.all_day) {
-                        commitSchedule({ start_at: next, end_at: endAt, all_day: false });
+                      // The end moves with the start: the length is kept.
+                      const next = moveStartTo(startAt, endAt, hhmm);
+                      if (next.start_at !== event.start_at || allDay !== event.all_day) {
+                        commitSchedule({ ...next, all_day: false });
                       }
                     }}
                   />
@@ -1844,9 +1885,10 @@ export function EventPopover({
                     value={toTimeInput(endAt)}
                     ariaLabel="End time"
                     onSelect={(hhmm) => {
-                      const next = applyTime(endAt, hhmm);
-                      if (next !== event.end_at || allDay !== event.all_day) {
-                        commitSchedule({ start_at: startAt, end_at: next, all_day: false });
+                      // An end at or before the start is refused, not saved.
+                      const next = setEndTo(startAt, endAt, hhmm);
+                      if (next && (next.end_at !== event.end_at || allDay !== event.all_day)) {
+                        commitSchedule({ ...next, all_day: false });
                       }
                     }}
                   />
@@ -1864,7 +1906,7 @@ export function EventPopover({
 
           {editable && (
             <PopRow icon="repeat" label="Repeat">
-              <RepeatControl variant="value" anchorISO={toDateISO(new Date(startAt))} value={repeatRule} onChange={applyRepeat} />
+              <RepeatControl variant="value" anchorISO={toDateISO(startDay)} value={repeatRule} onChange={applyRepeat} />
             </PopRow>
           )}
 
@@ -1922,7 +1964,9 @@ export function EventPopover({
                 <input
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
+                  onFocus={() => (typing.current.location = true)}
                   onBlur={() => {
+                    typing.current.location = false;
                     const next = location.trim();
                     if (next !== (event.location ?? "")) {
                       commitScoped(
@@ -2007,9 +2051,9 @@ export function EventPopover({
             </PopSection>
           )}
 
-          {(editable || raw?.description || detailsLoading) && (
+          {((editable && detailsReady) || raw?.description || detailsLoading) && (
             <PopSection label={editable ? "Notes" : "Description"} icon="notes">
-              {editable && detailsLoading ? (
+              {editable && !detailsReady ? (
                 <PopSkeleton lines={4} />
               ) : editable && raw?.description && !editingNotes ? (
                 <div className="grid gap-1">
@@ -2030,7 +2074,11 @@ export function EventPopover({
                   // Opened by "Edit notes" — the press that asked for it.
                   autoFocus={editingNotes}
                   value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
+                  onChange={(e) => {
+                    // Typed into: a late or refetched description no longer reseeds it.
+                    typing.current.notes = true;
+                    setNotes(e.target.value);
+                  }}
                   onBlur={() => {
                     setEditingNotes(false);
                     const original = plainTextFromHtml(raw?.description ?? "");
@@ -2343,6 +2391,9 @@ export function SlotPopover({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        // Commit the field being typed in (slot title, or the task slide-out's
+        // title / notes) before it unmounts — they save on blur alone.
+        if (shellRef.current) flushFocus(shellRef.current);
         if (openTask) onCloseTask();
         else onClose();
       }

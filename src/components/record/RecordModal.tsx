@@ -608,6 +608,7 @@ function ProjectComposer({
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing || e.keyCode === 229) return; // the IME's Enter confirms a word
           if (e.key === "Enter") { e.preventDefault(); submit(e.metaKey || e.ctrlKey); }
           if (e.key === "Escape") { e.stopPropagation(); setDraft(""); e.currentTarget.blur(); }
         }}
@@ -859,6 +860,7 @@ function InitiativeRecord({
                         onChange={(v) => updateKeyResult(initiative.id, kr.id, { unit: v })}
                         placeholder="unit"
                         className="ml-0.5 w-10"
+                        allowEmpty
                       />
                     </span>
                     <span className="doc-kr-track" aria-hidden>

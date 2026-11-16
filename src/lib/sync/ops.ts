@@ -74,6 +74,17 @@ export interface Op {
   ts: string;
   attempts: number;
   lastError?: string;
+  /** Epoch ms of the first failed send since the op was queued (or last
+   *  retried by hand). A *retriable* failure parks only once this is older
+   *  than `PARK_FLOOR_MS` — see `recordFailure`. */
+  firstFailedAt?: number;
+  /**
+   * The account that queued it. A device can change hands: offline user A's
+   * queue must not drain into user B's account after B signs in on the same
+   * device. Absent on ops queued before stamping existed — those keep the old
+   * rule (the first signed-in user to drain them), so an upgrade loses nothing.
+   */
+  ownerId?: string;
   /**
    * Set only on a *folded* op: the lowest and highest stored `seq` of this row
    * that it stands for. Stored ops never carry them.
@@ -129,6 +140,9 @@ export function stampFields(
  *   insert → delete    = **annihilate**. The row never reached Postgres; sending
  *                        an insert followed by a delete would be two pointless
  *                        round-trips and a Realtime flicker on other devices.
+ *                        Only while the insert was never *attempted*: once it
+ *                        has been sent (in flight, or a lost response) the row
+ *                        may exist, so both go out, the delete behind it.
  *   update → update    = one patch, later value wins per field
  *   update → delete    = just the delete; the patches are moot
  *   delete → insert    = cannot fold (a genuine recreate of the same id) — both
@@ -186,10 +200,21 @@ export interface DeadSpan {
  * local database forever is the storage-bloat bug this layer is supposed to
  * prevent, so the fold reports them and the outbox sweeps them.
  */
-export function fold(ops: Op[]): { send: Op[]; dead: DeadSpan[] } {
+export function fold(
+  ops: Op[],
+  /**
+   * Whether a stored op may already have reached the server — it was sent
+   * before (and failed, or timed out after landing), or it is in a drain pass
+   * right now. An insert like that is never annihilated by a later delete: the
+   * row may exist server-side, so the delete has to go out behind it.
+   */
+  attempted: (op: Op) => boolean = (op) => op.attempts > 0 || op.lastError != null,
+): { send: Op[]; dead: DeadSpan[] } {
   const sorted = [...ops].sort((a, b) => a.seq - b.seq);
   /** The still-mergeable op per row. */
   const pending = new Map<string, Op>();
+  /** Rows whose pending insert may already be on the server. */
+  const reached = new Set<string>();
   /** Ops that can no longer absorb anything (a recreate closed them off). */
   const sealed: Op[] = [];
   const dead: DeadSpan[] = [];
@@ -205,6 +230,8 @@ export function fold(ops: Op[]): { send: Op[]; dead: DeadSpan[] } {
 
     if (!prev) {
       pending.set(key, alone(op));
+      if (op.kind === "insert" && attempted(op)) reached.add(key);
+      else reached.delete(key);
       continue;
     }
 
@@ -213,11 +240,20 @@ export function fold(ops: Op[]): { send: Op[]; dead: DeadSpan[] } {
     if (prev.kind === "delete" && op.kind !== "delete") {
       sealed.push(prev);
       pending.set(key, alone(op));
+      if (op.kind === "insert" && attempted(op)) reached.add(key);
+      else reached.delete(key);
       continue;
     }
 
     if (op.kind === "delete") {
-      if (prev.kind === "insert") {
+      if (prev.kind === "insert" && reached.has(key)) {
+        // The insert may already have landed (a lost response, or it is on the
+        // wire right now). Annihilating would sweep both and leave the row on
+        // the server forever — so the insert goes out, then the delete.
+        sealed.push(prev);
+        pending.set(key, alone(op));
+        reached.delete(key);
+      } else if (prev.kind === "insert") {
         // Never existed server-side. Drop both — but the *stored* ops still
         // have to be retired, so hand the annihilation to a tombstone the ack
         // can act on rather than forgetting the span outright.
@@ -233,6 +269,7 @@ export function fold(ops: Op[]): { send: Op[]; dead: DeadSpan[] } {
       // insert-after-insert for one id shouldn't happen, but if it does the
       // later one is the user's intent.
       pending.set(key, { ...op, fromSeq: prev.fromSeq, throughSeq: op.seq });
+      if (attempted(op)) reached.add(key);
       continue;
     }
 
@@ -241,8 +278,13 @@ export function fold(ops: Op[]): { send: Op[]; dead: DeadSpan[] } {
     if (namesRowInsertedAfter(op.payload, prev.seq, insertedAt)) {
       sealed.push(prev);
       pending.set(key, alone(op));
+      reached.delete(key);
       continue;
     }
+
+    // An update that rode an earlier send of this insert means the insert
+    // went out with it.
+    if (prev.kind === "insert" && attempted(op)) reached.add(key);
 
     // Folding into an insert or an earlier update.
     pending.set(key, {

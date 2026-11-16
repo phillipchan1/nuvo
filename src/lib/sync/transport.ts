@@ -144,32 +144,74 @@ async function resolveMatch(
   return uid ? matchFor(op, uid) : null;
 }
 
+/**
+ * How long one op may take before the drain gives up on it (retriably). The
+ * drain is single-flight and strictly ordered, so a fetch that never settles —
+ * a half-open socket after sleep, a captive portal — used to hold every write
+ * on the device behind it until the app was killed.
+ */
+export const SEND_TIMEOUT_MS = 20_000;
+export const SEND_TIMEOUT_MESSAGE = "Request timed out";
+
+/** Attach the abort signal where the builder supports it (supabase-js does). */
+function sig<T>(builder: T, signal: AbortSignal): T {
+  const b = builder as T & { abortSignal?: (s: AbortSignal) => T };
+  return typeof b.abortSignal === "function" ? b.abortSignal(signal) : builder;
+}
+
 export function createSupabaseTransport(
   getUserId: () => Promise<string | null>,
 ): Transport {
   return {
+    owner: getUserId,
     async send(op: Op): Promise<SendResult> {
+      const ctl = new AbortController();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      // Raced as well as aborted: the abort reaches fetch, the race guarantees
+      // the drain moves on even if something underneath ignores the signal.
+      const timedOut = new Promise<SendResult>((resolve) => {
+        timer = setTimeout(() => {
+          ctl.abort();
+          resolve({ ok: false, retriable: true, error: SEND_TIMEOUT_MESSAGE });
+        }, SEND_TIMEOUT_MS);
+      });
       try {
-        if (await writeFrozen()) {
-          return { ok: false, retriable: true, error: WRITE_FROZEN_MESSAGE };
-        }
-        switch (op.kind) {
-          case "insert":
-            return await sendInsert(op, getUserId);
-          case "update":
-            return await sendUpdate(op, getUserId);
-          case "delete":
-            return await sendDelete(op, getUserId);
-        }
-      } catch (e) {
-        const { retriable, message } = classifyError(e);
-        return { ok: false, retriable, error: message };
+        return await Promise.race([sendOnce(op, getUserId, ctl.signal), timedOut]);
+      } finally {
+        clearTimeout(timer);
       }
     },
   };
 }
 
-async function sendInsert(op: Op, getUserId: () => Promise<string | null>): Promise<SendResult> {
+async function sendOnce(
+  op: Op,
+  getUserId: () => Promise<string | null>,
+  signal: AbortSignal,
+): Promise<SendResult> {
+  try {
+    if (await writeFrozen()) {
+      return { ok: false, retriable: true, error: WRITE_FROZEN_MESSAGE };
+    }
+    switch (op.kind) {
+      case "insert":
+        return await sendInsert(op, getUserId, signal);
+      case "update":
+        return await sendUpdate(op, getUserId, signal);
+      case "delete":
+        return await sendDelete(op, getUserId, signal);
+    }
+  } catch (e) {
+    const { retriable, message } = classifyError(e);
+    return { ok: false, retriable, error: message };
+  }
+}
+
+async function sendInsert(
+  op: Op,
+  getUserId: () => Promise<string | null>,
+  signal: AbortSignal,
+): Promise<SendResult> {
   const identity = identityOf(op.table);
   const match = await resolveMatch(op, getUserId);
   if (!match) return { ok: false, retriable: true, error: "Not signed in yet" };
@@ -186,9 +228,10 @@ async function sendInsert(op: Op, getUserId: () => Promise<string | null>): Prom
 
   const onConflict = identity.conflictTarget;
 
-  const { error } = await supabase
-    .from(op.table)
-    .upsert(row, { onConflict, ignoreDuplicates: !identity.mergeOnConflict });
+  const { error } = await sig(
+    supabase.from(op.table).upsert(row, { onConflict, ignoreDuplicates: !identity.mergeOnConflict }),
+    signal,
+  );
 
   if (!error) return { ok: true };
 
@@ -205,9 +248,10 @@ async function sendInsert(op: Op, getUserId: () => Promise<string | null>): Prom
   if (isMissingFieldTs(error) && row.field_ts !== undefined) {
     patchRpcAvailable = false;
     delete row.field_ts;
-    const retry = await supabase
-      .from(op.table)
-      .upsert(row, { onConflict, ignoreDuplicates: !identity.mergeOnConflict });
+    const retry = await sig(
+      supabase.from(op.table).upsert(row, { onConflict, ignoreDuplicates: !identity.mergeOnConflict }),
+      signal,
+    );
     if (!retry.error) return { ok: true };
     const c = classifyError(retry.error);
     return { ok: false, retriable: c.retriable, error: c.message };
@@ -220,17 +264,21 @@ async function sendInsert(op: Op, getUserId: () => Promise<string | null>): Prom
 async function sendUpdate(
   op: Op,
   getUserId: () => Promise<string | null>,
+  signal: AbortSignal,
 ): Promise<SendResult> {
   const match = await resolveMatch(op, getUserId);
   if (!match) return { ok: false, retriable: true, error: "Not signed in yet" };
 
   if (patchRpcAvailable !== false) {
-    const { error } = await supabase.rpc("apply_patch", {
-      p_table: op.table,
-      p_match: match,
-      p_patch: op.payload,
-      p_field_ts: op.fieldTs,
-    });
+    const { error } = await sig(
+      supabase.rpc("apply_patch", {
+        p_table: op.table,
+        p_match: match,
+        p_patch: op.payload,
+        p_field_ts: op.fieldTs,
+      }),
+      signal,
+    );
 
     if (!error) {
       patchRpcAvailable = true;
@@ -246,7 +294,7 @@ async function sendUpdate(
     }
   }
 
-  const { error } = await supabase.from(op.table).update(op.payload).match(match);
+  const { error } = await sig(supabase.from(op.table).update(op.payload).match(match), signal);
   if (!error) return { ok: true };
   const { retriable, message } = classifyError(error);
   return { ok: false, retriable, error: message };
@@ -255,10 +303,11 @@ async function sendUpdate(
 async function sendDelete(
   op: Op,
   getUserId: () => Promise<string | null>,
+  signal: AbortSignal,
 ): Promise<SendResult> {
   const match = await resolveMatch(op, getUserId);
   if (!match) return { ok: false, retriable: true, error: "Not signed in yet" };
-  const { error } = await supabase.from(op.table).delete().match(match);
+  const { error } = await sig(supabase.from(op.table).delete().match(match), signal);
   if (!error) return { ok: true };
   const { retriable, message } = classifyError(error);
   return { ok: false, retriable, error: message };

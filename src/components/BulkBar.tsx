@@ -25,13 +25,14 @@ import { Icon } from "./Icon";
 import { PickSheet } from "./mobile/sheetKit";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { nextWeekISO, todayISO, tomorrowISO } from "../lib/dates";
-import type { Label, Task, TaskPriority } from "../lib/types";
+import { restingStatus, type Label, type Task, type TaskPriority, type TaskStatus } from "../lib/types";
 import type { VerticalData } from "../lib/vertical";
 import { Button, Dot, IconButton, Menu, MenuItem, MenuSeparator } from "./kit";
 
 export interface BulkOps {
-  /** Patch every selected task, as ONE undo entry. */
-  patchAll: (patch: Partial<Task>, verb: string) => void;
+  /** Patch every selected task, as ONE undo entry. A function patches each
+   *  task by its own state (a row's resting status depends on its home). */
+  patchAll: (patch: Partial<Task> | ((t: Task) => Partial<Task>), verb: string) => void;
   /** Add these labels to every selected task (never removes — a bulk clear
    *  wearing the same control is how people lose labels they didn't look at). */
   addLabels: (labelIds: string[]) => void;
@@ -41,6 +42,29 @@ export interface BulkOps {
   trash: () => void;
   clear: () => void;
 }
+
+/** The status a row in `from` takes once `next` describes it. Every other row
+ *  (done, trashed, an inbox capture) keeps its own. */
+function settledStatus(t: Task, next: Task, from: TaskStatus): Partial<Task> {
+  if (t.status !== from) return {};
+  const status = restingStatus(next);
+  return status === t.status ? {} : { status };
+}
+
+/** "Clear the date": off the day, and a planned row rests where it belongs. */
+export const clearDatePatch = (t: Task): Partial<Task> => ({
+  do_date: null,
+  start_time: null,
+  slot_id: null,
+  ...settledStatus(t, { ...t, do_date: null }, "planned"),
+});
+
+/** "No project": a backlog row rests by what's left of its home. */
+export const unfilePatch = (t: Task): Partial<Task> => ({
+  project_id: null,
+  initiative_id: null,
+  ...settledStatus(t, { ...t, project_id: null, initiative_id: null }, "backlog"),
+});
 
 const PRIORITIES: TaskPriority[] = ["high", "medium", "low", "none"];
 const PRIORITY_WORD: Record<TaskPriority, string> = { high: "High", medium: "Medium", low: "Low", none: "No priority" };
@@ -130,7 +154,9 @@ export default function BulkBar({
       id: "clear",
       name: "Clear the date",
       separated: true,
-      act: () => ops.patchAll({ do_date: null, start_time: null, slot_id: null }, "unscheduled"),
+      // Off the day and back to where it rests (inbox, or its home's backlog) —
+      // a "planned" row with no date showed on no list at all.
+      act: () => ops.patchAll(clearDatePatch, "unscheduled"),
     },
   ];
   const priority: Choice[] = PRIORITIES.map((p) => ({
@@ -154,7 +180,9 @@ export default function BulkBar({
       id: "__none",
       name: "No project",
       separated: true,
-      act: () => ops.patchAll({ project_id: null, initiative_id: null }, "unfiled"),
+      // A backlog row that loses its project rests by what's left (a domain's
+      // backlog, or the Inbox) rather than in a backlog no list draws.
+      act: () => ops.patchAll(unfilePatch, "unfiled"),
     },
   ];
 

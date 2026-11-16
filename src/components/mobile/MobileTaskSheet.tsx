@@ -26,7 +26,7 @@ import { RepeatControl } from "../RecurrencePicker";
 import ReminderSelect from "../ReminderSelect";
 import TaskNotes from "../TaskNotes";
 import TaskSteps from "../TaskSteps";
-import Sheet from "./Sheet";
+import Sheet, { flushFocus } from "./Sheet";
 import { at, span } from "./dayPlan";
 import { useSettings } from "../../hooks/useSettings";
 import DomainSymbol from "../domain/DomainSymbol";
@@ -121,7 +121,7 @@ export default function MobileTaskSheet({
 
   const onRepeatChange = async (rule: RecurrenceRule | null) => {
     const template = {
-      title: task.title,
+      title: latest().title,
       duration_minutes: task.duration_minutes ?? defaultDurationMins,
       time_of_day_minutes: task.start_time
         ? new Date(task.start_time).getHours() * 60 + new Date(task.start_time).getMinutes()
@@ -172,9 +172,21 @@ export default function MobileTaskSheet({
   // iOS fires no blur when the sheet closes, when the app is backgrounded or
   // when a tap lands on ✕ — a button never takes focus in Safari — so an edit
   // typed and then dismissed was lost. Every way out of the sheet flushes first.
+  // Blurring the focused field first is what flushes the ones this sheet
+  // doesn't hold — a step typed but not entered, a step mid-rename (`flushFocus`).
   const close = () => {
+    flushFocus();
     commitRef.current();
     onClose();
+  };
+
+  /** The task as it stands NOW — the render's `task` is a frame behind an edit
+   *  committed this tick, so an act that copies it (duplicate, make it an
+   *  event) would copy the old title. Flushes first. */
+  const latest = (): Task => {
+    flushFocus();
+    commitRef.current();
+    return { ...task, title: sent.current.title, notes: sent.current.notes };
   };
 
   // Backgrounding the app mid-edit (home swipe, app switch) never fires blur on
@@ -242,11 +254,12 @@ export default function MobileTaskSheet({
 
   const askNuvo = () => {
     if (!onAskNuvo) return;
+    const { title: name } = latest();
     const seed = start
-      ? `I have a task block: "${task.title}" at ${span(start, end ?? new Date(start.getTime() + 30 * 60_000))}. Help me think about it.`
-      : `I have a task: "${task.title}". Help me think about it.`;
-    onAskNuvo(seed, `Help me with “${task.title}”`);
-    close();
+      ? `I have a task block: "${name}" at ${span(start, end ?? new Date(start.getTime() + 30 * 60_000))}. Help me think about it.`
+      : `I have a task: "${name}". Help me think about it.`;
+    onAskNuvo(seed, `Help me with “${name}”`);
+    onClose();
   };
 
   const openProjects = vertical.projects.filter((p) => !isProjectComplete(p.status) || p.id === task.project_id);
@@ -344,16 +357,17 @@ export default function MobileTaskSheet({
   // ── The acts the desktop reaches by right-click (D-177) ──────────────────
   const inWeek = Boolean(task.sprint_id && task.sprint_id === vertical.sprint?.id);
   const duplicate = () => {
-    void mutations.create(duplicateTaskInput(task, crypto.randomUUID()), {
+    const now = latest();
+    void mutations.create(duplicateTaskInput(now, crypto.randomUUID()), {
       undo: "toast",
-      label: `Duplicated — ${task.title}`,
+      label: `Duplicated — ${now.title}`,
     });
-    close();
+    onClose();
   };
   const toEvent = () => {
-    commitRef.current();
+    const now = latest();
     onClose();
-    void taskToEvent(task);
+    void taskToEvent(now);
   };
   const trashScoped = (scope: string) => {
     trashTaskScoped(mutations, recurrenceMutations, recurrence, task, scope as "THIS" | "FOLLOWING" | "ALL");

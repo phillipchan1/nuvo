@@ -32,6 +32,21 @@ function unlockBackground() {
   if (openSheets === 0) document.body.classList.remove("sheet-open");
 }
 
+/** Commit the field being typed in BEFORE whatever it lives in goes away.
+ *  Every phone field saves on blur, and nothing else blurs it on the way out:
+ *  Safari/WKWebView never fires blur on a removed field, a tap on ✕ or a chip
+ *  never takes focus, and React stops dispatching events once it starts
+ *  unmounting. So every way out of a sheet — and every push to another screen
+ *  inside one — blurs the focused field first, synchronously, while its onBlur
+ *  still runs. A field that already flushed on close compares against what it
+ *  last sent, so the second commit is a no-op. `root` omitted: any field. */
+export function flushFocus(root?: Element | null) {
+  const el = document.activeElement;
+  if (!(el instanceof HTMLElement) || el === document.body) return;
+  if (root && !root.contains(el)) return;
+  el.blur();
+}
+
 export default function Sheet({
   onClose,
   children,
@@ -78,6 +93,7 @@ export default function Sheet({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
+        flushFocus(sheetRef.current);
         onClose();
       }
     };
@@ -92,6 +108,8 @@ export default function Sheet({
   const dismiss = () => {
     const sheet = sheetRef.current;
     const scrim = scrimRef.current;
+    // Now, not after the slide: by then the sheet is unmounting.
+    flushFocus(sheet);
     if (!sheet) { onClose(); return; }
 
     // Clear the sheet-up CSS animation so it doesn't block the transition —

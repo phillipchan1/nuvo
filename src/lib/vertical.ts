@@ -13,6 +13,7 @@ import type { Energy } from "./energy";
 import {
   DEFAULT_DURATION_MINUTES,
   DEFAULT_PROJECT_DURATION_MINUTES,
+  restingStatus,
   type BigRock,
   type ExternalEvent,
   type Sprint,
@@ -20,6 +21,7 @@ import {
 } from "./types";
 import { parseDateISO, todayISO } from "./dates";
 import { normalizeDomainSymbol } from "./domainSymbolKeys";
+import { effectiveProjectStatus } from "../../supabase/functions/_shared/planningRules.ts";
 import {
   eventCountsAsActual,
   eventDomainId,
@@ -477,16 +479,10 @@ export function buildVertical(
       // backlog↔in_progress line — that's a stored distinction ("not started yet"
       // is real even with tasks on it). The raw value survives as `storedStatus`
       // for the record's "you set this" affordance.
-      const parked = stored === "waiting" || stored === "cancelled";
-      const byTasks: ProjectStatus | null =
-        parked || r == null || r.total === 0
-          ? null
-          : r.open === 0
-            ? "complete"
-            : stored === "complete"
-              ? "in_progress" // reopened — live work outvotes the old seal
-              : null;
-      const status = byTasks ?? stored;
+      //
+      // The rule itself is the kernel's (`effectiveProjectStatus`), so the agent
+      // reads the same status the crown draws.
+      const status = normalizeProjectStatus(effectiveProjectStatus(stored, r?.open ?? 0, r?.total ?? 0));
       const complete = status === "complete";
       return {
         id: p.id,
@@ -530,6 +526,14 @@ export function buildVertical(
       (id) => projectById.get(id)?.domainId,
       (id) => initiativeDomain.get(id),
     );
+    // …and the effective initiative, one altitude down: a parented task belongs to
+    // its project's initiative. `tasks.initiative_id` is the same stale copy —
+    // move a project to another bet and its tasks kept crediting the one it left
+    // (every `t.initiativeId === i.id` read: invested effort, priority work).
+    // A project this snapshot doesn't hold leaves the row's own value alone.
+    if (v.projectId && projectById.has(v.projectId)) {
+      v.initiativeId = resolveInitiativeId(v.initiativeId, v.projectId, (id) => projectById.get(id)?.initiativeId);
+    }
     return v;
   });
 
@@ -807,10 +811,11 @@ export const uncoveredKeyResults = (d: VerticalData, i: Initiative) =>
 export function tasksOfInitiative(d: VerticalData, i: Initiative): VTask[] {
   const krIds = new Set(i.keyResults.map((k) => k.id));
   const projectIds = new Set(projectsOf(d, i.id).map((p) => p.id));
+  // a parented task belongs to its project's initiative (`resolveInitiativeId`),
+  // never to the stale `initiativeId` copy of the bet its project left
   return d.tasks.filter(
     (t) =>
-      t.initiativeId === i.id ||
-      (t.projectId && projectIds.has(t.projectId)) ||
+      (t.projectId ? projectIds.has(t.projectId) : t.initiativeId === i.id) ||
       (t.keyResultId && krIds.has(t.keyResultId)),
   );
 }
@@ -1108,6 +1113,88 @@ export function taskInitiativeId(
   t: { initiative_id?: string | null; project_id?: string | null },
 ): string | null {
   return resolveInitiativeId(t.initiative_id, t.project_id, (id) => projectById(d, id)?.initiativeId);
+}
+
+/**
+ * RE-HOMING A RECORD TO ANOTHER DOMAIN — the cascade, once. An initiative lives
+ * in one domain, so:
+ *   · an initiative takes its projects with it (or they stay behind, nested
+ *     under a bet in a domain they no longer share);
+ *   · a project crossing out of its initiative's domain is detached from that
+ *     initiative and its key result (or it stays nested under the old bet).
+ * Returns the store patches to apply, in order. The record (desktop and phone)
+ * wrote this inline; the groom workbench re-homed without it.
+ */
+export function rehomePatches(
+  d: VerticalData,
+  kind: "initiative" | "project",
+  id: string,
+  domainId: string,
+): (
+  | { kind: "initiative"; id: string; patch: Partial<Initiative> }
+  | { kind: "project"; id: string; patch: Partial<Project> }
+)[] {
+  if (kind === "initiative") {
+    return [
+      { kind: "initiative", id, patch: { domainId } },
+      ...projectsOf(d, id).map((p) => ({ kind: "project" as const, id: p.id, patch: { domainId } })),
+    ];
+  }
+  const p = projectById(d, id);
+  const init = initiativeById(d, p?.initiativeId ?? null);
+  const crossDomain = Boolean(init && init.domainId !== domainId);
+  return [{ kind: "project", id, patch: { domainId, ...(crossDomain ? { initiativeId: null, keyResultId: null } : {}) } }];
+}
+
+/**
+ * What a task's row must say once a record above it is deleted — so it lands in
+ * a pool a list actually shows, instead of resting in `backlog` with no parent
+ * (no inbox, no backlog, nowhere). The FK's `on delete set null` only clears the
+ * pointer; the status is ours. Same orphan rule as releasing a stale commitment:
+ * a `backlog` row that ends up with nothing above it rests where `restingStatus`
+ * says (the inbox). A dated, done or otherwise-placed row keeps its status.
+ */
+function orphanStatusPatch(t: Task, next: Pick<Task, "project_id" | "initiative_id" | "domain_id">): Partial<Task> {
+  if (t.status !== "backlog") return {};
+  const status = restingStatus({ ...t, ...next });
+  return status !== t.status ? { status } : {};
+}
+
+/** Deleting a domain: every task filed straight under it loses the pointer, and
+ *  a loose backlog one goes back to the inbox. */
+export function domainDeleteTaskPatches(tasks: readonly Task[], domainId: string): { id: string; patch: Partial<Task> }[] {
+  const out: { id: string; patch: Partial<Task> }[] = [];
+  for (const t of tasks) {
+    if (t.domain_id !== domainId || t.status === "trashed") continue;
+    const next = { project_id: t.project_id, initiative_id: t.initiative_id, domain_id: null };
+    out.push({ id: t.id, patch: { domain_id: null, ...orphanStatusPatch(t, next) } });
+  }
+  return out;
+}
+
+/** Deleting projects: their tasks are re-filed under what the project hung from
+ *  — its initiative and its (resolved) domain — rather than keeping stale copies
+ *  of a parent that no longer exists. Nothing above it → the inbox. */
+export function projectDeleteTaskPatches(
+  tasks: readonly Task[],
+  projects: readonly ProjectRow[],
+  initiatives: readonly Pick<InitiativeRow, "id" | "domain_id">[],
+  ids: readonly string[],
+): { id: string; patch: Partial<Task> }[] {
+  const doomed = new Map(projects.filter((p) => ids.includes(p.id)).map((p) => [p.id, p]));
+  const initDomain = new Map(initiatives.map((i) => [i.id, i.domain_id]));
+  const out: { id: string; patch: Partial<Task> }[] = [];
+  for (const t of tasks) {
+    if (!t.project_id || !ids.includes(t.project_id) || t.status === "trashed") continue;
+    const p = doomed.get(t.project_id);
+    const initiative_id = p ? p.initiative_id ?? null : null;
+    const domain_id = p
+      ? p.domain_id ?? (initiative_id ? initDomain.get(initiative_id) ?? null : null)
+      : t.domain_id;
+    const next = { project_id: null, initiative_id, domain_id };
+    out.push({ id: t.id, patch: { ...next, ...orphanStatusPatch(t, next) } });
+  }
+  return out;
 }
 
 /** Resolve a task ROW's domain color through the parent chain — the one

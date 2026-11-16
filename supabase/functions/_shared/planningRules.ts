@@ -80,6 +80,28 @@ export const isCompleteStatus = (s: string): boolean => s === "complete" || s ==
 export const isDroppedStatus = (s: string): boolean => s === "cancelled" || s === "dropped";
 export const isOpenProjectStatus = (s: string): boolean => !isCompleteStatus(s) && !isDroppedStatus(s);
 
+/**
+ * **The tasks decide whether a project is complete** — the status every week
+ * rule below must be handed, in BOTH runtimes. Finish every task and the project
+ * IS complete; untick one and a stored `complete` yields to the live work
+ * (`in_progress`). The app derived this in `buildVertical` while the agent fed
+ * the raw row into the slate, so a project whose last task was ticked read
+ * "shipped" on the crown and still open in the chat.
+ *
+ * Guards: it takes at least ONE task (an empty project is unstarted, not
+ * finished — a hand-set status is the only way there), and parked (`waiting`)
+ * or dropped are yours and win outright. The backlog ↔ in_progress line is never
+ * touched — "not started yet" is a stored distinction.
+ *
+ * @param openCount non-done, non-trashed tasks filed under the project
+ * @param total     non-trashed tasks filed under the project
+ */
+export function effectiveProjectStatus(stored: string, openCount: number, total: number): string {
+  if (stored === "waiting" || isDroppedStatus(stored) || total <= 0) return stored;
+  if (openCount <= 0) return "complete";
+  return isCompleteStatus(stored) ? "in_progress" : stored; // reopened — live work outvotes the old seal
+}
+
 // ── dates: pure UTC arithmetic over YYYY-MM-DD ───────────────────────────────
 // Date-only values compared in one fixed zone. UTC, not local: a rule that
 // parses "2026-07-20" as local midnight gives a different answer either side of

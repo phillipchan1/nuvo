@@ -262,9 +262,16 @@ const TaskRow = forwardRef<TaskRowHandle, {
   const [completing, setCompleting] = useState(false);
   const rowEl = useRef<HTMLDivElement | null>(null);
   const completeTimer = useRef<number | null>(null);
+  const toggleDoneRef = useRef(onToggleDone);
+  toggleDoneRef.current = onToggleDone;
+  // Unmounting mid-bloom (a tick, then the list closes or the row moves) must
+  // not drop the completion: the tick was the act, the bloom only its motion.
   useEffect(
     () => () => {
-      if (completeTimer.current) clearTimeout(completeTimer.current);
+      if (!completeTimer.current) return;
+      clearTimeout(completeTimer.current);
+      completeTimer.current = null;
+      toggleDoneRef.current();
     },
     [],
   );

@@ -166,15 +166,24 @@ export default function CaptureDoor({
   // ── when ─────────────────────────────────────────────────────────────────
   // The chips, a picked date and a canvas tap are this door's context; the
   // sentence's own day and clock always win over them.
-  const dayLocked = Boolean(parsed?.doDate);
+  // A bare clock ("dentist 3pm") names no day: `doDate` is then only the
+  // parser's guess, and the day this door stands on (a chip, a picked date, the
+  // Calendar day it opened from) is the day — as `draftFromCapture` and
+  // `slotFromCapture` read it. The preview, the slot and the event face agree.
+  const typedDay = parsed?.doDate && (parsed.dayCertain || !day) ? parsed.doDate : null;
+  const dayLocked = Boolean(typedDay);
   const timeLocked = Boolean(parsed?.startTime);
-  const effectiveDay = parsed?.doDate ?? day;
+  const effectiveDay = typedDay ?? day;
   const slotDay = effectiveDay ?? todayISO();
-  const claimedStart = parsed?.startTime ?? start;
+  // Every clock — typed or tapped — lands on the day the thing lands on.
+  const clockOn = (iso: string, clock: Date) =>
+    dateAtMinutes(parseDateISO(iso), clock.getHours() * 60 + clock.getMinutes());
+  const clockSrc = parsed?.startTime ?? start;
+  const claimedStart = clockSrc && effectiveDay ? clockOn(effectiveDay, clockSrc) : clockSrc;
   const claimedMins = parsed?.durationMinutes ?? mins ?? defaultMins;
   const claimedEnd = claimedStart ? new Date(claimedStart.getTime() + claimedMins * 60_000) : null;
   // A slot always has a clock — shown (and created) even before one is picked.
-  const slotStart = parsed?.startTime ?? (start ? dateAtMinutes(parseDateISO(slotDay), start.getHours() * 60 + start.getMinutes()) : defaultStartOn(slotDay));
+  const slotStart = (parsed?.startTime ? clockOn(slotDay, parsed.startTime) : null) ?? (start ? dateAtMinutes(parseDateISO(slotDay), start.getHours() * 60 + start.getMinutes()) : defaultStartOn(slotDay));
   const slotMins = parsed?.durationMinutes ?? mins ?? DEFAULT_SLOT_MINUTES;
   const slotEnd = new Date(slotStart.getTime() + slotMins * 60_000);
 
@@ -207,14 +216,14 @@ export default function CaptureDoor({
    *  time-blocking, for when the sentence didn't say when (P5 fallback). */
   const addTime = () => {
     const iso = effectiveDay ?? todayISO();
-    if (!day && !parsed?.doDate) setDay(iso);
+    if (!day && !typedDay) setDay(iso);
     setStart(defaultStartOn(iso));
     setMins((m) => m ?? defaultMins);
   };
 
   const setStartClock = (hhmm: string, iso: string, fallbackMins: number) => {
     if (!hhmm) return;
-    if (!day && !parsed?.doDate) setDay(iso);
+    if (!day && !typedDay) setDay(iso);
     const [h, m] = hhmm.split(":").map(Number);
     setStart(dateAtMinutes(parseDateISO(iso), h * 60 + m));
     setMins((cur) => cur ?? fallbackMins);
@@ -228,8 +237,8 @@ export default function CaptureDoor({
   };
 
   // ── the event face, seeded from the same parse ───────────────────────────
-  const seedDayISO = parsed?.doDate ?? day ?? defaultDoDate ?? todayISO();
-  const seedStartMs = parsed?.startTime?.getTime() ?? start?.getTime() ?? null;
+  const seedDayISO = typedDay ?? day ?? defaultDoDate ?? todayISO();
+  const seedStartMs = clockSrc ? clockOn(seedDayISO, clockSrc).getTime() : null;
   const seedMins = parsed?.durationMinutes ?? (start ? (mins ?? defaultMins) : null);
   const seed = useMemo(
     () => eventSeed(parseDateISO(seedDayISO), seedStartMs == null ? null : new Date(seedStartMs), seedMins),

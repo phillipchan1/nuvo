@@ -385,6 +385,7 @@ const OWNED_RULES = [
   "weekSignificance",
   "ladderedProjectIds",
   "doneTaskSignificance",
+  "effectiveProjectStatus",
 ];
 
 function sourceFiles(dir: string, out: string[] = []): string[] {

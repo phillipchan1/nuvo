@@ -11,6 +11,7 @@ import {
   clientSsl,
   CONNECT_TIMEOUT_MS,
   CONNECT_TIMEOUT_SECONDS,
+  openSql,
   postgresSsl,
   raceTimeout,
   stripSslMode,
@@ -140,6 +141,21 @@ try {
   const elapsed = Date.now() - hangStarted;
   ok(err instanceof Error && err.message === "connect timeout", "raceTimeout: connect timeout message");
   ok(elapsed < 500, `raceTimeout: rejected in ${elapsed}ms (not hung)`);
+}
+
+// `date` columns come back as 'YYYY-MM-DD' strings, not JS Dates (no socket
+// is opened: postgres.js builds its parser table at construction).
+{
+  const client = openSql({ DATABASE_URL: "postgresql://probe@127.0.0.1:1/nuvo" } as never) as unknown as {
+    options: { parsers: Record<number, (x: string) => unknown>; serializers: Record<number, (x: unknown) => unknown> };
+    end: (o?: unknown) => Promise<void>;
+  };
+  const parseDate = client.options.parsers[1082];
+  ok(parseDate?.("2026-11-16") === "2026-11-16", `date (1082) parses to 'YYYY-MM-DD' (got ${String(parseDate?.("2026-11-16"))})`);
+  ok(client.options.parsers[1184]?.("2026-11-16 10:00:00+00") instanceof Date, "timestamptz (1184) still parses to Date");
+  ok(client.options.serializers[1082]?.(new Date("2026-11-16T00:00:00Z")) === "2026-11-16", "a Date sent as a date param serializes to 'YYYY-MM-DD'");
+  ok(client.options.serializers[1082]?.("2026-11-16") === "2026-11-16", "a string date param passes through");
+  await client.end({ timeout: 0 });
 }
 
 const db = new PGlite();

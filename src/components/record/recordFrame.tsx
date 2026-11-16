@@ -198,7 +198,7 @@ export function Head({
           the outcome, and the placeholder teaches it when empty (D-041 — a thing
           is named once). */}
       <p className="doc-lead">
-        <InlineText value={outcome} onChange={onOutcome} placeholder={outcomePlaceholder} live={autoFocusName} quiet />
+        <InlineText value={outcome} onChange={onOutcome} placeholder={outcomePlaceholder} live={autoFocusName} quiet allowEmpty />
       </p>
     </div>
   );

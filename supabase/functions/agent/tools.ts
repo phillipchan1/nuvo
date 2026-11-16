@@ -11,6 +11,7 @@ import {
   type WritableCal,
 } from "./calendars.ts";
 import { executeVerticalTool } from "./verticalTools.ts";
+import { withEffectiveStatus } from "./projectStatus.ts";
 // The vocabulary lives in toolDefs.ts (pure data, importable outside Deno);
 // this file is the behavior behind it. Re-exported so existing callers and
 // the edge handler keep one import site.
@@ -810,7 +811,8 @@ async function findProjectForPriority(
     .select("id, name, status, start_date, target_date")
     .eq("user_id", userId)
     .not("status", "in", "(cancelled,dropped)");
-  const rows = (data ?? []) as ProjectSpanRow[];
+  // the effective status (the tasks decide) — the one the app's slate reads
+  const rows = await withEffectiveStatus(userId, (data ?? []) as ProjectSpanRow[]);
   if (args.project_id) return rows.find((p) => p.id === args.project_id) ?? null;
 
   const q = (args.priority_title ?? args.title ?? "").trim().toLowerCase();

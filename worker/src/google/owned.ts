@@ -43,8 +43,45 @@ function asCalendars(value: unknown): CalendarEntry[] {
   return asJsonArray(value) as CalendarEntry[];
 }
 
+/**
+ * Each loaded account's calendars as they were read, so `saveCalendars` writes
+ * only the fields THIS run changed. A poll that loaded before a renew landed
+ * must not write the old channel_id back over the new one.
+ */
+const loadedCalendars = new WeakMap<GoogleAccount, Map<string, CalendarEntry>>();
+
+function snapshotCalendars(calendars: CalendarEntry[]): Map<string, CalendarEntry> {
+  return new Map(calendars.map((c) => [c.id, { ...c }]));
+}
+
+/** current (DB now) + the fields `mine` changed since `base` (what it loaded). */
+export function mergeCalendars(
+  current: CalendarEntry[],
+  base: Map<string, CalendarEntry>,
+  mine: CalendarEntry[],
+): CalendarEntry[] {
+  const mineById = new Map(mine.map((c) => [c.id, c]));
+  const merged = current.map((cur) => {
+    const m = mineById.get(cur.id);
+    if (!m) return cur;
+    const b = base.get(cur.id);
+    if (!b) return { ...cur, ...m };
+    const was = b as unknown as Record<string, unknown>;
+    const out: Record<string, unknown> = { ...cur };
+    for (const [k, v] of Object.entries(m)) {
+      if (JSON.stringify(v) !== JSON.stringify(was[k])) out[k] = v;
+    }
+    return out as unknown as CalendarEntry;
+  });
+  // A calendar this run added (not one someone else removed meanwhile).
+  for (const m of mine) {
+    if (!base.has(m.id) && !current.some((c) => c.id === m.id)) merged.push(m);
+  }
+  return merged;
+}
+
 function mapAccount(row: Record<string, unknown>): GoogleAccount {
-  return {
+  const account: GoogleAccount = {
     id: String(row.id),
     user_id: String(row.user_id),
     email: String(row.email),
@@ -64,6 +101,8 @@ function mapAccount(row: Record<string, unknown>): GoogleAccount {
       : null,
     needs_reconnect: Boolean(row.needs_reconnect),
   };
+  loadedCalendars.set(account, snapshotCalendars(account.calendars));
+  return account;
 }
 
 export function publicGoogleAccount(account: GoogleAccount): GoogleAccountStatus {
@@ -138,18 +177,35 @@ export async function listGoogleAccountIds(sql: Sql, accountId?: string): Promis
 }
 
 export async function saveCalendars(sql: Sql, account: GoogleAccount): Promise<void> {
-  const minExpiry = account.calendars
-    .map((c) => c.channel_expires_at)
-    .filter((v): v is string => Boolean(v))
-    .sort()[0] ?? null;
-  await sql`
-    UPDATE calendar_accounts
-    SET calendars = ${jsonParam(sql, account.calendars)},
-        webhook_expires_at = ${minExpiry},
-        updated_at = now()
-    WHERE id = ${account.id}
-      AND user_id = ${account.user_id}
-  `;
+  const base = loadedCalendars.get(account);
+  await sql.begin(async (tx) => {
+    let calendars = account.calendars;
+    if (base) {
+      // Merge onto the row as it is NOW (locked), not as this run loaded it.
+      const rows = await tx`
+        SELECT calendars FROM calendar_accounts
+        WHERE id = ${account.id}
+          AND user_id = ${account.user_id}
+        FOR UPDATE
+      `;
+      if (!rows[0]) return;
+      calendars = mergeCalendars(asCalendars((rows[0] as { calendars: unknown }).calendars), base, account.calendars);
+    }
+    const minExpiry = calendars
+      .map((c) => c.channel_expires_at)
+      .filter((v): v is string => Boolean(v))
+      .sort()[0] ?? null;
+    await tx`
+      UPDATE calendar_accounts
+      SET calendars = ${jsonParam(tx as unknown as Sql, calendars)},
+          webhook_expires_at = ${minExpiry},
+          updated_at = now()
+      WHERE id = ${account.id}
+        AND user_id = ${account.user_id}
+    `;
+  });
+  // What this run has now is the baseline for any later save it makes.
+  loadedCalendars.set(account, snapshotCalendars(account.calendars));
 }
 
 export async function markReconnect(sql: Sql, accountId: string, userId: string): Promise<void> {

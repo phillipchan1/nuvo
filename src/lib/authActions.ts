@@ -1,6 +1,7 @@
 import { workersEnabled } from "./backend";
 import { writeWasEntitled } from "./subscription";
 import { supabase } from "./supabase";
+import { clearPersistedCache } from "./sync/persist";
 
 type AuthErr = { message: string } | null;
 
@@ -41,6 +42,10 @@ export async function signOut(): Promise<{ error: AuthErr }> {
   if (workersEnabled) {
     const { clearSignedBearer, createNuvoAuthClient } = await import("./authClient");
     writeWasEntitled(false);
+    // The offline read cache is this account's (GoTrue's SIGNED_OUT does the
+    // same on the Supabase path). The in-memory cache goes when `useAuth`
+    // re-reads the now-empty session — see `noteSessionOwner`.
+    void clearPersistedCache();
     clearSignedBearer();
     const res = await createNuvoAuthClient().signOut();
     return { error: res.error ? { message: res.error.message || "Sign-out failed" } : null };

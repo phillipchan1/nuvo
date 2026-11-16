@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_REMINDER_PREFS,
   dueNow,
+  firedReminderKey,
   planReminders,
   plannedReminderKey,
   reminderGraceMs,
@@ -106,7 +107,7 @@ describe("the app and the dispatcher agree", () => {
     );
     const dayBefore = plan.find((r) => r.leadMinutes === 1440)!;
     const tenMin = plan.find((r) => r.leadMinutes === 10)!;
-    expect(dueNow(plan, tenMin.fireAtMs, new Set([dayBefore.key]))).toEqual([tenMin]);
+    expect(dueNow(plan, tenMin.fireAtMs, new Set([firedReminderKey(dayBefore)]))).toEqual([tenMin]);
   });
 });
 

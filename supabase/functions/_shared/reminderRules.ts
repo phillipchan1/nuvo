@@ -285,7 +285,16 @@ export function reminderGraceMs(leadMinutes: number): number {
   return Math.min(Math.max(REMINDER_GRACE_MS, scaled), twoHours);
 }
 
+/** Identity of one fire IN TIME — the planned reminder's key plus the second
+ *  it fires at, the same pair `claim_reminder` is unique on. A fired set keyed
+ *  by `key` alone swallowed a block's reminder forever once it had spoken:
+ *  drag the 9am block to 3pm and the 3pm reminder was "already fired". */
+export function firedReminderKey(r: Pick<PlannedReminder, "key" | "fireAtMs">): string {
+  return `${r.key}@${Math.floor(r.fireAtMs / 1000)}`;
+}
+
 /** What to fire on this tick: due, not already fired, not stale.
+ *  `fired` holds `firedReminderKey`s.
  *  Pass `graceMs` only to pin a single window in a test; production leaves it
  *  so each reminder uses `reminderGraceMs(lead)`. */
 export function dueNow(
@@ -295,7 +304,7 @@ export function dueNow(
   graceMs?: number,
 ): PlannedReminder[] {
   return plan.filter((r) => {
-    if (fired.has(r.key)) return false;
+    if (fired.has(firedReminderKey(r))) return false;
     if (r.fireAtMs > nowMs) return false;
     const grace = graceMs ?? reminderGraceMs(r.leadMinutes);
     return nowMs - r.fireAtMs <= grace;
@@ -313,7 +322,7 @@ export function nextFireAt(
 ): number | null {
   let best: number | null = null;
   for (const r of plan) {
-    if (fired.has(r.key)) continue;
+    if (fired.has(firedReminderKey(r))) continue;
     if (r.fireAtMs <= nowMs) continue;
     if (best == null || r.fireAtMs < best) best = r.fireAtMs;
   }

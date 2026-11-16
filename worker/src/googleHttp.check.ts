@@ -8,7 +8,7 @@ import { installRequestIoForTests } from "./requestIo.ts";
 import { installOutboundFetchForTests } from "./lib/outboundFetch.ts";
 import { openToken, parseTokenKeyring, sealToken } from "./secrets.ts";
 import { getAccessToken } from "./google/tokens.ts";
-import { loadGoogleAccountById } from "./google/owned.ts";
+import { loadGoogleAccountById, saveCalendars } from "./google/owned.ts";
 import { runGoogleSync } from "./google/sync.ts";
 import app from "./index.ts";
 import type { Env } from "./env.ts";
@@ -602,6 +602,63 @@ if (account) {
 }
 
 restoreWatchFail();
+
+// Two runs over one account: a renew writes a new channel while a poll that
+// loaded BEFORE it writes its sync token. Neither may revert the other.
+{
+  const poll = await loadGoogleAccountById(sql, ACCOUNT_A);
+  const renew = await loadGoogleAccountById(sql, ACCOUNT_A);
+  if (poll && renew && poll.calendars[0] && renew.calendars[0]) {
+    renew.calendars[0].channel_id = "ch-renewed";
+    renew.calendars[0].resource_id = "res-renewed";
+    renew.calendars[0].channel_expires_at = "2099-01-01T00:00:00.000Z";
+    await saveCalendars(sql, renew);
+    poll.calendars[0].sync_token = "sync-from-poll";
+    poll.calendars[0].last_synced_at = "2026-11-16T00:00:00.000Z";
+    await saveCalendars(sql, poll);
+  }
+  const after = await db.query<{ calendars: unknown }>("SELECT calendars FROM calendar_accounts WHERE id = $1", [ACCOUNT_A]);
+  const raw = after.rows[0]?.calendars;
+  const cal0 = (typeof raw === "string" ? JSON.parse(raw) : raw) as Array<Record<string, unknown>>;
+  ok(cal0?.[0]?.channel_id === "ch-renewed", `saveCalendars: a stale poll does not revert the renewed channel (got ${String(cal0?.[0]?.channel_id)})`);
+  ok(cal0?.[0]?.sync_token === "sync-from-poll", "saveCalendars: the poll's own sync token still lands");
+}
+
+// A refresh failure only asks the user to reconnect when Google says the grant
+// is dead (invalid_grant). A 5xx / 429 / network blip throws for backoff.
+for (const [label, status, body, wantReconnect] of [
+  ["503", 503, "backend error", false],
+  ["429", 429, JSON.stringify({ error: "rate_limit_exceeded" }), false],
+  ["400 invalid_request", 400, JSON.stringify({ error: "invalid_request" }), false],
+  ["network", 0, "", false],
+  ["400 invalid_grant", 400, JSON.stringify({ error: "invalid_grant", error_description: "Token has been expired or revoked." }), true],
+  ["401 invalid_grant", 401, JSON.stringify({ error: "invalid_grant" }), true],
+] as const) {
+  await sql`
+    UPDATE calendar_accounts
+    SET needs_reconnect = false, access_token = NULL, access_token_enc = NULL, access_token_iv = NULL,
+        access_token_expires_at = ${"2000-01-01T00:00:00Z"}
+    WHERE id = ${ACCOUNT_A} AND user_id = ${A}
+  `;
+  const restore = installOutboundFetchForTests(async (input) => {
+    if (String(input).includes("oauth2.googleapis.com/token")) {
+      if (status === 0) throw new TypeError("network down");
+      return new Response(body, { status });
+    }
+    return new Response("not mocked", { status: 404 });
+  });
+  const acct = await loadGoogleAccountById(sql, ACCOUNT_A);
+  let threw = false;
+  try {
+    if (acct) await getAccessToken(sql, env, acct);
+  } catch {
+    threw = true;
+  }
+  restore();
+  const flag = await db.query<{ needs_reconnect: boolean }>("SELECT needs_reconnect FROM calendar_accounts WHERE id = $1", [ACCOUNT_A]);
+  ok(threw, `token refresh ${label}: throws`);
+  ok(flag.rows[0]?.needs_reconnect === wantReconnect, `token refresh ${label}: needs_reconnect=${wantReconnect} (got ${flag.rows[0]?.needs_reconnect})`);
+}
 
 console.log(`${checks} checks, ${fails.length} failed`);
 if (fails.length) {

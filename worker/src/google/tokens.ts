@@ -26,6 +26,19 @@ async function unsealAccessToken(env: Env, account: GoogleAccount): Promise<stri
   );
 }
 
+/** Google answers a revoked / expired / password-changed refresh token with
+ *  400 (occasionally 401) `{"error":"invalid_grant"}` — the only refresh
+ *  failure the user must fix by reconnecting. */
+export async function isRevokedGrant(res: Response): Promise<boolean> {
+  if (res.status !== 400 && res.status !== 401) return false;
+  const text = await res.clone().text().catch(() => "");
+  try {
+    return (JSON.parse(text) as { error?: unknown })?.error === "invalid_grant";
+  } catch {
+    return /invalid_grant/.test(text);
+  }
+}
+
 export async function getAccessToken(sql: Sql, env: Env, account: GoogleAccount): Promise<string> {
   if (account.access_token && accessStillValid(account.access_token_expires_at)) {
     return account.access_token;
@@ -71,7 +84,9 @@ export async function getAccessToken(sql: Sql, env: Env, account: GoogleAccount)
     }),
   });
   if (!res.ok) {
-    await markReconnect(sql, account.id, account.user_id);
+    // Only a definitive "this grant is dead" asks the user to reconnect. A 5xx,
+    // 429 or other blip throws, so the caller's normal backoff retries it.
+    if (await isRevokedGrant(res)) await markReconnect(sql, account.id, account.user_id);
     await logSync(sql, "google", "token-refresh", "error", `refresh failed: ${res.status}`, account.user_id);
     throw new Error("google token refresh failed");
   }

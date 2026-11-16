@@ -343,6 +343,34 @@ const stepId = crypto.randomUUID();
   const sprintB = await B.from("sprints").upsert({ user_id: b.id, week_start: "2026-10-26" }, { onConflict: "user_id,week_start" }).select("*").single();
   ok(sprintB.data && sprintB.data.id !== sprint.data?.id, "B's sprint for the same week is B's own");
 
+  // Merge-upsert on a field_ts table is per-field last-write-wins (apply_patch's
+  // rule), not "every column from EXCLUDED, client stamps win".
+  const lwwId = crypto.randomUUID();
+  const lwwFirst = await A.from("tasks").upsert(
+    { id: lwwId, title: "newer title", notes: "first notes", status: "inbox", field_ts: { title: "2026-10-29T12:00:00.000Z", notes: "2026-10-29T09:00:00.000Z" } },
+    { onConflict: "id" },
+  );
+  ok(!lwwFirst.error, `merge-upsert insert: ${lwwFirst.error?.message}`);
+  const lwwStale = await A.from("tasks").upsert(
+    { id: lwwId, title: "stale title", notes: "later notes", status: "inbox", field_ts: { title: "2026-10-29T10:00:00.000Z", notes: "2026-10-29T11:00:00.000Z" } },
+    { onConflict: "id" },
+  );
+  ok(!lwwStale.error, `merge-upsert conflict: ${lwwStale.error?.message}`);
+  const lwwRow = await A.from("tasks").select("title, notes, field_ts").eq("id", lwwId).single();
+  const lwwTs = lwwRow.data?.field_ts as Record<string, string> | undefined;
+  ok(lwwRow.data?.title === "newer title", `merge-upsert: an older stamp does not overwrite a newer field (got ${lwwRow.data?.title})`);
+  ok(lwwTs?.title === "2026-10-29T12:00:00.000Z", `merge-upsert: the newer stamp is kept (got ${lwwTs?.title})`);
+  ok(lwwRow.data?.notes === "later notes" && lwwTs?.notes === "2026-10-29T11:00:00.000Z", "merge-upsert: a newer stamp on another field still applies");
+  const lwwFuture = await A.from("tasks").upsert(
+    { id: lwwId, title: "from the future", status: "inbox", field_ts: { title: "2999-01-01T00:00:00.000Z" } },
+    { onConflict: "id" },
+  );
+  ok(!lwwFuture.error, `merge-upsert future stamp: ${lwwFuture.error?.message}`);
+  const lwwFutureRow = await A.from("tasks").select("title, field_ts").eq("id", lwwId).single();
+  const futureTs = (lwwFutureRow.data?.field_ts as Record<string, string> | undefined)?.title ?? "";
+  ok(lwwFutureRow.data?.title === "from the future" && futureTs < "2100", `merge-upsert: a future stamp is clamped to now (got ${futureTs})`);
+  await A.from("tasks").delete().eq("id", lwwId);
+
   // inbound_token only moves through rotate_inbound_token.
   await A.from("user_settings").update({ inbound_token: "forged" }).eq("user_id", a.id);
   const settings = await A.from("user_settings").select("*").maybeSingle();

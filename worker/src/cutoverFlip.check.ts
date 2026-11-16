@@ -11,7 +11,7 @@ import {
   skippedUntilCutoverFlip,
 } from "./cutoverFlip.ts";
 import { PGlite } from "@electric-sql/pglite";
-import { ALL_CRON_SCHEDULES, CRON_BY_SCHEDULE, canonicalCronJob, consumeCalendarSyncBatch, enqueueDueCalendarAccounts, runCronJob } from "./cronJobs.ts";
+import { ALL_CRON_SCHEDULES, CRON_BY_SCHEDULE, canonicalCronJob, consumeCalendarSyncBatch, enqueueDueCalendarAccounts, handleScheduled, runCronJob } from "./cronJobs.ts";
 import type { Env } from "./env.ts";
 import { installOpenSqlForTests, type Sql } from "./db.ts";
 import app from "./index.ts";
@@ -542,7 +542,78 @@ try {
   const on = await enqueued({ CUTOVER_FLIPPED: "1", MS_CLIENT_ID: "x", MS_CLIENT_SECRET: "y" });
   ok(off.length > 0 && !off.includes("m365"), "calendar-dispatch without MS_* does not enqueue m365 accounts");
   ok(on.includes("m365"), "calendar-dispatch with MS_* still enqueues m365 accounts");
+
+  // A due account is enqueued ONCE per interval — the claim bumps next_sync_at,
+  // so the next minute's tick doesn't send it again while it waits in the queue.
+  await db.query("UPDATE calendar_accounts SET next_sync_at = NULL, needs_reconnect = false");
+  const first = await enqueued({ CUTOVER_FLIPPED: "1" });
+  const second = await enqueued({ CUTOVER_FLIPPED: "1" });
+  ok(first.length > 0, `calendar-dispatch enqueues due accounts (got ${first.length})`);
+  ok(second.length === 0, `calendar-dispatch does not re-enqueue claimed accounts a minute later (got ${second.length})`);
+  const stillDue = await db.query<{ n: number }>(
+    "SELECT count(*)::int AS n FROM calendar_accounts WHERE provider <> 'm365' AND (next_sync_at IS NULL OR next_sync_at <= now())",
+  );
+  ok(Number(stillDue.rows[0]?.n ?? 0) === 0, "calendar-dispatch claim moves next_sync_at into the future");
+
+  // One user's failure must not stop a per-user cron job for everyone after.
+  const users = (await db.query<{ id: string }>("SELECT id::text AS id FROM users ORDER BY id")).rows.map((r) => r.id);
+  ok(users.length >= 2, "isolation fixture has two users");
+  const [first_, last_] = [users[0]!, users[users.length - 1]!];
+  for (const uid of [first_, last_]) {
+    await db.query(
+      `INSERT INTO tasks (user_id, title, status, trashed_at) VALUES ($1, 'old trash', 'trashed', now() - interval '40 days')`,
+      [uid],
+    );
+  }
+  const failingFirst = (async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    if (strings.join("?").includes("DELETE FROM tasks") && values.includes(first_)) throw new Error("boom");
+    return sql(strings, ...(values as never[]));
+  }) as unknown as Sql;
+  let purgeThrew = false;
+  let purged: { deleted?: number } = {};
+  try {
+    purged = await runCronJob("purge-trash", { CUTOVER_FLIPPED: "1" }, failingFirst);
+  } catch {
+    purgeThrew = true;
+  }
+  ok(!purgeThrew, "purge-trash: one user throwing does not abort the job");
+  const lastLeft = await db.query<{ n: number }>(
+    "SELECT count(*)::int AS n FROM tasks WHERE user_id = $1 AND title = 'old trash'",
+    [last_],
+  );
+  ok(Number(lastLeft.rows[0]?.n ?? 1) === 0 && (purged.deleted ?? 0) >= 1, "purge-trash: the next user is still purged");
+
+  const failingRollover = (async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    if (values.includes(first_) && /UPDATE tasks|FROM tasks/.test(strings.join("?"))) throw new Error("boom");
+    return sql(strings, ...(values as never[]));
+  }) as unknown as Sql;
+  let rollThrew = false;
+  try {
+    await runCronJob("rollover", { CUTOVER_FLIPPED: "1" }, failingRollover);
+  } catch {
+    rollThrew = true;
+  }
+  ok(!rollThrew, "rollover: one user throwing does not abort the job");
   await db.close();
+}
+
+{
+  // Jobs on one tick are independent: the first throwing must not skip the second.
+  const ran: string[] = [];
+  let threw = false;
+  let results: { job: string; status: number }[] = [];
+  try {
+    results = await handleScheduled({ cron: "* * * * *" }, {}, async (job) => {
+      ran.push(job);
+      if (job === "calendar-dispatch") throw new Error("boom");
+      return { job, status: 200 };
+    });
+  } catch {
+    threw = true;
+  }
+  ok(!threw, "handleScheduled: a throwing job does not reject the tick");
+  ok(ran.includes("push-dispatch"), "handleScheduled: the next job on the tick still runs");
+  ok(results.find((r) => r.job === "calendar-dispatch")?.status === 500, "handleScheduled: the failed job reports 500");
 }
 
 for (const value of flipOn) {

@@ -128,6 +128,8 @@ interface Chip {
 function chipsOf(
   p: ParsedCapture,
   env: ReturnType<typeof useTaskCapture>["env"],
+  /** The day the host is showing — a bare clock lands on it (captureDraft). */
+  hostDay: string | null = null,
 ): Chip[] {
   const out: Chip[] = [];
   const today = todayISO();
@@ -135,8 +137,9 @@ function chipsOf(
     const key = literalKey(s.kind, s.text);
     switch (s.kind) {
       case "date": {
-        if (!p.doDate) break;
-        const day = p.doDate === today ? "Today" : fmtDayLabel(p.doDate);
+        const dayISO = p.dayCertain || !hostDay ? p.doDate : hostDay;
+        if (!dayISO) break;
+        const day = dayISO === today ? "Today" : fmtDayLabel(dayISO);
         const clock = p.startTime ? fmtDayTime(p.startTime.toISOString()).split(" ")[1] : null;
         out.push({ key, kind: s.kind, label: "When", value: clock ? `${day} ${clock}` : day });
         break;
@@ -246,7 +249,8 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
     () => (!plain && text.trim() ? parseCapture(text, new Date(), { literal }) : null),
     [plain, text, literal],
   );
-  const chips = useMemo(() => (parsed ? chipsOf(parsed, env) : []), [parsed, env]);
+  const hostDay = stableContext.slot?.do_date ?? stableContext.doDate ?? null;
+  const chips = useMemo(() => (parsed ? chipsOf(parsed, env, hostDay) : []), [parsed, env, hostDay]);
   const segments = useMemo(() => (parsed ? segmentsOf(text, parsed.spans) : [{ text, kind: null }]), [parsed, text]);
   // The context chip is struck only when something typed replaces it: an
   // @home over a home, a day over a day. @project on the Today tab still lands today.
@@ -256,7 +260,7 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
   const contextOverridden =
     (ctxHome && routed) ||
     (Boolean(stableContext.slot) && typedDay) ||
-    (Boolean(stableContext.doDate) && Boolean(parsed?.doDate) && parsed?.doDate !== stableContext.doDate);
+    (Boolean(stableContext.doDate) && Boolean(parsed?.doDate && parsed.dayCertain) && parsed?.doDate !== stableContext.doDate);
 
   const menu = useTokenMenu({
     text,

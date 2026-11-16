@@ -954,6 +954,7 @@ async function handleInsert(sql: Sql, cat: Catalog, req: RestRequest, uid: strin
   let cols = writeColumns(target, rows, "insert");
   await assertOwnedRefs(sql, target, rows, cat);
   cols = stampFieldTs(target, rows, cols, "insert");
+  if (target.info.columns.has("field_ts")) clampFieldTs(rows);
 
   const params = new Params();
   const owned = target.policy.owner === "user_id";
@@ -969,10 +970,15 @@ async function handleInsert(sql: Sql, cat: Catalog, req: RestRequest, uid: strin
     if (ignore || !setCols.length) {
       text += ` ON CONFLICT (${conflict.map(q).join(", ")}) DO NOTHING`;
     } else {
+      const lww = setCols.includes("field_ts");
       const sets = setCols.map((c) =>
         c === "field_ts"
-          ? `"field_ts" = COALESCE(t."field_ts", '{}'::jsonb) || COALESCE(EXCLUDED."field_ts", '{}'::jsonb)`
-          : `${q(c)} = EXCLUDED.${q(c)}`,
+          ? `"field_ts" = ${mergedFieldTsSql}`
+          : lww && !UNSTAMPED.has(c)
+            // Per-field last-write-wins, as apply_patch: the stored value stays
+            // unless this write's stamp for the column is newer.
+            ? `${q(c)} = CASE WHEN ${newerStampSql(c)} THEN EXCLUDED.${q(c)} ELSE t.${q(c)} END`
+            : `${q(c)} = EXCLUDED.${q(c)}`,
       );
       if (target.info.columns.has("updated_at") && !setCols.includes("updated_at")) sets.push(`"updated_at" = now()`);
       text += ` ON CONFLICT (${conflict.map(q).join(", ")}) DO UPDATE SET ${sets.join(", ")} WHERE ${scopeClause(target, params)}`;
@@ -981,6 +987,40 @@ async function handleInsert(sql: Sql, cat: Catalog, req: RestRequest, uid: strin
   text += ` RETURNING ${returningSql(target, spec)}`;
   return finish(req, await run(sql, bodySql(text, req.singular), params), 201);
 }
+
+/** Stamps are clamped to now (a fast clock cannot win forever) and an
+ *  unparseable stamp counts as now — the same rule apply_patch applies. */
+function clampFieldTs(rows: Record<string, unknown>[]): void {
+  const now = Date.now();
+  for (const row of rows) {
+    const ts = row.field_ts as Record<string, unknown> | undefined;
+    if (!ts || typeof ts !== "object") continue;
+    for (const [k, v] of Object.entries(ts)) {
+      const given = Date.parse(String(v ?? ""));
+      ts[k] = new Date(Math.min(Number.isFinite(given) ? given : now, now)).toISOString();
+    }
+  }
+}
+
+function stampSql(side: "t" | "EXCLUDED", c: string): string {
+  return `(${side}."field_ts" ->> '${c.replace(/'/g, "''")}')`;
+}
+
+/** This upsert's stamp for `c` beats the stored one (or nothing is stored). */
+function newerStampSql(c: string): string {
+  const mine = stampSql("EXCLUDED", c);
+  const theirs = stampSql("t", c);
+  return `(${theirs} IS NULL OR (${mine} IS NOT NULL AND ${mine}::timestamptz > ${theirs}::timestamptz))`;
+}
+
+/** field_ts after an upsert: per key, the newer of stored and incoming. */
+const mergedFieldTsSql =
+  `COALESCE(t."field_ts", '{}'::jsonb) || COALESCE((
+     SELECT jsonb_object_agg(e.key, e.value)
+       FROM jsonb_each(COALESCE(EXCLUDED."field_ts", '{}'::jsonb)) e
+      WHERE t."field_ts" ->> e.key IS NULL
+         OR (e.value #>> '{}')::timestamptz > (t."field_ts" ->> e.key)::timestamptz
+   ), '{}'::jsonb)`;
 
 async function handleUpdate(sql: Sql, cat: Catalog, req: RestRequest, uid: string): Promise<Response> {
   const target = requireTarget(cat, req.table, uid, "update");

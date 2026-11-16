@@ -26,6 +26,7 @@
 import { useEffect, useRef } from "react";
 import { isTypingIn } from "../../lib/a11y";
 import type { Task } from "../../lib/types";
+import { orderPatches, type OrderPatch } from "../../lib/taskOrder";
 
 /** What a list's rows must have: an id, and — when `e` can finish one — a status. */
 export type KeyRow = { id: string; status?: string | null };
@@ -295,5 +296,34 @@ export function orderBeside(rows: Task[], anchor: Task | null, where: "below" | 
   // Equal neighbours can't hold anything between them; land just past the anchor.
   if (a === b) return where === "below" ? a + 1e-3 : a - 1e-3;
   return (a + b) / 2;
+}
+
+/**
+ * Where a new task lands beside `anchor`, and the writes that must go first.
+ *
+ * Every fresh capture shares one default sort_order, so the anchor and its
+ * neighbour are often tied — and nothing fits between two equal values: "add
+ * below" the first of a tied run landed at the END of the run. The run is
+ * spread first (`orderPatches`, keeping the order on screen), then the new row
+ * takes the gap. `spread` is empty when the neighbours already differ.
+ */
+export function placeBeside(
+  rows: Task[],
+  anchor: Task | null,
+  where: "below" | "above",
+): { sortOrder: number; spread: OrderPatch[] } | undefined {
+  if (!anchor) return undefined;
+  const i = rows.findIndex((t) => t.id === anchor.id);
+  if (i < 0) return undefined;
+  const neighbour = where === "below" ? rows[i + 1] : rows[i - 1];
+  if (!neighbour || neighbour.sort_order !== anchor.sort_order) {
+    const sortOrder = orderBeside(rows, anchor, where);
+    return sortOrder == null ? undefined : { sortOrder, spread: [] };
+  }
+  const spread = orderPatches(rows, rows.map((t) => t.id));
+  const at = new Map(spread.map((p) => [p.id, p.sort_order]));
+  const next = rows.map((t) => (at.has(t.id) ? { ...t, sort_order: at.get(t.id)! } : t));
+  const sortOrder = orderBeside(next, next[i], where);
+  return sortOrder == null ? undefined : { sortOrder, spread };
 }
 

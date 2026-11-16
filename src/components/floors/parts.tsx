@@ -236,6 +236,7 @@ export function InlineText({
   autoFocusEmpty = false,
   live = false,
   quiet = false,
+  allowEmpty = false,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -251,6 +252,10 @@ export function InlineText({
   live?: boolean;
   /** Skip the hover/focus tint — use when the parent row already carries it. */
   quiet?: boolean;
+  /** An optional line (an outcome, a unit) may be cleared. Without this the
+   *  field holds a NAME: emptying it and leaving puts the old name back rather
+   *  than saving a record called "". */
+  allowEmpty?: boolean;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
 
@@ -273,6 +278,7 @@ export function InlineText({
     const el = ref.current;
     if (!el) return;
     const next = (el.textContent ?? "").trim();
+    if (!next && !allowEmpty) { el.textContent = value; return; }
     if (next !== value) onChange(next);
   };
 
@@ -287,6 +293,8 @@ export function InlineText({
       // untrimmed on purpose — trimming mid-word eats the space you just typed.
       onInput={live ? (e) => onChange(e.currentTarget.textContent ?? "") : undefined}
       onKeyDown={(e) => {
+        // an IME's Enter confirms the composition — it isn't "done".
+        if (e.nativeEvent.isComposing || e.keyCode === 229) return;
         if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); }
         if (e.key === "Escape") { e.currentTarget.textContent = value; e.currentTarget.blur(); }
       }}

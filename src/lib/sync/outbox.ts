@@ -22,6 +22,97 @@ import { idbAllOps, idbAppendOp, idbDeleteOps, idbPutOp, isDurable } from "./idb
 /** Attempts before an op is parked for the user to deal with. */
 export const MAX_ATTEMPTS = 8;
 
+/**
+ * A *retriable* failure (offline, a 5xx, a write freeze, an expired bearer, no
+ * session yet) is the environment, not the write — so it only parks an op once
+ * it has been failing for this long as well as `MAX_ATTEMPTS` times. Counting
+ * them alone parked a perfectly good capture after eight blips of a flaky
+ * network (about four minutes of backoff), and a parked op never went out again
+ * on its own. The floor still exists so one op the server keeps 500ing on
+ * cannot hold the queue behind it forever.
+ */
+export const PARK_FLOOR_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Whose queue this is. `undefined` until the app says (tests, and the moment
+ * before auth answers) — then nothing is filtered, the pre-stamping behaviour.
+ * `null` is "signed out": stamped ops belong to nobody and the drain sends
+ * nothing.
+ */
+let owner: string | null | undefined;
+
+export function setOutboxOwner(uid: string | null | undefined): void {
+  owner = uid;
+}
+
+export function outboxOwner(): string | null | undefined {
+  return owner;
+}
+
+/** An unstamped op (queued before stamping) belongs to whoever drains it. */
+function belongs(op: Op): boolean {
+  return owner === undefined || op.ownerId == null || op.ownerId === owner;
+}
+
+/** Stored ops the current drain pass has taken — they may be on the wire. */
+let inFlight: Op[] = [];
+
+/** The engine marks a pass's snapshot before sending any of it, and clears it
+ *  once the pass has acked or recorded every result. */
+export function markInFlight(ops: Op[]): void {
+  inFlight = ops;
+}
+
+function mayHaveLanded(o: Op): boolean {
+  if (o.attempts > 0 || o.lastError != null) return true;
+  return inFlight.some((f) => {
+    if (f.table !== o.table || f.rowId !== o.rowId) return false;
+    const { from, through } = spanOf(f);
+    return o.seq >= from && o.seq <= through;
+  });
+}
+
+/**
+ * Split the store into what may be sent, what is parked, and what is *held*.
+ *
+ * Held: a later op for a row whose earlier *insert or delete* is parked. Sent
+ * alone it is wrong either way — an edit to a row whose insert was refused
+ * matches nothing and is acked as a success, then the insert's retry
+ * resurrects the old title; a delete behind it is acked the same way and the
+ * retry brings the row back; a recreate behind a parked delete is ignored as a
+ * duplicate and the delete's retry then removes it. So it waits with the
+ * parked op, and an unpark lets it fold back in.
+ *
+ * A parked *update* holds nothing back: later patches are independent field
+ * writes on a row that exists, and field-LWW keeps a retried older patch from
+ * overwriting them — holding them would freeze every later edit of the row
+ * behind one refused field.
+ *
+ * Ops queued by another account on this device are left out entirely.
+ */
+function partition(all: Op[]): { live: Op[]; parked: Op[]; held: Op[] } {
+  const mine = all.filter(belongs);
+  const parked = mine.filter(isParked);
+  const floor = new Map<string, number>();
+  for (const p of parked) {
+    if (p.kind === "update") continue;
+    const key = `${p.table}:${p.rowId}`;
+    floor.set(key, Math.min(floor.get(key) ?? Infinity, p.seq));
+  }
+  const live: Op[] = [];
+  const held: Op[] = [];
+  for (const o of mine) {
+    if (isParked(o)) continue;
+    const f = floor.get(`${o.table}:${o.rowId}`);
+    (f != null && o.seq > f ? held : live).push(o);
+  }
+  return { live, parked, held };
+}
+
+function foldLive(live: Op[]) {
+  return fold(live, mayHaveLanded);
+}
+
 export interface OutboxStatus {
   /** Ops still owed to the server, after coalescing. */
   pending: number;
@@ -58,10 +149,10 @@ export function setOutboxStatus(patch: Partial<OutboxStatus>) {
 /** Recount from the store and notify. Cheap enough to call after every drain. */
 export async function refreshOutboxStatus(): Promise<OutboxStatus> {
   const all = await idbAllOps<Op>();
-  const live = all.filter((o) => !isParked(o));
+  const { live, parked } = partition(all);
   setOutboxStatus({
-    pending: fold(live).send.length,
-    parked: all.length - live.length,
+    pending: foldLive(live).send.length,
+    parked: parked.length,
   });
   return status;
 }
@@ -86,6 +177,7 @@ export async function enqueue(op: NewOp): Promise<Op> {
     fieldTs: op.fieldTs ?? stampFields(op.payload, ts),
     ts,
     attempts: 0,
+    ...(owner ? { ownerId: owner } : {}),
   };
   const seq = await idbAppendOp(record);
   const stored: Op = { ...record, seq };
@@ -102,7 +194,7 @@ export async function enqueue(op: NewOp): Promise<Op> {
  */
 export async function pendingOps(): Promise<Op[]> {
   const all = await idbAllOps<Op>();
-  const { send, dead } = fold(all.filter((o) => !isParked(o)));
+  const { send, dead } = foldLive(partition(all).live);
   if (dead.length) void sweep(all, dead);
   return send;
 }
@@ -126,7 +218,7 @@ async function sweep(all: Op[], dead: DeadSpan[]): Promise<void> {
 /** Ops the server rejected outright, for the recovery UI. */
 export async function parkedOps(): Promise<Op[]> {
   const all = await idbAllOps<Op>();
-  return all.filter(isParked).sort((a, b) => a.seq - b.seq);
+  return partition(all).parked.sort((a, b) => a.seq - b.seq);
 }
 
 /**
@@ -139,10 +231,12 @@ export async function parkedOps(): Promise<Op[]> {
  */
 export async function outboxSnapshot(): Promise<{ pending: Op[]; parked: Op[] }> {
   const all = await idbAllOps<Op>();
-  const live = all.filter((o) => !isParked(o));
-  const { send, dead } = fold(live);
+  const { live, parked, held } = partition(all);
+  const { send, dead } = foldLive(live);
   if (dead.length) void sweep(all, dead);
-  return { pending: send, parked: all.filter(isParked) };
+  // Held ops are protected like the parked op they wait behind: their row
+  // exists only on this device, and the table must not read as owing forever.
+  return { pending: send, parked: [...parked, ...held] };
 }
 
 /**
@@ -207,6 +301,8 @@ export function whenDelivered(op: Pick<Op, "seq">): Promise<boolean> {
 export function resetDeliveryForTests() {
   recentAcks = [];
   deliveryWaiters.clear();
+  inFlight = [];
+  owner = undefined;
 }
 
 /**
@@ -253,12 +349,15 @@ export async function recordFailure(sent: Op, error: string, fatal: boolean): Pr
   const affected = all.filter(
     (o) => o.table === sent.table && o.rowId === sent.rowId && o.seq >= from && o.seq <= through,
   );
+  const now = Date.now();
   for (const op of affected) {
-    await idbPutOp({
-      ...op,
-      attempts: fatal ? MAX_ATTEMPTS : op.attempts + 1,
-      lastError: error,
-    });
+    const firstFailedAt = op.firstFailedAt ?? now;
+    let attempts = fatal ? MAX_ATTEMPTS : op.attempts + 1;
+    // Retriable: the count alone never parks it — see `PARK_FLOOR_MS`.
+    if (!fatal && attempts >= MAX_ATTEMPTS && now - firstFailedAt < PARK_FLOOR_MS) {
+      attempts = MAX_ATTEMPTS - 1;
+    }
+    await idbPutOp({ ...op, attempts, lastError: error, firstFailedAt });
   }
   if (fatal) settleWaiters(affected.map((o) => o.seq), false);
   await refreshOutboxStatus();
@@ -268,9 +367,31 @@ export async function recordFailure(sent: Op, error: string, fatal: boolean): Pr
 export async function unpark(seqs: number[]): Promise<void> {
   const all = await idbAllOps<Op>();
   for (const op of all.filter((o) => seqs.includes(o.seq))) {
-    await idbPutOp({ ...op, attempts: 0, lastError: undefined });
+    // `lastError` stays: it is also the mark that this op was sent before, so
+    // an insert the user retries is never annihilated by a later delete.
+    await idbPutOp({ ...op, attempts: 0, firstFailedAt: undefined });
   }
   await refreshOutboxStatus();
+}
+
+/**
+ * One more try for every parked op, without anyone finding a Retry button.
+ *
+ * "Couldn't be saved" is often fixed on the server side — a column the client
+ * started writing before the migration reached production — and a parked op
+ * used to stay parked until a human went to Settings. Run on launch and when
+ * the network comes back. It is a single try: the op re-enters the queue one
+ * failure short of the budget, so if the server still refuses it, it parks
+ * again at once instead of wedging the queue behind it.
+ */
+export async function retryParked(): Promise<number> {
+  const all = await idbAllOps<Op>();
+  const { parked } = partition(all);
+  for (const op of parked) {
+    await idbPutOp({ ...op, attempts: MAX_ATTEMPTS - 1 });
+  }
+  if (parked.length) await refreshOutboxStatus();
+  return parked.length;
 }
 
 /** Abandon parked ops — the only path that intentionally discards user intent,
@@ -284,7 +405,9 @@ export async function discard(seqs: number[]): Promise<void> {
 /** Drop every queued write. Account deletion is the only caller — sign-out
  *  keeps the outbox so a later sign-in on the same device can still drain. */
 export async function clearOutbox(): Promise<void> {
-  const all = await idbAllOps<Op>();
+  // Only this account's: another account's queued work on the device is not
+  // the deleted account's to throw away.
+  const all = (await idbAllOps<Op>()).filter(belongs);
   await idbDeleteOps(all.map((o) => o.seq));
   settleWaiters(all.map((o) => o.seq), false);
   await refreshOutboxStatus();

@@ -760,7 +760,8 @@ export function parseRecurrencePhrase(input: string, refDateISO: string): {
   // Monday, and the repeat the person asked for was silently gone.
   const dayRe = DAY_WORD.source;
   const namedDays = working.match(
-    new RegExp(`\\bevery\\s+(?:other\\s+)?(${dayRe})(?:\\s*(?:,|&|and|\\+)\\s*(?:${dayRe}))*\\b`, "i"),
+    // Days may be listed with commas, &, "and", + or just spaces ("mon wed fri").
+    new RegExp(`\\bevery\\s+(?:other\\s+)?(${dayRe})(?:(?:\\s*(?:,|&|and|\\+)\\s*|\\s+)(?:${dayRe})\\b)*\\b`, "i"),
   );
   if (namedDays) {
     const days = [...namedDays[0].matchAll(new RegExp(`\\b(${dayRe})\\b`, "gi"))].map((d) => dayIndexOf(d[1]));
@@ -782,15 +783,21 @@ export function parseRecurrencePhrase(input: string, refDateISO: string): {
     blank(weekends);
   }
 
+  // A weekly cadence repeats on the day the words name ("weekly on friday" —
+  // the date parser reads that same day as the anchor), else the anchor's day.
+  const weekDay = (): number => {
+    const named = working.match(new RegExp(`\\b(${dayRe})\\b`, "i"));
+    return named ? dayIndexOf(named[1]) : dayOfWeek(anchorDate ?? refDateISO);
+  };
   const patterns: { re: RegExp; build: (n: number) => RecurrenceRule }[] = [
-    { re: /\bevery\s+other\s+week\b/i, build: () => ({ freq: "weekly", interval: 2, byweekday: [dayOfWeek(anchorDate ?? refDateISO)] }) },
+    { re: /\bevery\s+other\s+week\b/i, build: () => ({ freq: "weekly", interval: 2, byweekday: [weekDay()] }) },
     { re: /\bevery\s+other\s+day\b/i, build: () => ({ freq: "daily", interval: 2 }) },
     { re: /\bevery\s+other\s+month\b/i, build: () => ({ freq: "monthly", interval: 2 }) },
     { re: /\bevery\s+(\d+)\s+months?\b/i, build: (n) => ({ freq: "monthly", interval: n }) },
-    { re: /\bevery\s+(\d+)\s+weeks?\b/i, build: (n) => ({ freq: "weekly", interval: n, byweekday: [dayOfWeek(anchorDate ?? refDateISO)] }) },
+    { re: /\bevery\s+(\d+)\s+weeks?\b/i, build: (n) => ({ freq: "weekly", interval: n, byweekday: [weekDay()] }) },
     { re: /\bevery\s+(\d+)\s+days?\b/i, build: (n) => ({ freq: "daily", interval: n }) },
     { re: /\bevery\s+month\b/i, build: () => ({ freq: "monthly", interval: 1 }) },
-    { re: /\b(?:every\s+week|weekly)\b/i, build: () => ({ freq: "weekly", interval: 1, byweekday: [dayOfWeek(anchorDate ?? refDateISO)] }) },
+    { re: /\b(?:every\s+week|weekly)\b/i, build: () => ({ freq: "weekly", interval: 1, byweekday: [weekDay()] }) },
     { re: /\b(?:every\s+day|daily)\b/i, build: () => ({ freq: "daily", interval: 1 }) },
   ];
 

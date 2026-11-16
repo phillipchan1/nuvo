@@ -2,7 +2,21 @@
  * Worker-side agent / MCP reads and writes. Every query is scoped by
  * `store.userId`. Calendar provider writes stay blocked.
  */
-import type { AgentContext } from "../../supabase/functions/agent/contextShape.ts";
+import type { AgentContext, SlateProject } from "../../supabase/functions/agent/contextShape.ts";
+import { applyEffectiveStatus, projectTaskRollup } from "../../supabase/functions/agent/projectStatusCore.ts";
+// The week's rules — the SAME kernel the app and the edge agent derive the week
+// from. Never re-implement one here (tests/planning-kernel.test.ts).
+import {
+  carriedWeeks,
+  fromProjectRow,
+  isCompleteStatus,
+  isOnSlate,
+  isOpenProjectStatus,
+  needsASprint,
+  planningWeekStart,
+  slateOrder,
+  spansWeek,
+} from "../../supabase/functions/_shared/planningRules.ts";
 import {
   buildDaySchedule,
   buildSlotSummaries,
@@ -64,7 +78,7 @@ export async function buildSnapshot(
   const start = rangeStart ?? new Date(nowMs - 7 * 86_400_000).toISOString();
   const end = rangeEnd ?? new Date(nowMs + 7 * 86_400_000).toISOString();
 
-  const [domains, initiatives, projects, tasks, slots, labels, settingsRows, events] = await Promise.all([
+  const [domains, initiatives, projects, tasks, slots, labels, settingsRows, events, sprints] = await Promise.all([
     listOwned(store, "domains"),
     listOwned(store, "initiatives"),
     listOwned(store, "projects"),
@@ -79,6 +93,7 @@ export async function buildSnapshot(
         AND start_at < ${end}
         AND end_at > ${start}
     ` as Promise<Record<string, unknown>[]>,
+    listOwned(store, "sprints"),
   ]);
 
   const settings = settingsRows[0] ?? null;
@@ -100,6 +115,8 @@ export async function buildSnapshot(
   const slotSummaries = buildSlotSummaries(slots, slotChildren, zone, nowMs);
   const todaySchedule = buildDaySchedule(visibleEvents, scheduled, slotSummaries, today);
   const todayOpenWindows = computeOpenWindows(visibleEvents, scheduled, slotSummaries, today, nowMs, zone);
+
+  const week = weekRead(tasks, projects, sprints, today, nowMs, zone);
 
   const inbox = tasks.filter((t) => t.status === "inbox" && !t.trashed_at);
   const todayTasks = tasks.filter((t) => t.do_date === today && !t.start_time && t.status !== "trashed" && t.status !== "done");
@@ -133,17 +150,139 @@ export async function buildSnapshot(
     recurringUpkeep: [],
     recurringSlots: [],
     scheduled,
-    weekStart: today,
-    weekSlate: [],
-    needsASprint: [],
-    nextWeekSlate: [],
-    sprintGoal: null,
-    unattachedPriorities: [],
-    weekPool: [],
+    ...week,
     events: visibleEvents,
     writableCalendars: [],
     labels: labels.map((l) => ({ id: String(l.id), name: String(l.name ?? "") })),
     vertical: { domains, initiatives, projects },
+  };
+}
+
+/** A timestamp column as an ISO string — the driver hands back a `Date`. */
+function isoOrNull(v: unknown): string | null {
+  if (v instanceof Date) return v.toISOString();
+  return typeof v === "string" && v ? v : null;
+}
+
+/**
+ * The week, as the chat must read it — the slate, the candidates, what is queued
+ * behind it, the sprint's goal and pool. The same derivation the edge agent runs
+ * (supabase/functions/agent/context.ts), over the rows this Worker already
+ * loaded, through the same kernel: without it, production chat was told the
+ * week started today and held nothing, and said the week was unplanned over a
+ * full deck.
+ */
+export function weekRead(
+  tasks: Record<string, unknown>[],
+  projectRowsRaw: Record<string, unknown>[],
+  sprints: Record<string, unknown>[],
+  today: string,
+  nowMs: number,
+  zone: string,
+): Pick<AgentContext, "weekStart" | "weekSlate" | "needsASprint" | "nextWeekSlate" | "sprintGoal" | "unattachedPriorities" | "weekPool"> {
+  const weekStart = planningWeekStart(today);
+  const sprint = sprints.find((s) => s.week_start === weekStart) ?? null;
+  type ProjRow = {
+    id: string;
+    name: string;
+    outcome: string | null;
+    status: string;
+    domain_id: string | null;
+    start_date: string | null;
+    target_date: string | null;
+    shipped_at: string | null;
+  };
+  // the effective status — the tasks decide, as in the app and the edge agent
+  const projectRows = applyEffectiveStatus(
+    projectRowsRaw.map(
+      (p): ProjRow => ({
+        id: String(p.id),
+        name: String(p.name ?? ""),
+        outcome: (p.outcome as string | null) ?? null,
+        status: String(p.status ?? ""),
+        domain_id: (p.domain_id as string | null) ?? null,
+        start_date: (p.start_date as string | null) ?? null,
+        target_date: (p.target_date as string | null) ?? null,
+        shipped_at: isoOrNull(p.shipped_at),
+      }),
+    ),
+    projectTaskRollup(tasks),
+  );
+  const nextWeekStart = new Date(new Date(weekStart + "T00:00:00Z").getTime() + 7 * 86_400_000).toISOString().slice(0, 10);
+
+  const slateRows = projectRows
+    .filter((p) => isOnSlate(fromProjectRow(p), weekStart))
+    .sort((a, b) => slateOrder(fromProjectRow(a), fromProjectRow(b), weekStart));
+  const needsRows = projectRows.filter((p) => needsASprint(fromProjectRow(p)));
+  const nextRows = projectRows.filter((p) => isOpenProjectStatus(p.status) && spansWeek(fromProjectRow(p), nextWeekStart));
+
+  const bySort = (a: Record<string, unknown>, b: Record<string, unknown>) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0);
+  const openWork = tasks.filter((t) => t.status === "backlog" || t.status === "planned").sort(bySort);
+  const tasksByProject = new Map<string, Record<string, unknown>[]>();
+  for (const t of openWork) {
+    const pid = (t.project_id as string | null) ?? null;
+    if (!pid) continue;
+    tasksByProject.set(pid, [...(tasksByProject.get(pid) ?? []), t]);
+  }
+
+  const rocks = ((sprint?.big_rocks ?? []) as {
+    id: string;
+    project_id?: string | null;
+    done_at: string | null;
+    title?: string | null;
+    win?: string | null;
+    roll_count?: number | null;
+  }[]);
+  const weekSlate: SlateProject[] = slateRows.map((p) => {
+    const rock = rocks.find((r) => r.project_id === p.id) ?? null;
+    const work = tasksByProject.get(p.id) ?? [];
+    const shipped = isCompleteStatus(p.status);
+    return {
+      id: p.id,
+      name: p.name,
+      outcome: p.outcome,
+      status: p.status,
+      domainId: p.domain_id,
+      startDate: p.start_date,
+      targetDate: p.target_date,
+      priorityId: rock?.id ?? null,
+      carriedWeeks: carriedWeeks(fromProjectRow(p), weekStart),
+      verdict: rock
+        ? { id: rock.id, title: rock.title ?? null, win: rock.win ?? null, doneAt: rock.done_at ?? null, rollCount: rock.roll_count ?? 0 }
+        : null,
+      landed: Boolean(rock?.done_at) || shipped,
+      shipped,
+      openTasks: work.slice(0, 12).map((t) => ({
+        id: String(t.id),
+        title: String(t.title ?? ""),
+        status: String(t.status ?? ""),
+        durationMinutes: (t.duration_minutes as number) ?? 30,
+        rollCount: (t.roll_count as number) ?? 0,
+        scheduled: Boolean(t.start_time),
+      })),
+      openTaskCount: work.length,
+      scheduledTaskCount: work.filter((t) => Boolean(t.start_time)).length,
+    };
+  });
+
+  return {
+    weekStart,
+    weekSlate,
+    needsASprint: needsRows.slice(0, 15).map((p) => ({
+      id: p.id,
+      name: p.name,
+      outcome: p.outcome,
+      domainId: p.domain_id,
+      openTaskCount: (tasksByProject.get(p.id) ?? []).length,
+    })),
+    nextWeekSlate: nextRows.map((p) => ({ id: p.id, name: p.name, startDate: p.start_date, targetDate: p.target_date })),
+    sprintGoal: (sprint?.goal as string | null) ?? null,
+    unattachedPriorities: rocks
+      .filter((r) => !r.project_id)
+      .map((r) => ({ id: r.id, title: r.title ?? null, win: r.win ?? null, doneAt: r.done_at ?? null })),
+    weekPool: sprint
+      ? openWork.filter((t) => t.sprint_id === sprint.id).map((t) => fmtTask(t, today, nowMs, zone))
+      : [],
   };
 }
 

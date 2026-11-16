@@ -41,6 +41,7 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
   private filters: Filter[] = [];
   private selectStr = "*";
   private limitN: number | null = null;
+  private offsetN = 0;
   private mode: "select" | "update" | "delete" | "insert" | "upsert" = "select";
   private conflictCols: string[] = [];
   private payload: Row | Row[] | null = null;
@@ -83,6 +84,12 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
     return this;
   }
   not(col: string, op: string, val: unknown) {
+    if (op === "in") {
+      // PostgREST list syntax: "(a,b,c)"
+      const vals = String(val).replace(/^\(|\)$/g, "").split(",").map((v) => v.trim());
+      this.filters.push((r) => !vals.includes(String(r[col])));
+      return this;
+    }
     if (op !== "is") throw new Error(`fakeSupabase: not(${op}) unsupported`);
     this.filters.push((r) => r[col] !== val);
     return this;
@@ -108,6 +115,12 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
   }
   limit(n: number) {
     this.limitN = n;
+    return this;
+  }
+  /** PostgREST paging — inclusive bounds, over the fixture's order. */
+  range(from: number, to: number) {
+    this.offsetN = from;
+    this.limitN = to - from + 1;
     return this;
   }
   maybeSingle() {
@@ -143,7 +156,7 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
 
   private matched(): Row[] {
     const hits = this.rows.filter((r) => this.filters.every((f) => f(r)));
-    return this.limitN === null ? hits : hits.slice(0, this.limitN);
+    return this.limitN === null ? hits.slice(this.offsetN) : hits.slice(this.offsetN, this.offsetN + this.limitN);
   }
 
   /** Attach any embedded relation the select string asked for. */

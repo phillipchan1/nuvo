@@ -18,7 +18,16 @@
  * network, a Supabase project, or a clock.
  */
 
-import { pendingOps, ack, recordFailure, refreshOutboxStatus, setOutboxStatus } from "./outbox";
+import {
+  pendingOps,
+  ack,
+  markInFlight,
+  outboxOwner,
+  recordFailure,
+  refreshOutboxStatus,
+  setOutboxOwner,
+  setOutboxStatus,
+} from "./outbox";
 import type { Op, SyncTable } from "./ops";
 
 export type SendResult =
@@ -30,6 +39,12 @@ export type SendResult =
 
 export interface Transport {
   send(op: Op): Promise<SendResult>;
+  /**
+   * Who the session is right now, read at the start of every pass. When
+   * present, the pass sends only that account's ops — and nothing at all
+   * without a session. Optional so a bare test transport keeps the old rule.
+   */
+  owner?(): Promise<string | null>;
 }
 
 export interface DrainReport {
@@ -89,6 +104,24 @@ export function drain(transport: Transport): Promise<DrainReport> {
 async function runDrain(transport: Transport): Promise<DrainReport> {
   const sentTables = new Set<SyncTable>();
   const report: DrainReport = { sent: 0, parked: 0, sentTables, interrupted: false };
+  // The session decides whose ops go out. Never drain without one: a queue
+  // left by a signed-out account must not be delivered into the next one.
+  if (transport.owner) {
+    let uid: string | null;
+    try {
+      uid = await transport.owner();
+    } catch {
+      uid = null;
+    }
+    setOutboxOwner(uid);
+    if (!uid) {
+      setOutboxStatus({ syncing: false });
+      return report;
+    }
+  } else if (outboxOwner() === null) {
+    setOutboxStatus({ syncing: false });
+    return report;
+  }
   const ops = await pendingOps();
   if (!ops.length) {
     setOutboxStatus({ syncing: false, lastError: undefined });
@@ -96,9 +129,30 @@ async function runDrain(transport: Transport): Promise<DrainReport> {
   }
 
   setOutboxStatus({ syncing: true });
+  // From here until every result is recorded, these may be on the wire: a
+  // delete queued meanwhile must not annihilate one of their inserts.
+  markInFlight(ops);
+  try {
+    return await sendPass(transport, ops, report, sentTables);
+  } finally {
+    markInFlight([]);
+  }
+}
+
+async function sendPass(
+  transport: Transport,
+  ops: Op[],
+  report: DrainReport,
+  sentTables: Set<SyncTable>,
+): Promise<DrainReport> {
   const delivered: Op[] = [];
+  /** Rows whose insert or delete parked in this pass: their later ops stay
+   *  queued behind it (the outbox holds them from the next pass on — see
+   *  `partition` in outbox.ts). */
+  const parkedRows = new Set<string>();
 
   for (const op of ops) {
+    if (parkedRows.has(`${op.table}:${op.rowId}`)) continue;
     let result: SendResult;
     try {
       result = await transport.send(op);
@@ -130,6 +184,7 @@ async function runDrain(transport: Transport): Promise<DrainReport> {
 
     // Fatal: park it and keep going, so one poisoned row can't wedge the queue.
     await recordFailure(op, result.error, true);
+    if (op.kind !== "update") parkedRows.add(`${op.table}:${op.rowId}`);
     report.parked++;
   }
 
@@ -187,6 +242,15 @@ export function classifyError(error: unknown): { retriable: boolean; message: st
   if (status === 429) return { retriable: true, message };
   // Postgres: serialization failure / deadlock / too many connections.
   if (code === "40001" || code === "40P01" || code === "53300") return { retriable: true, message };
+
+  // PostgREST's own codes: PGRST0xx is the database being unreachable (503)
+  // and PGRST3xx is the bearer — both pass. PGRST1xx (a request it cannot
+  // parse) and PGRST2xx (a column or function the schema cache lacks — the
+  // PGRST204 of a client writing a column the server does not have yet) are
+  // considered refusals. The error body carries no HTTP status, so without this
+  // they fell through to "retriable" and held the whole queue behind them.
+  if (code != null && /^PGRST[03]/.test(code)) return { retriable: true, message };
+  if (code != null && /^PGRST/.test(code)) return { retriable: false, message };
 
   // Considered refusals: RLS, constraints, bad payloads.
   if (status != null && status >= 400 && status < 500) return { retriable: false, message };

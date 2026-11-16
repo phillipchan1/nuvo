@@ -20,6 +20,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
+import { toast } from "sonner";
 import { useVertical } from "../../hooks/useVertical";
 import { useDeferProject } from "../../hooks/useProjectTime";
 import { useSettings } from "../../hooks/useSettings";
@@ -289,7 +290,9 @@ export default function SundayRitual({
 
   const stepIx = PLAN_STEPS.indexOf(lane);
   const lastStep = stepIx === PLAN_STEPS.length - 1;
-  const forward = () => (lastStep ? void commit() : setLane(PLAN_STEPS[stepIx + 1]));
+  // a failed write is said, never swallowed — the plan stays open to try again
+  const finish = () => commit().catch((e) => toast.error(e instanceof Error ? e.message : "Couldn't commit the week"));
+  const forward = () => (lastStep ? void finish() : setLane(PLAN_STEPS[stepIx + 1]));
 
   // esc closes; the draft resumes — nothing is committed until you say so.
   // ↵ completes the step you're on; the commit itself asks for ⌘↵.
@@ -326,7 +329,7 @@ export default function SundayRitual({
           <Button kind="ghost" size="md" disabled={stepIx === 0} onClick={() => setLane(PLAN_STEPS[Math.max(0, stepIx - 1)])}>
             Back
           </Button>
-          <WalkAction lane={lane} stepCount={PLAN_STEPS.length} applying={applying} onNext={setLane} onCommit={() => void commit()} />
+          <WalkAction lane={lane} stepCount={PLAN_STEPS.length} applying={applying} onNext={setLane} onCommit={() => void finish()} />
         </FlowFoot>
       }
     >

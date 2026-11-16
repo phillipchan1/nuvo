@@ -158,6 +158,9 @@ const calls: Call[] = [];
 let failInvoiceRetrieve = false;
 let appleApiTx: string | null = null;
 let appleApiDown = false;
+// Stripe's CURRENT copy of a subscription, as GET /v1/subscriptions/:id answers.
+let failSubRetrieve = false;
+const stripeSubs = new Map<string, Record<string, unknown>>();
 const stripeFetch = async (input: string, init: RequestInit = {}): Promise<Response> => {
   const headers = Object.fromEntries(new Headers(init.headers).entries());
   calls.push({ url: input, method: init.method ?? "GET", body: String(init.body ?? ""), headers });
@@ -185,6 +188,11 @@ const stripeFetch = async (input: string, init: RequestInit = {}): Promise<Respo
       return j({ data: [{ id: "promo_R", code: "REX-AAAA", metadata: { app: "nuvo", kind: "referral", referrer_user_id: R } }] });
     }
     return j({ data: [] });
+  }
+  if (path.startsWith("/v1/subscriptions/")) {
+    if (failSubRetrieve) return j({ error: { message: "stripe is down" } }, 500);
+    const sub = stripeSubs.get(decodeURIComponent(path.slice("/v1/subscriptions/".length)));
+    return sub ? j(sub) : j({ error: { message: "No such subscription", code: "resource_missing" } }, 404);
   }
   if (path.startsWith("/v1/checkout/sessions/")) {
     return j({
@@ -329,6 +337,38 @@ const subEvent = {
   };
   await req("/api/stripe-webhook", await stripeEvent(foreign), flipped);
   ok((await row(A)).status === "active", "stripe webhook: another app's subscription on the shared account is ignored");
+
+  // An OLD subscription ending must not lock out a user paying on a newer one.
+  const oldSub = { ...subEvent.data.object, id: "sub_OLD", status: "canceled" };
+  await req("/api/stripe-webhook", await stripeEvent({ id: "evt_old_del", type: "customer.subscription.deleted", data: { object: oldSub } }), flipped);
+  let rr = await row(A);
+  ok(rr.status === "active" && rr.stripe_subscription_id === "sub_A", `stripe webhook: old subscription's deleted leaves the paying row alone (got ${rr.status}/${rr.stripe_subscription_id})`);
+  await req("/api/stripe-webhook", await stripeEvent({ id: "evt_old_upd", type: "customer.subscription.updated", data: { object: { ...oldSub, status: "past_due" } } }), flipped);
+  rr = await row(A);
+  ok(rr.status === "active" && rr.stripe_subscription_id === "sub_A", "stripe webhook: old subscription's updated (past_due) leaves the paying row alone");
+  // …but a NEW active subscription does take the row over.
+  const newSub = { ...subEvent.data.object, id: "sub_NEW", status: "active" };
+  stripeSubs.set("sub_NEW", newSub);
+  await req("/api/stripe-webhook", await stripeEvent({ id: "evt_new_upd", type: "customer.subscription.updated", data: { object: newSub } }), flipped);
+  rr = await row(A);
+  ok(rr.status === "active" && rr.stripe_subscription_id === "sub_NEW", "stripe webhook: a new active subscription takes the row over");
+
+  // Out of order: an OLDER event (past_due) delivered after Stripe already
+  // moved on (active) must not overwrite the newer state.
+  const late = { ...newSub, status: "past_due" };
+  await req("/api/stripe-webhook", await stripeEvent({ id: "evt_new_late", type: "customer.subscription.updated", created: NOW - 600, data: { object: late } }), flipped);
+  rr = await row(A);
+  ok(rr.status === "active", `stripe webhook: a late, older event does not overwrite the current state (got ${rr.status})`);
+  // Stripe GET failing (5xx) → 500 + ledger released, so Stripe retries.
+  stripeSubs.delete("sub_NEW");
+  failSubRetrieve = true;
+  const down = await req("/api/stripe-webhook", await stripeEvent({ id: "evt_new_down", type: "customer.subscription.updated", data: { object: late } }), flipped);
+  failSubRetrieve = false;
+  ok(down.status === 500, `stripe webhook: subscription re-fetch failure answers 500 (got ${down.status})`);
+  ok((await db.query(`SELECT count(*)::int AS n FROM stripe_webhook_events WHERE event_id = 'evt_new_down'`)).rows[0]!.n === 0 as never, "stripe webhook: re-fetch failure releases the ledger");
+  ok((await row(A)).status === "active", "stripe webhook: re-fetch failure wrote nothing");
+  // Restore A to the sub_A baseline the rest of the suite expects.
+  await db.query(`UPDATE subscriptions SET stripe_subscription_id = 'sub_A' WHERE user_id = $1`, [A]);
 }
 
 // ── 4. Handler failure releases the ledger so Stripe's retry runs it ─────────

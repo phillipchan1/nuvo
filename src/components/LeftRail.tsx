@@ -5,9 +5,9 @@ import { isOverdue, nextWeekISO, todayISO, clockInputValue } from "../lib/dates"
 import { undoAutoPatch } from "../lib/grooming";
 import { TRASH_LIMIT, TRASH_RETENTION_DAYS, useTrashedTasks, type useTaskMutations } from "../hooks/useTasks";
 import TaskComposer, { type TaskComposerHandle } from "./tasks/TaskComposer";
-import TaskActionsMenu from "./tasks/TaskActionsMenu";
+import TaskActionsMenu, { useTrashTask } from "./tasks/TaskActionsMenu";
 import { TaskDateMenu, TaskMoveMenu, useRenameAct } from "./tasks/TaskMenus";
-import { orderBeside, useTaskListKeys, type TaskListKeyActs } from "./tasks/useTaskListKeys";
+import { placeBeside, useTaskListKeys, type TaskListKeyActs } from "./tasks/useTaskListKeys";
 import { claimKeys, keyOwner } from "./tasks/keyOwner";
 import { restoreFromTrashPatch } from "../lib/types";
 import { useVerticalDirectory } from "../hooks/useVertical";
@@ -646,6 +646,7 @@ function LeftRail({
     document.querySelector<HTMLElement>(`[data-task-drag="${id}"]`)?.getBoundingClientRect() ??
     new DOMRect(360, 200, 0, 40);
   const renameTask = useRenameAct(mutations);
+  const trashTask = useTrashTask(mutations);
   const railKeysOn =
     hotkeysEnabled && !rowMenu && !editingId && !contextMenu && !labelPickerFor && !schedulePickerFor && !remindPickerFor;
   // The acts on a task row, shared by the tray's list and the crown's open
@@ -661,7 +662,7 @@ function LeftRail({
           else mutations.complete(t);
         }),
       trash: (targets) => {
-        targets.forEach((t) => mutations.trash(t));
+        targets.forEach((t) => trashTask(t));
         setContextMenu(null);
       },
       date: (targets) => setRowMenu({ kind: "date", targets, anchor: rowRect(targets[0].id) }),
@@ -745,9 +746,12 @@ function LeftRail({
       add: (anchor, where) => {
         const band = anchor ? bands.of.get(anchor.id) : null;
         const peers = band ? (bands.ids.get(band) ?? []).map((id) => byId.get(id)).filter((x): x is Task => Boolean(x)) : [];
-        const sortOrder = anchor && peers.length ? orderBeside(peers, anchor, where) : undefined;
+        const placed = anchor && peers.length ? placeBeside(peers, anchor, where) : undefined;
+        // A tied run (fresh captures share one sort_order) spreads first, in the
+        // order on screen — otherwise "add below" the first of it lands at its end.
+        if (placed?.spread.length) mutations.reorder(peers, peers.map((p) => p.id), { undo: false });
         captureRef.current?.focus(
-          anchor && sortOrder != null ? { sortOrder, label: `${where} “${anchor.title}”` } : undefined,
+          anchor && placed ? { sortOrder: placed.sortOrder, label: `${where} “${anchor.title}”` } : undefined,
         );
       },
       extra: (e, targets) => {

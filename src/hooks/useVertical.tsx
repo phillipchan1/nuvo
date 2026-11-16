@@ -43,7 +43,9 @@ import {
 } from "../lib/types";
 import {
   buildVertical,
+  domainDeleteTaskPatches,
   normalizeInitiativeStatus,
+  projectDeleteTaskPatches,
   type Domain,
   type DomainRow,
   type Initiative,
@@ -174,19 +176,24 @@ export interface VerticalStore {
    *  project already had a sitting this week. */
   applySlots: (
     slots: { title: string; doDateISO: string; startISO: string; durationMins: number; domainId: string | null; color: string | null; projectId?: string | null; existingSlotId?: string | null; taskIds: string[] }[],
-    opts?: { sprintId?: string | null },
+    opts?: WeekTarget,
   ) => Promise<string[]>;
   /** Standing-slot routing (docs/standing-slots.md): move already-committed tasks
    *  INTO pre-existing recurring slots as children — slot_id set, do_date = the
    *  slot's day, start_time cleared, status planned. The plan's "layer 0". */
   assignToStanding: (
     specs: { slotId: string; doDateISO: string; taskIds: string[] }[],
-    opts?: { sprintId?: string | null },
+    opts?: WeekTarget,
   ) => Promise<void>;
   /** The Plan flow's one commit: commit the kept candidates to the week,
    *  schedule the placed ones, and stamp the sprint goal + reviewed — all
-   *  against the current planning week's sprint, in order, one await. */
+   *  against the sprint of `weekStartISO` (default: the current planning
+   *  week), in order, one await. */
   planWeek: (input: {
+    /** The week being planned. A plan opened on next week (late Friday,
+     *  `planSessionWeekStart`) must stamp NEXT week's sprint — not the one
+     *  `planningWeekStart` still calls current. Default: the planning week. */
+    weekStartISO?: string;
     commitTaskIds: string[];
     placements: {
       id: string;
@@ -218,6 +225,13 @@ export interface VerticalStore {
   /** Cache Nuvo's soundness judgment (verification + verified_at). Judging is
    *  read-only to the plan — it does NOT stamp tended_at (that's an action). */
   saveVerdict: (kind: "project" | "initiative", id: string, verdict: SoundnessVerdict) => Promise<void>;
+}
+
+/** Which week's sprint a write commits work to: `weekStartISO` resolves (and
+ *  creates, first time) that week's sprint; a bare `sprintId` is used as given. */
+export interface WeekTarget {
+  sprintId?: string | null;
+  weekStartISO?: string;
 }
 
 /** The attachable half of a BlueprintTree — what Tending grows under an
@@ -469,6 +483,19 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  // Sprints for weeks AFTER the planning week. A plan made for next week (late
+  // Friday — `planSessionWeekStart`) stamps that week's sprint, and entering
+  // THIS week must not sweep what is already committed to the one ahead (see
+  // releaseStaleCommitments). Not loaded yet = don't sweep.
+  useQuery({
+    queryKey: ["sprints-ahead", weekStart],
+    queryFn: async (): Promise<Pick<Sprint, "id" | "week_start">[]> => {
+      const { data, error } = await supabase.from("sprints").select("id, week_start").gt("week_start", weekStart);
+      if (error) throw error;
+      return (data ?? []) as Pick<Sprint, "id" | "week_start">[];
+    },
+  });
+
   // Attended calendar events feed the same domain ledger as completed blocks.
   // Pull the 13-week pulse window (oldest week the open domain renders → end of the
   // current week) so meeting actuals line up with the task series.
@@ -599,16 +626,20 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
     const deleteProjectRows = async (ids: string[]) => {
       if (!ids.length) return;
       const doomed = new Set(ids);
+      // read the rows BEFORE they leave the cache — the tasks are re-filed under them
+      const projectRows = qc.getQueryData<ProjectRow[]>(["vertical", "projects"]) ?? [];
+      const initiativeRows = qc.getQueryData<InitiativeRow[]>(["vertical", "initiatives"]) ?? [];
       removeRows<ProjectRow>(["vertical", "projects"], ids);
 
       const tasks = qc.getQueryData<Task[]>(["tasks", "all"]) ?? [];
       const slots = qc.getQueryData<Slot[]>(["slots"]) ?? [];
 
-      for (const t of tasks) {
-        if (t.project_id && doomed.has(t.project_id)) {
-          patchCaches(qc, t.id, { project_id: null });
-          await queueWrite(makeOp("tasks", "update", t.id, { project_id: null }));
-        }
+      // The work is re-filed under what the project hung from (its initiative,
+      // its domain) — `{ project_id: null }` alone left stale initiative/domain
+      // copies, or a parentless `backlog` row no list shows.
+      for (const { id, patch } of projectDeleteTaskPatches(tasks, projectRows, initiativeRows, ids)) {
+        patchCaches(qc, id, patch);
+        await queueWrite(makeOp("tasks", "update", id, patch as Record<string, unknown>));
       }
       for (const s of slots) {
         if (s.project_id && doomed.has(s.project_id)) {
@@ -733,10 +764,13 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
      * invented id would fail its foreign key and park. Refusing here costs the
      * user a clear message; guessing would cost them the whole plan.
      */
-    const ensureSprint = async (): Promise<Sprint> => {
-      const cached = qc.getQueryData<Sprint | null>(["sprint", weekStart]);
+    const ensureSprint = async (weekISO: string = weekStart): Promise<Sprint> => {
+      // Only entering the CURRENT planning week releases stale commitments — a
+      // sprint for a week ahead is being planned, and this week is still live.
+      const entering = weekISO === weekStart;
+      const cached = qc.getQueryData<Sprint | null>(["sprint", weekISO]);
       if (cached) {
-        releaseStaleCommitments(cached.id);
+        if (entering) releaseStaleCommitments(cached.id);
         return cached;
       }
 
@@ -749,14 +783,23 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       const uid = await userId();
       const { data: row, error } = await supabase
         .from("sprints")
-        .upsert({ user_id: uid, week_start: weekStart }, { onConflict: "user_id,week_start" })
+        .upsert({ user_id: uid, week_start: weekISO }, { onConflict: "user_id,week_start" })
         .select("*")
         .single();
       if (error) throw error;
-      qc.setQueryData(["sprint", weekStart], row);
-      releaseStaleCommitments((row as Sprint).id);
+      qc.setQueryData(["sprint", weekISO], row);
+      if (entering) releaseStaleCommitments((row as Sprint).id);
+      else if (weekISO > weekStart) {
+        qc.setQueryData<Pick<Sprint, "id" | "week_start">[]>(["sprints-ahead", weekStart], (old) =>
+          old && !old.some((r) => r.id === (row as Sprint).id) ? [...old, { id: (row as Sprint).id, week_start: weekISO }] : old,
+        );
+      }
       return row as Sprint;
     };
+
+    /** The sprint id a week-targeted write stamps (see `WeekTarget`). */
+    const sprintIdFor = async (opts?: WeekTarget): Promise<string | null> =>
+      opts?.weekStartISO ? (await ensureSprint(opts.weekStartISO)).id : opts?.sprintId ?? null;
 
     /**
      * Entering a week releases unfinished commitments from PAST sprints back to
@@ -769,6 +812,15 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
      * cache and queued per row instead.
      */
     const releaseStaleCommitments = (currentSprintId: string) => {
+      // A sprint for a week AHEAD is not stale — it is next week's plan, made
+      // early. Until we know which sprints those are, don't sweep at all.
+      const ahead = qc.getQueryData<Pick<Sprint, "id" | "week_start">[]>(["sprints-ahead", weekStart]);
+      if (!ahead) return;
+      const keep = new Set([currentSprintId, ...ahead.map((r) => r.id)]);
+      for (const [key, row] of qc.getQueriesData<Sprint | null>({ queryKey: ["sprint"] })) {
+        if (row && typeof key[1] === "string" && key[1] > weekStart) keep.add(row.id);
+      }
+
       const seen = new Map<string, Task>();
       for (const [, rows] of qc.getQueriesData<Task[]>({ queryKey: ["tasks"] })) {
         for (const t of rows ?? []) seen.set(t.id, t);
@@ -776,7 +828,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
 
       void (async () => {
         for (const t of seen.values()) {
-          if (!t.sprint_id || t.sprint_id === currentSprintId) continue;
+          if (!t.sprint_id || keep.has(t.sprint_id)) continue;
           if (t.status === "done" || t.status === "trashed") continue;
 
           // A parentless week-only capture goes back to the inbox rather than
@@ -898,10 +950,21 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         persistVertical("domains", id, rowPatch);
       },
       deleteDomain: (id) => {
+        // The FK's `on delete set null` clears the pointer but not the status, so
+        // a loose `backlog` task filed straight under the domain landed in no
+        // list at all. Each one is re-filed first (one op per row, resolved from
+        // the cache now — the same rule as releasing a stale commitment).
+        const patches = domainDeleteTaskPatches(allCachedTasks(), id);
         removeRows<DomainRow>(["vertical", "domains"], [id]);
-        void queueWrite(makeOp("domains", "delete", id));
-        invalidateWhenSafe(qc, "domains", ["vertical"]);
-        invalidateWhenSafe(qc, "tasks", ["tasks"]);
+        void (async () => {
+          for (const { id: taskId, patch } of patches) {
+            patchCaches(qc, taskId, patch);
+            await queueWrite(makeOp("tasks", "update", taskId, patch as Record<string, unknown>));
+          }
+          await queueWrite(makeOp("domains", "delete", id));
+          invalidateWhenSafe(qc, "domains", ["vertical"]);
+          settleWrite(qc, "tasks", ["tasks"]);
+        })();
       },
 
       // ── initiatives ──────────────────────────────────────────────────────
@@ -1409,6 +1472,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       applySlots: async (specs, opts) => {
         const ids: string[] = [];
         if (!specs.length) return ids;
+        const sprintId = await sprintIdFor(opts);
         for (const s of specs) {
           // The slot id is minted here when the sitting is new, so the tasks
           // that ride it can reference it without waiting for a round-trip.
@@ -1469,7 +1533,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
               start_time: null,
               status: "planned",
             };
-            if (opts?.sprintId) patch.sprint_id = opts.sprintId;
+            if (sprintId) patch.sprint_id = sprintId;
             await patchTasks(s.taskIds, patch as Partial<Task>);
           }
           if (navigator.onLine) invokeQuiet("slot-mirror", { slotId });
@@ -1481,6 +1545,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
 
       assignToStanding: async (specs, opts) => {
         if (!specs.length) return;
+        const sprintId = await sprintIdFor(opts);
         for (const s of specs) {
           if (!s.taskIds.length) continue;
           // children ride the slot's day, lose their own block, and join the
@@ -1488,14 +1553,17 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           const patch: Record<string, unknown> = {
             slot_id: s.slotId, do_date: s.doDateISO, start_time: null, status: "planned",
           };
-          if (opts?.sprintId) patch.sprint_id = opts.sprintId;
+          if (sprintId) patch.sprint_id = sprintId;
           await patchTasks(s.taskIds, patch as Partial<Task>);
         }
         invalidateWhenSafe(qc, "slots", ["slots"]);
       },
 
-      planWeek: async ({ commitTaskIds, placements, goal, stamp = true }) => {
-        const sprint = await ensureSprint();
+      planWeek: async ({ weekStartISO, commitTaskIds, placements, goal, stamp = true }) => {
+        // the week being PLANNED — not necessarily the one planningWeekStart
+        // calls current (a late-Friday plan opens on next week)
+        const week = weekStartISO ?? weekStart;
+        const sprint = await ensureSprint(week);
 
         // 1 · every kept candidate becomes a week commitment (the funnel),
         //     and any inbox capture among them is processed out of the inbox.
@@ -1506,7 +1574,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           const byId = new Map(allCachedTasks().map((t) => [t.id, t]));
           for (const id of commitTaskIds) {
             const row = byId.get(id);
-            const stale = row != null && isStaleBlock(row, weekStart);
+            const stale = row != null && isStaleBlock(row, week);
             // (an undated block isn't "planned" — the same shape `unplanTask` writes)
             const patch: Partial<Task> = {
               sprint_id: sprint.id,
@@ -1566,8 +1634,8 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         //     they're toggled, so they're already on the row)
         if (stamp) {
           const rowPatch = { goal, reviewed_at: new Date().toISOString() };
-          qc.setQueryData<Sprint | null>(["sprint", weekStart], (old) => (old ? { ...old, ...rowPatch } : old));
-          await queueWrite(makeOp("sprints", "update", weekStart, rowPatch));
+          qc.setQueryData<Sprint | null>(["sprint", week], (old) => (old ? { ...old, ...rowPatch } : old));
+          await queueWrite(makeOp("sprints", "update", week, rowPatch));
         }
 
         settleWrite(qc, "tasks", ["tasks"]);

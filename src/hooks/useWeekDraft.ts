@@ -944,8 +944,14 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
     }
   }, [logKey, placedLog]);
   const writing = useRef(new Set<string>());
+  // each in-flight save, so the plan's finish can wait for it instead of writing
+  // the same block a second time (resolves true when the block landed)
+  const inFlight = useRef(new Map<string, Promise<boolean>>());
+  // blocks saved this sitting whose placement hasn't left the draft yet (the
+  // tasks refetch is what takes it out) — the finish must not write them again
+  const saved = useRef(new Set<string>());
   const mintedSlots = useRef(new Set<string>());
-  const writePlacement = async (p: Placement) => {
+  const writePlacement = async (p: Placement): Promise<boolean> => {
     const key = placementKey(p);
     const block = slotById.get(p.task.id);
     const taskIds = block ? block.taskIds : [p.task.id];
@@ -960,14 +966,17 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
     }
     try {
       // the work joins the week (no reviewed stamp, no goal), then gets its time
-      await planWeek({ commitTaskIds: taskIds, placements: taskPlacements, goal: "", stamp: false });
+      await planWeek({ weekStartISO, commitTaskIds: taskIds, placements: taskPlacements, goal: "", stamp: false });
       const ids = spec ? await applySlots([spec]) : [];
       const slotId = ids[0] ?? null;
       if (slotId && !spec?.existingSlotId) mintedSlots.current.add(slotId);
+      saved.current.add(key);
       setPlacedLog((prev) => [...prev, { key, name: block?.name ?? p.task.title, taskIds, slotId, grewFrom, depth, before }]);
+      return true;
     } catch (e) {
       // said, never swallowed: the block goes back to being a proposal
       toast.error(`Couldn't save ${block?.name ?? p.task.title}${e instanceof Error ? ` — ${e.message}` : ""}`);
+      return false;
     } finally {
       // the override pinned it while it was written; from here the calendar
       // holds it, and a later block reusing this id must not inherit the pin
@@ -978,17 +987,22 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
         return next;
       });
       writing.current.delete(key);
+      inFlight.current.delete(key);
     }
   };
   useEffect(() => {
     if (!opts.saveAsYouGo) return;
+    // a saved block stops counting as saved once it has left the draft — if
+    // its work comes back untimed later, it is a proposal again
+    const live = new Set(placements.map(placementKey));
+    for (const k of saved.current) if (!live.has(k)) saved.current.delete(k);
     for (const p of placements) {
       const k = placementKey(p);
       // a part of a split overdue task can't be written apart from its
       // siblings — those land when the plan finishes
-      if (k.includes("#") || p.parts || !isHeld(k) || writing.current.has(k)) continue;
+      if (k.includes("#") || p.parts || !isHeld(k) || writing.current.has(k) || saved.current.has(k)) continue;
       writing.current.add(k);
-      void writePlacement(p);
+      inFlight.current.set(k, writePlacement(p));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts.saveAsYouGo, placements, overrides]);
@@ -1000,6 +1014,7 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
     if (rec) {
       setPlacedLog((prev) => prev.filter((r) => r !== rec));
       writing.current.delete(rec.key);
+      saved.current.delete(rec.key);
       const restore = () =>
         rec.taskIds.forEach((id) => (rec.before[id] ? taskMutations.patchTask(id, rec.before[id], { undo: false }) : unplanTask(id)));
       if (rec.slotId && rec.grewFrom != null) {
@@ -1028,7 +1043,7 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
   /** Captures you added to the week join it now, not at the finish (D-217). */
   const addToWeek = async (ids: string[]) => {
     setKept((prev) => new Set([...prev, ...ids]));
-    if (opts.saveAsYouGo && ids.length) await planWeek({ commitTaskIds: ids, placements: [], goal: "", stamp: false });
+    if (opts.saveAsYouGo && ids.length) await planWeek({ weekStartISO, commitTaskIds: ids, placements: [], goal: "", stamp: false });
   };
 
   /** What's on the plan's week from today on — what you can see and take back. */
@@ -1052,29 +1067,40 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
     return out.sort((a, b) => a.dayISO.localeCompare(b.dayISO) || a.startMin - b.startMin);
   }, [onCalBlocks, weekSlots, today]);
 
+  /** The plan's finish. Throws when a write fails — the caller says so; the
+   *  planner is never left stuck "applying". Every write targets the sprint of
+   *  the week being planned (`weekStartISO`), not the current one. */
   const commit = async () => {
     setApplying(true);
-    const { slotSpecs, taskPlacements } = writesFor(placements, mintedSlots.current);
-    // commit the pool first (every kept task joins the week), then time it.
-    // Run members ride along even if they were never "kept" — an inbox capture
-    // swept into a run is joining the week by virtue of being in one.
-    const commitTaskIds = [...new Set([...kept, ...runMemberIds])];
-    await planWeek({ commitTaskIds, placements: taskPlacements, goal: goal.trim() });
-    if (slotSpecs.length) await applySlots(slotSpecs, { sprintId: data.sprint?.id ?? null });
-    // layer 0 · file the routed work into its standing slots (sprint_id already
-    // stamped by planWeek via commitTaskIds; this sets slot_id + the slot's day)
-    if (routing.assignments.length) {
-      await assignToStanding(
-        routing.assignments.map((a) => ({
-          slotId: a.slot.id,
-          doDateISO: a.slot.do_date,
-          taskIds: a.taskIds,
-        })),
-        { sprintId: data.sprint?.id ?? null },
-      );
+    try {
+      // a block still being saved (D-217) lands first — then it is out of what
+      // the finish writes, or the same block is written twice (a second slot)
+      const pending = [...inFlight.current.values()];
+      if (pending.length) await Promise.all(pending);
+      const toWrite = placements.filter((p) => !saved.current.has(placementKey(p)));
+      const { slotSpecs, taskPlacements } = writesFor(toWrite, mintedSlots.current);
+      // commit the pool first (every kept task joins the week), then time it.
+      // Run members ride along even if they were never "kept" — an inbox capture
+      // swept into a run is joining the week by virtue of being in one.
+      const commitTaskIds = [...new Set([...kept, ...runMemberIds])];
+      await planWeek({ weekStartISO, commitTaskIds, placements: taskPlacements, goal: goal.trim() });
+      if (slotSpecs.length) await applySlots(slotSpecs, { weekStartISO });
+      // layer 0 · file the routed work into its standing slots (sprint_id already
+      // stamped by planWeek via commitTaskIds; this sets slot_id + the slot's day)
+      if (routing.assignments.length) {
+        await assignToStanding(
+          routing.assignments.map((a) => ({
+            slotId: a.slot.id,
+            doDateISO: a.slot.do_date,
+            taskIds: a.taskIds,
+          })),
+          { weekStartISO },
+        );
+      }
+      setCommitted(true);
+    } finally {
+      setApplying(false);
     }
-    setApplying(false);
-    setCommitted(true);
   };
 
   return {

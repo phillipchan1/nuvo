@@ -126,44 +126,84 @@ export function RecurrenceScopeDialog({
  * Gate a write behind the this-vs-series dialog when the event repeats.
  * Non-recurring runs immediately as THIS. Cancel runs `revert` so local
  * inspector state doesn't keep a change that never went to the provider.
+ *
+ * ONE question at a time, and a second commit while it waits never drops the
+ * first: closing a card blurs its field (one commit) and then flushes every
+ * field (another), and a single slot kept only the last — two edited fields
+ * saved one. A commit with the same `key` REPLACES the waiting one (a flush's
+ * combined patch supersedes the blur's partial one: one write, not two); any
+ * other commit of the same mode JOINS it, so one answer runs both.
+ * `isPending()` reads synchronously — a close that just flushed can't wait a
+ * render to learn it has to stay for the answer.
  */
+type PendingScope = {
+  run: (scope: RecurrenceScope) => void | Promise<void>;
+  revert: () => void;
+  mode: RecurrenceScopeMode;
+  key?: string;
+};
+
 export function useRecurringScope(recurring: boolean) {
-  const [pending, setPending] = useState<null | {
-    run: (scope: RecurrenceScope) => void | Promise<void>;
-    revert: () => void;
-    mode: RecurrenceScopeMode;
-  }>(null);
+  const [pending, setPendingState] = useState<null | PendingScope>(null);
+  const pendingRef = useRef<null | PendingScope>(null);
+  const setPending = useCallback((next: null | PendingScope) => {
+    pendingRef.current = next;
+    setPendingState(next);
+  }, []);
 
   const commit = useCallback(
     (
       run: (scope: RecurrenceScope) => void | Promise<void>,
       revert: () => void = () => {},
       mode: RecurrenceScopeMode = "edit",
+      key?: string,
     ) => {
       if (!recurring) {
         void Promise.resolve(run("THIS"));
         return;
       }
-      setPending({ run, revert, mode });
+      const prev = pendingRef.current;
+      if (prev && prev.mode === mode && !(key !== undefined && prev.key === key)) {
+        // Joined: one answer runs both writes; a cancel reverts both.
+        setPending({
+          mode,
+          key: prev.key,
+          run: async (scope) => {
+            try {
+              await prev.run(scope);
+            } finally {
+              await run(scope);
+            }
+          },
+          revert: () => {
+            revert();
+            prev.revert();
+          },
+        });
+        return;
+      }
+      setPending({ run, revert, mode, key });
     },
-    [recurring],
+    [recurring, setPending],
   );
 
   const confirm = useCallback((scope: RecurrenceScope) => {
-    if (!pending) return;
-    const { run } = pending;
+    const p = pendingRef.current;
+    if (!p) return;
     setPending(null);
-    void Promise.resolve(run(scope));
-  }, [pending]);
+    void Promise.resolve(p.run(scope));
+  }, [setPending]);
 
   const cancel = useCallback(() => {
-    pending?.revert();
+    pendingRef.current?.revert();
     setPending(null);
-  }, [pending]);
+  }, [setPending]);
 
-  const dismiss = useCallback(() => setPending(null), []);
+  const dismiss = useCallback(() => setPending(null), [setPending]);
 
-  return { pending, commit, confirm, cancel, dismiss };
+  const isPending = useCallback(() => pendingRef.current !== null, []);
+
+  return { pending, commit, confirm, cancel, dismiss, isPending };
 }
 
 /** The delete act in a card's footer: a quiet glyph that reddens under the
@@ -409,6 +449,12 @@ const POP_W = 296;
 
 type EndMode = "never" | "on" | "after";
 
+/** A typed whole number, at least 1 — what a blank or junk field means. */
+function atLeastOne(raw: string): number {
+  const n = Math.floor(Number(raw));
+  return Number.isFinite(n) && n >= 1 ? n : 1;
+}
+
 /**
  * The repeat editor's draft: the presets, the custom builder's fields, and the
  * rule they build. Both faces of the picker wear it — the desktop popover and
@@ -427,7 +473,9 @@ function useRepeatDraft(anchorISO: string, current: RecurrenceRule | null) {
 
   // ── custom builder state ──────────────────────────────────────────────
   const [freq, setFreq] = useState<RecurrenceFreq>(current?.freq ?? "weekly");
-  const [interval, setInterval] = useState(current?.interval ?? 1);
+  // Typed text, not a number: snapping "" to 1 on every keystroke turned
+  // backspace-then-"5" into "15". Clamped only when the rule is built.
+  const [interval, setInterval] = useState(String(current?.interval ?? 1));
   const [weekdays, setWeekdays] = useState<number[]>(
     current?.byweekday?.length ? current.byweekday : [anchorWeekday],
   );
@@ -435,7 +483,7 @@ function useRepeatDraft(anchorISO: string, current: RecurrenceRule | null) {
     current?.until ? "on" : current?.count ? "after" : "never",
   );
   const [untilDate, setUntilDate] = useState(current?.until ?? "");
-  const [count, setCount] = useState(current?.count ?? 10);
+  const [count, setCount] = useState(String(current?.count ?? 10));
   // Monthly / yearly answer "which day" one of two ways, never both: by date
   // ("the 14th") or by position ("the 3rd Tuesday"). One control, two states —
   // see the recurrence kernel's `bysetpos`.
@@ -443,7 +491,7 @@ function useRepeatDraft(anchorISO: string, current: RecurrenceRule | null) {
   const [setpos, setSetpos] = useState<number>(current?.bysetpos ?? setposOf(anchorISO));
 
   const buildCustom = (): RecurrenceRule => {
-    const rule: RecurrenceRule = { freq, interval: Math.max(1, interval) };
+    const rule: RecurrenceRule = { freq, interval: atLeastOne(interval) };
     if (freq === "weekly") rule.byweekday = weekdays.length ? [...weekdays].sort((a, b) => a - b) : [anchorWeekday];
     if (freq === "monthly" || freq === "yearly") {
       if (dayRule === "position") {
@@ -455,7 +503,7 @@ function useRepeatDraft(anchorISO: string, current: RecurrenceRule | null) {
       if (freq === "yearly") rule.bymonth = anchorMonth;
     }
     if (endMode === "on" && untilDate) rule.until = untilDate;
-    if (endMode === "after") rule.count = Math.max(1, count);
+    if (endMode === "after") rule.count = atLeastOne(count);
     return rule;
   };
 
@@ -598,7 +646,8 @@ function RecurrencePopover({ anchorISO, current, anchor, onPick, onClose }: Repe
                 size="sm"
                 min={1}
                 value={interval}
-                onChange={(e) => setInterval(Math.max(1, Number(e.target.value) || 1))}
+                onChange={(e) => setInterval(e.target.value)}
+                onBlur={() => setInterval(String(atLeastOne(interval)))}
                 aria-label="Repeat every"
                 frameClassName="rp-num"
               />
@@ -674,7 +723,8 @@ function RecurrencePopover({ anchorISO, current, anchor, onPick, onClose }: Repe
                   size="sm"
                   min={1}
                   value={count}
-                  onChange={(e) => setCount(Math.max(1, Number(e.target.value) || 1))}
+                  onChange={(e) => setCount(e.target.value)}
+                  onBlur={() => setCount(String(atLeastOne(count)))}
                   aria-label="Number of occurrences"
                   frameClassName="rp-num"
                 />
@@ -739,7 +789,8 @@ function RepeatSheet({ anchorISO, current, onPick, onClose }: RepeatPickerProps)
                 inputMode="numeric"
                 min={1}
                 value={interval}
-                onChange={(e) => setInterval(Math.max(1, Number(e.target.value) || 1))}
+                onChange={(e) => setInterval(e.target.value)}
+                onBlur={() => setInterval(String(atLeastOne(interval)))}
                 aria-label="Repeat every"
                 frameClassName="rp-num"
               />
@@ -802,7 +853,8 @@ function RepeatSheet({ anchorISO, current, onPick, onClose }: RepeatPickerProps)
                   inputMode="numeric"
                   min={1}
                   value={count}
-                  onChange={(e) => setCount(Math.max(1, Number(e.target.value) || 1))}
+                  onChange={(e) => setCount(e.target.value)}
+                  onBlur={() => setCount(String(atLeastOne(count)))}
                   aria-label="Number of occurrences"
                   frameClassName="rp-num"
                 />

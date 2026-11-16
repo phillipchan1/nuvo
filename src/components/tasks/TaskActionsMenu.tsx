@@ -21,7 +21,7 @@
 import type { IconName } from "../Icon";
 import { Kbd } from "../kit";
 import { PopIcon, keycaps as shortcutLabel, type PopGlyphName } from "../PopoverParts";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Task } from "../../lib/types";
 import { nextWeekISO, sameClockOn, todayISO, tomorrowISO } from "../../lib/dates";
@@ -67,15 +67,31 @@ export function trashTaskScoped(
   recurrence: Recurrence | null,
   task: Task,
   scope: "THIS" | "FOLLOWING" | "ALL",
+  opts?: Parameters<Mutations["trash"]>[1],
 ) {
   if (scope === "THIS") {
     if (recurrence && task.recurrence_date) recurrenceMutations.skipOccurrence(recurrence, task.recurrence_date);
-    mutations.trash(task);
+    mutations.trash(task, opts);
   } else if (scope === "FOLLOWING") {
     if (recurrence && task.do_date) recurrenceMutations.deleteFollowing(recurrence, task.do_date);
   } else if (recurrence) {
     recurrenceMutations.deleteSeries(recurrence);
   }
+}
+
+/** Trash from a list, a key or the bulk bar. A repeating task's occurrence is
+ *  also skipped — plain trash let the series stamp it straight back — exactly
+ *  the calendar's and the phone's "This event" (`trashTaskScoped`). */
+export function useTrashTask(mutations: Mutations) {
+  const { data: recurrences } = useRecurrences();
+  const recurrenceMutations = useRecurrenceMutations();
+  return useCallback(
+    (task: Task, opts?: Parameters<Mutations["trash"]>[1]) => {
+      const recurrence = task.recurrence_id ? (recurrences?.find((r) => r.id === task.recurrence_id) ?? null) : null;
+      trashTaskScoped(mutations, recurrenceMutations, recurrence, task, "THIS", opts);
+    },
+    [mutations, recurrenceMutations, recurrences],
+  );
 }
 
 /** Move a task to a day by hand. A timed task keeps its clock; an untimed one

@@ -20,12 +20,14 @@ import { Icon } from "../Icon";
 import { Button, Chip, Dot, Input, Switch } from "../kit";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { TouchButton } from "./touch";
+import { flushFocus } from "./Sheet";
 import { toast } from "sonner";
 import { useCalendarAccounts, useExternalEventMutations } from "../../hooks/useCalendar";
 import { useSettings } from "../../hooks/useSettings";
 import { isWritableAccount } from "../../lib/calendarWrite";
 import { EventCalendarPicker, useEventCalendar } from "../calendar/EventCalendarPicker";
-import { allDayRangeFromStart, defaultTimedRange, toDateISO } from "../../lib/dates";
+import { allDayRangeFromStart, defaultTimedRange, eventStartDay, parseDateISO } from "../../lib/dates";
+import { endFromStart } from "./dayPlan";
 import { eventRRule, type RecurrenceRule } from "../../lib/recurrence";
 import { RepeatControl } from "../RecurrencePicker";
 import { GuestsInput } from "../GuestsInput";
@@ -98,7 +100,22 @@ const EventComposer = forwardRef<EventComposerHandle, {
     if (!repeatTouched.current) setRepeatState(seedRepeat);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedRepeatKey]);
-  const [attendees, setAttendees] = useState<string[]>([]);
+  const [attendees, setAttendeesState] = useState<string[]>([]);
+  // The list as of its last change, not its last render. Tapping "Add event"
+  // never blurs the guest field on iOS, so an address typed and not entered was
+  // dropped; blurring it now commits it (GuestsInput) — in the same tick the
+  // submit reads the list, a render before state would show it.
+  const attendeesRef = useRef<string[]>([]);
+  const setAttendees = (next: string[]) => {
+    attendeesRef.current = next;
+    setAttendeesState(next);
+  };
+  const guestsFieldRef = useRef<HTMLDivElement>(null);
+  /** Commit a half-typed guest, then read the guest list as it now stands. */
+  const guestsNow = (): string[] => {
+    if (guestsFieldRef.current) flushFocus(guestsFieldRef.current);
+    return isGoogle ? attendeesRef.current : [];
+  };
   const [meetChoice, setMeetChoice] = useState<boolean | null>(null);
   const [confirmingGuests, setConfirmingGuests] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -124,10 +141,8 @@ const EventComposer = forwardRef<EventComposerHandle, {
     !allDay &&
     (meetChoice ?? shouldAddMeet(settings?.auto_add_meet ?? DEFAULT_MEET_PREFERENCE, guests.length));
 
-  const toDateInput = (iso: string) => {
-    const d = new Date(iso);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  };
+  // An all-day span reads its stored date (`allDayInstant`), a timed one its local day.
+  const toDateInput = (iso: string) => eventStartDay(iso, allDay);
   const toTimeInput = (iso: string) => {
     const d = new Date(iso);
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -147,6 +162,14 @@ const EventComposer = forwardRef<EventComposerHandle, {
 
   const setDate = (ymd: string) => {
     touched.current = true;
+    if (allDay) {
+      // Whole days move as dates; through the local clock a UTC-midnight day
+      // shifted by the zone's offset.
+      const range = allDayRangeFromStart(parseDateISO(ymd));
+      setStartAt(range.start_at);
+      setEndAt(range.end_at);
+      return;
+    }
     const deltaMs = new Date(applyDate(startAt, ymd)).getTime() - new Date(startAt).getTime();
     setStartAt((s) => applyDate(s, ymd));
     setEndAt((e) => new Date(new Date(e).getTime() + deltaMs).toISOString());
@@ -162,9 +185,8 @@ const EventComposer = forwardRef<EventComposerHandle, {
   const toggleAllDay = (next: boolean) => {
     touched.current = true;
     setAllDay(next);
-    const range = next
-      ? allDayRangeFromStart(new Date(startAt))
-      : defaultTimedRange(new Date(startAt));
+    const day = parseDateISO(toDateInput(startAt));
+    const range = next ? allDayRangeFromStart(day) : defaultTimedRange(day);
     setStartAt(range.start_at);
     setEndAt(range.end_at);
   };
@@ -174,6 +196,11 @@ const EventComposer = forwardRef<EventComposerHandle, {
 
   const finish = async (notifyGuests: boolean) => {
     if (!canCreate || saving) return;
+    const guests = guestsNow();
+    const addMeet =
+      isGoogle &&
+      !allDay &&
+      (meetChoice ?? shouldAddMeet(settings?.auto_add_meet ?? DEFAULT_MEET_PREFERENCE, guests.length));
     setSaving(true);
     setError(null);
     try {
@@ -201,7 +228,14 @@ const EventComposer = forwardRef<EventComposerHandle, {
             : `Added ${guests.length === 1 ? "1 guest" : `${guests.length} guests`} — no email sent`,
         );
       }
-      onDone({ start_at: startAt, end_at: endAt, allDay, repeats: Boolean(repeat) });
+      // Said as instants on this device's clock: an all-day day is reported as
+      // its local midnights, so "where it went" names the day it was made on.
+      onDone({
+        start_at: allDay ? parseDateISO(toDateInput(startAt)).toISOString() : startAt,
+        end_at: allDay ? parseDateISO(eventStartDay(endAt, true)).toISOString() : endAt,
+        allDay,
+        repeats: Boolean(repeat),
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not create event");
       setSaving(false);
@@ -210,7 +244,7 @@ const EventComposer = forwardRef<EventComposerHandle, {
 
   const submit = () => {
     if (!canCreate) return;
-    if (sendsInvites && !confirmingGuests) {
+    if (guestsNow().length > 0 && !confirmingGuests) {
       setConfirmingGuests(true);
       return;
     }
@@ -270,7 +304,8 @@ const EventComposer = forwardRef<EventComposerHandle, {
             value: toTimeInput(endAt),
             onChange: (e) => {
               touched.current = true;
-              setEndAt(applyTime(endAt, e.target.value));
+              // On the start's day; the next day only when the time wraps.
+              setEndAt(endFromStart(startAt, e.target.value));
             },
             "aria-label": "End time",
           })}
@@ -296,7 +331,7 @@ const EventComposer = forwardRef<EventComposerHandle, {
         <>
           <div className="mt-2">
             <RepeatControl
-              anchorISO={toDateISO(new Date(startAt))}
+              anchorISO={toDateInput(startAt)}
               value={repeat}
               onChange={setRepeat}
               variant="block"
@@ -316,7 +351,7 @@ const EventComposer = forwardRef<EventComposerHandle, {
           )}
 
           {isGoogle && (
-            <div className="mt-4">
+            <div className="mt-4" ref={guestsFieldRef}>
               <div className="mb-1.5 text-caption font-semibold text-muted">Guests</div>
               <GuestsInput value={attendees} onChange={setAttendees} />
             </div>

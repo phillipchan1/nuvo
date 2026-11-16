@@ -16,6 +16,10 @@ export interface ParsedCapture {
   title: string;
   doDate: string | null; // 'YYYY-MM-DD'
   startTime: Date | null; // concrete instant if a time was given
+  /** The words named the day ("tomorrow", "fri", "jan 3"). False for a bare
+   *  clock ("3pm"): `doDate` is then only the parser's guess at which day that
+   *  clock means, and a host showing a day should supply the day instead. */
+  dayCertain: boolean;
   durationMinutes: number | null;
   labels: string[];
   priority: TaskPriority;
@@ -35,7 +39,12 @@ export interface ParsedCapture {
 }
 
 const DURATION_RE = /\b(?:(\d+)\s*h(?:r|our)?s?)?\s*(?:(\d+)\s*m(?:in|ins|inutes)?\b)?/i;
-const DURATION_TOKEN_RE = /\b(\d+h(?:\d+m?)?|\d+\s*h(?:ours?|rs?)?(?:\s*\d+\s*m(?:ins?)?)?|\d+\s*m(?:ins?)?)\b/i;
+// Hours may be decimal ("1.5h"); minutes may be spelled out ("90 minutes").
+const MINS = "m(?:in(?:ute)?s?)?";
+const DURATION_TOKEN_RE = new RegExp(
+  `\\b(\\d+h(?:\\d+m?)?|\\d+(?:\\.\\d+)?\\s*h(?:ours?|rs?)?(?:\\s*\\d+\\s*${MINS})?|\\d+\\s*${MINS})\\b`,
+  "i",
+);
 const LABEL_RE = /#([\w-]+)/g;
 const PRIORITY_RE = /!(high|medium|med|low|none|h|m|l)\b/i;
 // @route — a single slug token (letters/digits/-/_), e.g. "@church" or
@@ -78,10 +87,10 @@ function parsePriority(token: string): TaskPriority {
 
 function parseDurationToken(token: string): number | null {
   const compact = token.replace(/\s+/g, "").toLowerCase();
-  // forms: 30m, 90m, 1h, 1h30, 1h30m, 2hours
-  const hm = compact.match(/^(\d+)h(?:ours?|rs?)?(?:(\d+)m?(?:ins?)?)?$/);
-  if (hm) return Number(hm[1]) * 60 + Number(hm[2] ?? 0);
-  const m = compact.match(/^(\d+)m(?:ins?)?$/);
+  // forms: 30m, 90m, 90minutes, 1h, 1.5h, 1h30, 1h30m, 2hours
+  const hm = compact.match(/^(\d+(?:\.\d+)?)h(?:ours?|rs?)?(?:(\d+)m?(?:in(?:ute)?s?)?)?$/);
+  if (hm) return Math.round(Number(hm[1]) * 60) + Number(hm[2] ?? 0);
+  const m = compact.match(/^(\d+)m(?:in(?:ute)?s?)?$/);
   if (m) return Number(m[1]);
   void DURATION_RE;
   return null;
@@ -190,6 +199,45 @@ function expandWithMap(s: string): { text: string; map: number[] } {
   }
   map.push(s.length);
   return { text, map };
+}
+
+type ChronoResult = ReturnType<typeof import("chrono-node").parse>[number];
+
+/** chrono read only a month name — "march", "may" — with no day or time. */
+function isLoneMonth(r: ChronoResult): boolean {
+  return (
+    r.start.isCertain("month") &&
+    !r.start.isCertain("day") &&
+    !r.start.isCertain("hour") &&
+    /^[a-z]+\.?$/i.test(r.text.trim())
+  );
+}
+
+/**
+ * The instant a clock with no am/pm means. chrono reads "at 5" as 5 AM and, with
+ * `forwardDate`, typed at 2pm pushes it to 5 AM *tomorrow* — nobody means that.
+ * On an unnamed day (or "today") it is the next 5 o'clock still ahead (5pm
+ * today); on a later named day ("friday at 5") 1–7 read as afternoon and 8–11 as
+ * morning, the hours people actually book. "9am", "17:00", "noon", "midnight"
+ * and ranges are exact.
+ */
+function bareHour(r: ChronoResult, refDate: Date, dayCertain: boolean): Date {
+  const d = r.start.date();
+  const h = d.getHours();
+  if (r.start.isCertain("meridiem") || r.end || h < 1 || h > 11) return d;
+  if (dayCertain && toDateISO(d) !== toDateISO(refDate)) {
+    if (h <= 7) d.setHours(h + 12);
+    return d;
+  }
+  const am = new Date(refDate);
+  am.setHours(h, d.getMinutes(), 0, 0);
+  if (am > refDate) return am;
+  const pm = new Date(am);
+  pm.setHours(h + 12);
+  // A named today never rolls to tomorrow; an unnamed day does.
+  if (pm > refDate || dayCertain) return pm;
+  am.setDate(am.getDate() + 1);
+  return am;
 }
 
 /**
@@ -304,6 +352,8 @@ export function parseCapture(input: string, refDate: Date = new Date(), opts: Pa
     const parsed = parseDurationToken(m[1]);
     if (!parsed || parsed < 5 || parsed > 24 * 60) continue;
     const start = (m.index ?? 0) + m[0].indexOf(m[1]);
+    // "in 90 minutes" is a when, not a length — leave it to the date parser.
+    if (/\bin\s+$/i.test(scan.slice(0, start))) continue;
     if (isKept("duration", m[1])) {
       protect(start, start + m[1].length);
       continue;
@@ -317,6 +367,7 @@ export function parseCapture(input: string, refDate: Date = new Date(), opts: Pa
   // natural-language date/time via chrono, over a copy with casual
   // abbreviations expanded — mapped back so the typed alias is what's claimed.
   let doDate: string | null = null;
+  let dateNamed = false;
   let startTime: Date | null = null;
   const expanded = expandWithMap(scan);
   const results = chrono ? chrono.parse(expanded.text, refDate, { forwardDate: true }) : [];
@@ -324,8 +375,13 @@ export function parseCapture(input: string, refDate: Date = new Date(), opts: Pa
     const start = expanded.map[r.index];
     const end = (expanded.map[r.index + r.text.length - 1] ?? start) + 1;
     if (isKept("date", input.slice(start, end))) continue;
-    const d = r.start.date();
+    // A lone month name OPENING the line is a verb ("march in the parade");
+    // anywhere later it is still a when ("pay taxes april", "launch in may").
+    if (isLoneMonth(r) && !expanded.text.slice(0, r.index).trim()) continue;
+    const dayCertain = r.start.isCertain("day") || r.start.isCertain("weekday") || r.start.isCertain("month");
+    const d = r.start.isCertain("hour") ? bareHour(r, refDate, dayCertain) : r.start.date();
     doDate = toDateISO(d);
+    dateNamed = dayCertain;
     chips.push({ kind: "date", text: doDate });
     if (r.start.isCertain("hour")) {
       startTime = snapMinutes(d);
@@ -349,6 +405,7 @@ export function parseCapture(input: string, refDate: Date = new Date(), opts: Pa
     title,
     doDate,
     startTime,
+    dayCertain: dateNamed,
     durationMinutes,
     labels,
     priority,

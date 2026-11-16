@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Session } from "@supabase/supabase-js";
 import { workersEnabled } from "../lib/backend";
 import { supabase } from "../lib/supabase";
 import { clearPersistedCache } from "../lib/sync/persist";
+import { noteSessionOwner } from "../lib/sync";
 import { setWorkerSession } from "../lib/workerSession";
 import { writeWasEntitled } from "../lib/subscription";
 import { isSpotlightWindow, isTauri } from "../lib/platform";
@@ -68,6 +70,7 @@ function sessionFromBetterAuth(user: { id: string; email?: string | null; update
 export function useAuth() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const qc = useQueryClient();
 
   useEffect(() => {
     if (workersEnabled) {
@@ -90,6 +93,9 @@ export function useAuth() {
           if (token) persistSignedBearer(token);
           if (!data?.user || !token) {
             setWorkerSession(null);
+            // Signed out: the outbox stops draining and the read caches go
+            // with the account (both of them — see `noteSessionOwner`).
+            noteSessionOwner(qc, null);
             setSession((prev) => {
               if (prev) writeWasEntitled(false);
               return null;
@@ -99,6 +105,7 @@ export function useAuth() {
           const expiresAt = data.session?.expiresAt ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
           const next = sessionFromBetterAuth(data.user, token, expiresAt);
           setWorkerSession(next);
+          noteSessionOwner(qc, next.user.id);
           setSession((prev) => (sameSession(prev, next) ? prev : next));
         };
         // Back from the sign-in door (Google / Apple): trade the one-time
@@ -146,6 +153,7 @@ export function useAuth() {
 
     const apply = (next: Session | null) => {
       if (cancelled) return;
+      noteSessionOwner(qc, next?.user?.id ?? null);
       setSession((prev) => (sameSession(prev, next) ? prev : next));
     };
 
@@ -312,6 +320,7 @@ export function useAuth() {
       window.removeEventListener("storage", onStorage);
       unlistens.forEach((u) => u());
     };
+    // `qc` is the provider's one client — stable for the app's life.
   }, []);
 
   return { session, loading };

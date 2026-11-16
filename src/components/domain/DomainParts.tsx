@@ -24,7 +24,7 @@ import {
   searchDomainSymbols,
   suggestDomainSymbol,
 } from "../../lib/domainSymbols";
-import type { Domain, DomainContext } from "../../lib/vertical";
+import { rehomePatches, type Domain, type DomainContext } from "../../lib/vertical";
 import DomainSymbol from "./DomainSymbol";
 import { Icon } from "../Icon";
 import { Button, Chip, Dot, Readiness } from "../kit";
@@ -360,9 +360,14 @@ export function DomainGroom({ domain, phone = false, open: openProp }: { domain:
   const rehome = (m: Misfiled) => {
     const target = targets[m.id] ?? m.suggestDomainId ?? "";
     if (!target) return;
-    if (m.kind === "initiative") updateInitiative(m.id, { domainId: target });
-    else if (m.kind === "project") updateProject(m.id, { domainId: target });
-    else routeTask(m.id, { domainId: target });
+    // the record's own cascade (`rehomePatches`): an initiative takes its
+    // projects; a project leaving its initiative's domain is detached from it
+    if (m.kind === "initiative" || m.kind === "project") {
+      for (const r of rehomePatches(data, m.kind, m.id, target)) {
+        if (r.kind === "initiative") updateInitiative(r.id, r.patch);
+        else updateProject(r.id, r.patch);
+      }
+    } else routeTask(m.id, { domainId: target });
     setMoved((s) => ({ ...s, [m.id]: true }));
   };
 

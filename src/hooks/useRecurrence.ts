@@ -560,10 +560,19 @@ export function useRecurrenceMutations() {
   /** Delete just one occurrence and never regenerate it (exdate). */
   const skipOccurrence = useCallback(
     async (rec: Recurrence, dateISO: string) => {
-      await queueWrite(makeOp("recurrences", "update", rec.id, { exdates: [...rec.exdates, dateISO] }));
+      // `rec` is whatever the caller rendered with — two quick skips both read
+      // the same stale list and the second write dropped the first exdate. Fold
+      // in what the cache already holds, and write it back before queueing so
+      // the next skip reads this one.
+      const cached = qc.getQueryData<Recurrence[]>(["recurrences"])?.find((r) => r.id === rec.id);
+      const exdates = [...new Set([...(cached?.exdates ?? []), ...(rec.exdates ?? []), dateISO])];
+      qc.setQueryData<Recurrence[]>(["recurrences"], (old) =>
+        old?.map((r) => (r.id === rec.id ? { ...r, exdates } : r)),
+      );
+      await queueWrite(makeOp("recurrences", "update", rec.id, { exdates }));
       invalidate();
     },
-    [invalidate],
+    [invalidate, qc],
   );
 
   /** Delete the whole series: retire the rule + drop all non-done occurrences. */

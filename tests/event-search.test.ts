@@ -38,6 +38,9 @@ describe("query sanitizing", () => {
     expect(sanitizeEventQuery("100% review")).toBe("100 review");
     expect(sanitizeEventQuery("a*b")).toBe("a b");
     expect(sanitizeEventQuery("  spaced   out  ")).toBe("spaced out");
+    // An unbalanced quote 400s the Worker's or= parser.
+    expect(sanitizeEventQuery('dinner at "Nopa')).toBe("dinner at Nopa");
+    expect(sanitizeEventQuery('"board" sync')).toBe("board sync");
   });
 });
 

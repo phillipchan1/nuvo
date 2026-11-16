@@ -18,22 +18,27 @@ import {
 
 export type { PlanWrite };
 
-type SubLookup = { user_id: string; status: PlanState; plan_source: PlanSource | null };
+type SubLookup = {
+  user_id: string;
+  status: PlanState;
+  plan_source: PlanSource | null;
+  stripe_subscription_id: string | null;
+};
 
 async function findBy(sql: Sql, column: string, value: string): Promise<SubLookup | null> {
   let rows: SubLookup[];
   switch (column) {
     case "user_id":
-      rows = (await sql`SELECT user_id::text AS user_id, status, plan_source FROM subscriptions WHERE user_id = ${value}::uuid LIMIT 1`) as SubLookup[];
+      rows = (await sql`SELECT user_id::text AS user_id, status, plan_source, stripe_subscription_id FROM subscriptions WHERE user_id = ${value}::uuid LIMIT 1`) as SubLookup[];
       break;
     case "apple_original_transaction_id":
-      rows = (await sql`SELECT user_id::text AS user_id, status, plan_source FROM subscriptions WHERE apple_original_transaction_id = ${value} LIMIT 1`) as SubLookup[];
+      rows = (await sql`SELECT user_id::text AS user_id, status, plan_source, stripe_subscription_id FROM subscriptions WHERE apple_original_transaction_id = ${value} LIMIT 1`) as SubLookup[];
       break;
     case "stripe_customer_id":
-      rows = (await sql`SELECT user_id::text AS user_id, status, plan_source FROM subscriptions WHERE stripe_customer_id = ${value} LIMIT 1`) as SubLookup[];
+      rows = (await sql`SELECT user_id::text AS user_id, status, plan_source, stripe_subscription_id FROM subscriptions WHERE stripe_customer_id = ${value} LIMIT 1`) as SubLookup[];
       break;
     case "stripe_subscription_id":
-      rows = (await sql`SELECT user_id::text AS user_id, status, plan_source FROM subscriptions WHERE stripe_subscription_id = ${value} LIMIT 1`) as SubLookup[];
+      rows = (await sql`SELECT user_id::text AS user_id, status, plan_source, stripe_subscription_id FROM subscriptions WHERE stripe_subscription_id = ${value} LIMIT 1`) as SubLookup[];
       break;
     default:
       throw new Error("unknown lookup column");
@@ -65,6 +70,23 @@ async function findRow(sql: Sql, incoming: PlanWrite & { userId?: string }): Pro
 }
 
 /**
+ * A Stripe event about a subscription that is NOT the one the row tracks
+ * (an old, replaced subscription ending; a new one that never paid) must not
+ * move the row: only an *active* subscription may take the row over. Without
+ * this a paying user is locked out the day an old subscription ends.
+ */
+export function isStaleStripeSubscription(
+  existing: Pick<SubLookup, "stripe_subscription_id">,
+  incoming: Pick<PlanWrite, "plan" | "planSource" | "stripeSubscriptionId">,
+): boolean {
+  if (incoming.planSource !== "stripe") return false;
+  const tracked = existing.stripe_subscription_id;
+  const arriving = incoming.stripeSubscriptionId;
+  if (!tracked || !arriving || tracked === arriving) return false;
+  return incoming.plan !== "active";
+}
+
+/**
  * Apply a rail's verdict to the one entitlement row. Never inserts — trials
  * are created at sign-up, never by a webhook (same as Supabase).
  */
@@ -84,6 +106,7 @@ export async function applyPlanUpdate(
     }
   }
   if (!existing) return { applied: false };
+  if (isStaleStripeSubscription(existing, incoming)) return { applied: true, userId: existing.user_id };
   const patch = planRowPatch(
     { plan: planOf(existing) ?? existing.status, planSource: existing.plan_source },
     incoming,

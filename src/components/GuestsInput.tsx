@@ -113,7 +113,7 @@ export function GuestsInput({
   // Never let a stale index point past a shrinking list.
   const safeIdx = Math.min(activeIdx, Math.max(0, options.length - 1));
 
-  const add = (email: string, name?: string) => {
+  const add = (email: string, name?: string, refocus = true) => {
     const normalized = email.trim().toLowerCase();
     if (!normalized || value.includes(normalized)) return;
     onChange([...value, normalized]);
@@ -121,7 +121,7 @@ export function GuestsInput({
     setInput("");
     setSuggestions([]);
     setOpen(false);
-    inputRef.current?.focus();
+    if (refocus) inputRef.current?.focus();
   };
 
   const remove = (email: string) => onChange(value.filter((e) => e !== email));
@@ -132,10 +132,12 @@ export function GuestsInput({
     else add(opt.contact.email, opt.contact.display_name);
   };
 
-  const commit = () => {
-    if (open && options.length) { commitOption(options[safeIdx]); return; }
+  /** Whether anything was added. */
+  const commit = (): boolean => {
+    if (open && options.length) { commitOption(options[safeIdx]); return true; }
     // Closed list (or nothing matched): a valid address still commits.
-    if (isValidEmail(input.trim())) add(input.trim());
+    if (isValidEmail(input.trim())) { add(input.trim()); return true; }
+    return false;
   };
 
   const chipLabel = (email: string) => nameCache.current[email] ?? email;
@@ -174,13 +176,24 @@ export function GuestsInput({
           onFocus={handleFocus}
           onKeyDown={(e) => {
             if (e.key === "Enter") { e.preventDefault(); commit(); }
-            if (e.key === "," || e.key === "Tab") { e.preventDefault(); commit(); }
+            if (e.key === ",") { e.preventDefault(); commit(); }
+            // Tab takes what you typed; with nothing typed it is just Tab — it
+            // used to be swallowed every time, so focus could never leave.
+            if (e.key === "Tab" && input.trim() && commit()) e.preventDefault();
             if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx(Math.min(safeIdx + 1, options.length - 1)); }
             if (e.key === "ArrowUp") { e.preventDefault(); setActiveIdx(Math.max(safeIdx - 1, 0)); }
-            if (e.key === "Escape") { setOpen(false); setInput(""); }
+            // A field owns Escape first (D-051): with a list open or an address
+            // half-typed, Escape clears that and stops — it used to also close
+            // the whole event card. With nothing to clear it passes through.
+            if (e.key === "Escape" && (open || input)) { e.stopPropagation(); setOpen(false); setInput(""); }
             if (e.key === "Backspace" && !input && value.length) { remove(value[value.length - 1]); }
           }}
-          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          onBlur={() => {
+            // A whole address typed and then left is a guest — never a fuzzy
+            // suggestion, which only a deliberate pick may add.
+            if (isValidEmail(input.trim())) add(input.trim(), undefined, false);
+            setTimeout(() => setOpen(false), 150);
+          }}
           placeholder={value.length === 0 ? placeholder : "Add another"}
           // Plain text input so iOS dictation works (low-data-entry principle).
           type="text"

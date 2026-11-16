@@ -9,6 +9,7 @@ import {
   offerableCalendars,
   type RawCalendarAccount,
 } from "./calendars.ts";
+import { withEffectiveStatus } from "./projectStatus.ts";
 // The week's rules — derived here from the same kernel the app derives them
 // from, so "what is on this week" cannot mean two things. Never re-implement
 // one of these locally; tests/planning-kernel.test.ts fails if you do.
@@ -184,7 +185,10 @@ export async function buildContext(
     target_date: string | null;
     shipped_at: string | null;
   };
-  const projectRows = (projectsRes.data ?? []) as ProjRow[];
+  // The STATUS the rules read is the effective one — the tasks decide
+  // (`effectiveProjectStatus`), exactly as the app's buildVertical does.
+  const projectRows = await withEffectiveStatus(userId, (projectsRes.data ?? []) as ProjRow[]);
+  const effectiveStatusById = new Map(projectRows.map((p) => [p.id, p.status]));
   const nextWeekStart = new Date(new Date(weekStart + "T00:00:00Z").getTime() + 7 * 86_400_000)
     .toISOString()
     .slice(0, 10);
@@ -510,7 +514,7 @@ export async function buildContext(
         initiativeId: p.initiative_id,
         outcome: p.outcome,
         description: p.description,
-        status: p.status,
+        status: effectiveStatusById.get(p.id as string) ?? p.status,
         startDate: p.start_date,
         targetDate: p.target_date,
       })),

@@ -11,6 +11,7 @@ import type { useTaskMutations } from "./useTasks";
 import { useOptionalUndoStack } from "./useUndoStack";
 import type { BulkOps } from "../components/BulkBar";
 import type { Task } from "../lib/types";
+import { useTrashTask } from "../components/tasks/TaskActionsMenu";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 
@@ -39,22 +40,24 @@ export function useBulkOps({
   clear: () => void;
 }): BulkOps {
   const { recordUndo } = useOptionalUndoStack();
+  const trashTask = useTrashTask(mutations);
 
   return useMemo<BulkOps>(() => {
     const n = selected.length;
     const noun = `${n} task${n === 1 ? "" : "s"}`;
 
-    const patchAll = (patch: Partial<Task>, verb: string) => {
+    const patchAll = (patchOf: Partial<Task> | ((t: Task) => Partial<Task>), verb: string) => {
       if (!n) return;
-      const before = selected.map((t) => {
+      const writes = selected.map((t) => ({ id: t.id, patch: typeof patchOf === "function" ? patchOf(t) : patchOf }));
+      const before = selected.map((t, i) => {
         const snap: Partial<Task> = {};
         for (const k of SNAP_KEYS) {
-          if (k in patch) (snap as Record<string, unknown>)[k] = t[k];
+          if (k in writes[i].patch) (snap as Record<string, unknown>)[k] = t[k];
         }
         return { id: t.id, snap };
       });
       // `undo: false` on each write — the whole set takes ONE entry, below.
-      for (const t of selected) mutations.patchTask(t.id, patch, { undo: false });
+      for (const w of writes) mutations.patchTask(w.id, w.patch, { undo: false });
       recordUndo({
         label: `${noun} ${verb}`,
         shortLabel: verb,
@@ -63,7 +66,7 @@ export function useBulkOps({
           for (const b of before) mutations.patchTask(b.id, b.snap, { undo: false });
         },
         redo: () => {
-          for (const t of selected) mutations.patchTask(t.id, patch, { undo: false });
+          for (const w of writes) mutations.patchTask(w.id, w.patch, { undo: false });
         },
       });
     };
@@ -82,16 +85,21 @@ export function useBulkOps({
         }
       },
       complete: () => {
-        for (const t of selected) mutations.complete(t, { undo: false });
+        // Only the open rows: re-completing a done one rewrote its
+        // completed_at, and the undo then reopened work that was already done.
+        const open = selected.filter((t) => t.status !== "done");
+        if (!open.length) return clear();
+        const openNoun = `${open.length} task${open.length === 1 ? "" : "s"}`;
+        for (const t of open) mutations.complete(t, { undo: false });
         recordUndo({
-          label: `Marked ${noun} done`,
+          label: `Marked ${openNoun} done`,
           shortLabel: "marked done",
           tier: "toast",
           undo: () => {
-            for (const t of selected) mutations.uncomplete(t, { undo: false });
+            for (const t of open) mutations.uncomplete(t, { undo: false });
           },
           redo: () => {
-            for (const t of selected) mutations.complete(t, { undo: false });
+            for (const t of open) mutations.complete(t, { undo: false });
           },
         });
         clear();
@@ -101,10 +109,11 @@ export function useBulkOps({
         clear();
       },
       trash: () => {
-        for (const t of selected) mutations.trash(t, { undo: "toast" });
+        // A repeating occurrence is skipped too, or the series re-stamps it.
+        for (const t of selected) trashTask(t, { undo: "toast" });
         clear();
       },
       clear,
     };
-  }, [selected, mutations, recordUndo, clear]);
+  }, [selected, mutations, recordUndo, clear, trashTask]);
 }

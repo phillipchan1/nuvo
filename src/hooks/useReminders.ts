@@ -44,6 +44,7 @@ import {
   DEFAULT_REMINDER_PREFS,
   defaultLeadsFor,
   dueNow,
+  firedReminderKey,
   leadsFromRow,
   nextFireAt,
   planReminders,
@@ -327,19 +328,6 @@ export function useReminderDelivery(options: ReminderDeliveryOptions = {}) {
   const { data: allTasks } = useAllTasks();
   const { keys: hiddenKeys } = useHiddenEvents();
 
-  // Day-quantized so the clock ticking cannot invalidate these keys.
-  // `REMINDER_QUERY_DAYS` covers the anchor window from any moment inside today.
-  const nowDay = useMemo(() => (enabled ? dayStartISO(Date.now()) : ""), [enabled]);
-  const endDay = useMemo(() => (enabled ? dayStartISO(Date.now(), REMINDER_QUERY_DAYS) : ""), [enabled]);
-  const { data: events } = useExternalEvents(nowDay || endDay, endDay);
-  const { data: slots } = useSlots(nowDay || endDay, endDay);
-
-  const onOpenRef = useRef(options.onOpen);
-  onOpenRef.current = options.onOpen;
-
-  const firedRef = useRef<FiredMap | null>(null);
-  if (firedRef.current === null) firedRef.current = readFired();
-
   // The plan only changes when the day does — not on every render, and never
   // on a keystroke. `nowBucket` re-derives on a coarse tick so a task scheduled
   // for later today enters the window without a page reload.
@@ -349,6 +337,25 @@ export function useReminderDelivery(options: ReminderDeliveryOptions = {}) {
     const id = window.setInterval(() => setNowBucket(Math.floor(Date.now() / 60_000)), 60_000);
     return () => window.clearInterval(id);
   }, [enabled]);
+
+  // Day-quantized so the clock ticking cannot invalidate these keys — but it
+  // follows the local day. Memoized on `enabled` alone, the window froze at
+  // mount: an app left open past `REMINDER_QUERY_DAYS` stopped reminding about
+  // events and slots. `REMINDER_QUERY_DAYS` covers the anchor window from any
+  // moment inside today.
+  const nowDay = enabled ? dayStartISO(nowBucket * 60_000) : "";
+  const endDay = useMemo(
+    () => (nowDay ? dayStartISO(Date.parse(nowDay), REMINDER_QUERY_DAYS) : ""),
+    [nowDay],
+  );
+  const { data: events } = useExternalEvents(nowDay || endDay, endDay);
+  const { data: slots } = useSlots(nowDay || endDay, endDay);
+
+  const onOpenRef = useRef(options.onOpen);
+  onOpenRef.current = options.onOpen;
+
+  const firedRef = useRef<FiredMap | null>(null);
+  if (firedRef.current === null) firedRef.current = readFired();
 
   const plan = useMemo<PlannedReminder[]>(() => {
     if (!enabled) return [];
@@ -373,7 +380,7 @@ export function useReminderDelivery(options: ReminderDeliveryOptions = {}) {
     // Mark locally FIRST, before the await. Two ticks of this loop must not both
     // reach the claim for one reminder, and the local set is the cheap guard.
     const fired = firedRef.current ?? {};
-    fired[r.key] = Date.now();
+    fired[firedReminderKey(r)] = Date.now();
     firedRef.current = fired;
     writeFired(fired);
 

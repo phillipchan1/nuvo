@@ -25,6 +25,7 @@
 
 import { supabase } from "./supabase";
 import type { ExternalEvent } from "./types";
+import { eventStartDay, parseDateISO } from "./dates";
 
 export interface EventHit {
   id: string;
@@ -43,10 +44,11 @@ const UPCOMING_LIMIT = 8;
 const PAST_LIMIT = 12;
 
 /** PostgREST's `or()` takes a comma-separated filter list, so a query
- *  containing a comma or a paren would be parsed as syntax rather than text.
- *  Strip those and `%`/`*` (wildcards) instead of failing the search. */
+ *  containing a comma, a paren or a double quote (an unbalanced one 400s the
+ *  Worker's parser) would be parsed as syntax rather than text. Strip those
+ *  and `%`/`*` (wildcards) instead of failing the search. */
 export function sanitizeEventQuery(q: string): string {
-  return q.replace(/[,()%*\\]/g, " ").replace(/\s+/g, " ").trim();
+  return q.replace(/[,()%*\\"]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 const COLS = "id, title, start_at, end_at, all_day, location, account_id, provider_event_id";
@@ -99,7 +101,9 @@ export async function searchEvents(rawQuery: string, nowISO = new Date().toISOSt
 
 /** The one line under an event hit: when it was, and where if we know. */
 export function eventHitSubtitle(hit: EventHit): string {
-  const d = new Date(hit.start_at);
+  // An all-day row's day is the date it stores; read as an instant, a
+  // UTC-midnight day was the previous day west of Greenwich.
+  const d = hit.all_day ? parseDateISO(eventStartDay(hit.start_at, true)) : new Date(hit.start_at);
   const day = d.toLocaleDateString([], {
     weekday: "short",
     month: "short",
@@ -110,10 +114,8 @@ export function eventHitSubtitle(hit: EventHit): string {
   return hit.location ? `${day} · ${time} · ${hit.location}` : `${day} · ${time}`;
 }
 
-/** Local calendar date of a hit — where the calendar should land. */
-export function eventHitDateISO(hit: Pick<EventHit, "start_at">): string {
-  const d = new Date(hit.start_at);
-  const m = `${d.getMonth() + 1}`.padStart(2, "0");
-  const day = `${d.getDate()}`.padStart(2, "0");
-  return `${d.getFullYear()}-${m}-${day}`;
+/** Local calendar date of a hit — where the calendar should land. An all-day
+ *  hit lands on the date it stores (`allDayDates`), a timed one on its local day. */
+export function eventHitDateISO(hit: Pick<EventHit, "start_at"> & { all_day?: boolean }): string {
+  return eventStartDay(hit.start_at, Boolean(hit.all_day));
 }

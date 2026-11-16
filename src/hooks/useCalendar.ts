@@ -61,6 +61,20 @@ import { fetchSlotsRange, fetchSlotTasks, slotsKey, slotTasksKey } from "./useSl
  *  re-renders nothing, and the only thing a longer wait bought was misses. */
 export const PREFETCH_IDLE_MS = 120;
 
+/**
+ * What each event's mirror row held before the plain edits now out for it —
+ * what a refused provider write puts back. A THIS-scope edit writes the row
+ * first (so every device moves now) and PATCHes the provider after; when the
+ * PATCH failed, the row kept times the provider never took, the toast never
+ * came, and the grid showed an edit that did not exist. `inflight` counts the
+ * edits out; the first edit after the lane goes quiet starts a fresh record.
+ */
+const rowBeforeEdits = new Map<string, { inflight: number; row: Record<string, unknown> }>();
+
+/** Said when a provider refuses an edit the row already showed. */
+export const EVENT_WRITEBACK_REFUSED =
+  "Your calendar didn't accept that change, so it's back where it was. Try again in a moment.";
+
 async function throwIfInvokeFailed(data: unknown, error: Error | null) {
   if (error) throw new Error((await formatAppError(error)).message);
   if (data && typeof data === "object" && "error" in data && (data as { error?: unknown }).error) {
@@ -362,6 +376,37 @@ export function useExternalEventMutations() {
     return acct.provider as CalendarProvider;
   };
 
+  // Recurrence edits, series scopes and all-day flips wait for the provider
+  // before the row moves; a plain THIS edit writes the row first.
+  const awaitsProvider = (patch: { recurrence?: unknown; all_day?: unknown }, scope: RecurrenceScope) =>
+    patch.recurrence !== undefined || scope !== "THIS" || patch.all_day !== undefined;
+
+  /** Put back what the row held before the edits a refused PATCH carried. */
+  const restoreRowBeforeEdits = async (id: string, keys: string[]) => {
+    const held = rowBeforeEdits.get(id);
+    if (!held) return;
+    const back: Record<string, unknown> = {};
+    for (const k of keys) if (k in held.row) back[k] = held.row[k];
+    if (!Object.keys(back).length) return;
+    try {
+      const { data } = await supabase
+        .from("external_events")
+        .update(back)
+        .eq("id", id)
+        .select("start_at, end_at")
+        .maybeSingle();
+      if (data) noteEventRow(id, data as EventRowAt);
+    } catch {
+      // The refetch after the toast is the fallback.
+    }
+    // Repaint only when no later edit is waiting — its paint is the newer one.
+    if (held.inflight <= 1) {
+      qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
+        old?.map((e) => (e.id === id ? { ...e, ...back } : e)),
+      );
+    }
+  };
+
   const update = useMutation({
     mutationFn: async ({
       id,
@@ -380,8 +425,7 @@ export function useExternalEventMutations() {
       scope?: RecurrenceScope;
     }) => {
       guardOffline();
-      const awaitProvider =
-        patch.recurrence !== undefined || scope !== "THIS" || patch.all_day !== undefined;
+      const awaitProvider = awaitsProvider(patch, scope);
       // The cached guess names the lane for logs; the send resolves the real
       // provider. `providerForEvent` defaults to Google when the accounts cache
       // is cold (it is never persisted), and google-events answers an iCloud
@@ -405,6 +449,7 @@ export function useExternalEventMutations() {
           // local write that then fire-and-forgets left the chip flipped while
           // the grid stayed timed (or snapped back on the next sync).
           let rowAt: EventRowAt | null = null;
+          let rowColumns: Record<string, unknown> | null = null;
           if (scope === "THIS" && !awaitProvider) {
             const { description: _description, recurrence: _recurrence, ...columns } = merged;
             if (Object.keys(columns).length) {
@@ -415,6 +460,7 @@ export function useExternalEventMutations() {
                 .select("start_at, end_at")
                 .maybeSingle();
               if (error) throw error;
+              rowColumns = columns;
               rowAt = (data as EventRowAt | null) ?? null;
               if (rowAt) noteEventRow(id, rowAt);
             }
@@ -425,9 +471,19 @@ export function useExternalEventMutations() {
           // The zone the edit was made in: a series is anchored to it, so
           // "weekly" means this weekday here, not in UTC (icalTz.ts).
           const body = { eventId: id, patch: merged, scope, timeZone: detectDeviceTz(), ...(rowAt ? { rowAt } : {}) };
-          const sendTo = eventsFunctionFor(await resolveProviderForEvent(id));
-          const { data, error } = await supabase.functions.invoke(sendTo, { body });
-          await throwIfInvokeFailed(data, error);
+          try {
+            const sendTo = eventsFunctionFor(await resolveProviderForEvent(id));
+            const { data, error } = await supabase.functions.invoke(sendTo, { body });
+            await throwIfInvokeFailed(data, error);
+          } catch (err) {
+            // The row moved and the provider didn't: put the row back, so the
+            // grid (and every other device) shows what the calendar holds.
+            if (rowColumns) await restoreRowBeforeEdits(id, Object.keys(rowColumns));
+            throw err;
+          }
+          // The provider holds these now; a later refusal goes back to them.
+          const before = rowBeforeEdits.get(id);
+          if (before && rowColumns) Object.assign(before.row, rowColumns);
         },
       );
       // Recurrence-rule edits and ALL-scope moves expand into a whole series
@@ -439,9 +495,20 @@ export function useExternalEventMutations() {
         return;
       }
       // A plain edit settles on the row write; the PATCH is the lane's to
-      // deliver, and its failure is reported the way invokeQuiet reported it.
+      // deliver. Its failure is SAID — the row was already put back by the
+      // lane — and reported, with the real reason, to the app's error log.
+      const before = rowBeforeEdits.get(id);
+      if (before) before.inflight += 1;
+      const settled = () => {
+        if (before) before.inflight -= 1;
+      };
+      queued.done.then(settled, settled);
       await queued.written;
       queued.done.catch((err: unknown) => {
+        // Edits folded into one write share its answer: one toast, not three.
+        toast.error(EVENT_WRITEBACK_REFUSED, { id: `event-writeback:${id}` });
+        // Nothing else is out for it: re-read the truth.
+        if (!before || before.inflight <= 0) qc.invalidateQueries({ queryKey: ["external_events"] });
         void import("../lib/appError").then(({ reportAppError }) => {
           void reportAppError(err, { source: fn });
         });
@@ -490,6 +557,16 @@ export function useExternalEventMutations() {
         for (const k of Object.keys(columns) as (keyof ExternalEvent)[]) {
           before[k as string] = current[k];
         }
+      }
+      // Remember what the row held before this edit, for a refused write-back
+      // to restore (a plain THIS edit writes the row before the provider).
+      if (current && !awaitsProvider(patch, scope)) {
+        let held = rowBeforeEdits.get(id);
+        if (!held || held.inflight <= 0) {
+          held = { inflight: 0, row: {} };
+          rowBeforeEdits.set(id, held);
+        }
+        for (const k of Object.keys(columns)) if (!(k in held.row)) held.row[k] = before[k];
       }
       if (hadDescription) before.description = detailSnapshot?.description ?? "";
       return { snapshot, detailSnapshot, hadDescription, id, before, release };

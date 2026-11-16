@@ -66,6 +66,48 @@ export const span = (a: Date, b: Date) => {
   return `${lead}–${at(b)}`;
 };
 
+// ── Re-timing an event by its clock ─────────────────────────────────────────
+// Both inspectors (the desktop popover, the phone sheet) and the capture door's
+// event composer set a start or an end by picking a clock time. The rules live
+// here so the three can't drift: an event never ends at or before it starts.
+
+/** `iso` with its LOCAL clock set to `hhmm`, on the same local day. */
+export function withClock(iso: string, hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const d = new Date(iso);
+  d.setHours(h, m, 0, 0);
+  return d.toISOString();
+}
+
+/** Move an event's start to `hhmm` on its own day; the end moves by the same
+ *  amount, so the length is kept. Moving only the start let a 9–10 moved to
+ *  11 save as 11–10. */
+export function moveStartTo(startAt: string, endAt: string, hhmm: string): { start_at: string; end_at: string } {
+  const start_at = withClock(startAt, hhmm);
+  const delta = Date.parse(start_at) - Date.parse(startAt);
+  return { start_at, end_at: new Date(Date.parse(endAt) + delta).toISOString() };
+}
+
+/** Set an event's end to `hhmm` on the end's own day — or null when that would
+ *  not end after the start, which is refused rather than saved. */
+export function setEndTo(startAt: string, endAt: string, hhmm: string): { start_at: string; end_at: string } | null {
+  const end_at = withClock(endAt, hhmm);
+  return Date.parse(end_at) > Date.parse(startAt) ? { start_at: startAt, end_at } : null;
+}
+
+/** A new event's end picked as a clock time: on the START's day, and the next
+ *  day only when the time wraps past midnight. Read off the old end's day, an
+ *  11pm event (seeded to end at midnight) given an 11:30pm end became 24½ hours. */
+export function endFromStart(startAt: string, hhmm: string): string {
+  const end = withClock(startAt, hhmm);
+  if (Date.parse(end) > Date.parse(startAt)) return end;
+  const next = new Date(end);
+  next.setDate(next.getDate() + 1);
+  const [h, m] = hhmm.split(":").map(Number);
+  next.setHours(h, m, 0, 0);
+  return next.toISOString();
+}
+
 // The mobile calendar renders inside the shell's <main> scroller, not its own.
 // WebKit (iOS PWA + Tauri WKWebView) has no `overflow-anchor`, so when a lens
 // adds content above the viewport it has to correct scrollTop by hand — this
@@ -229,7 +271,9 @@ function dayFrame(date: Date, ctx: DayCtx) {
   const { hidden, workStart, workEnd } = ctx;
   const idx = indexOf(ctx);
   const dStart = startOfDay(date);
-  const dEnd = new Date(dStart.getTime() + DAY_MS);
+  // The next local midnight, not +24h: a spring-forward Sunday is 23 hours
+  // long, and +24h reached 1am Monday — so Monday's all-day event showed on it.
+  const dEnd = addDays(dStart, 1);
 
   const allDay = idx.allDay
     .filter((p) => p.start < dEnd.getTime() && p.end > dStart.getTime())

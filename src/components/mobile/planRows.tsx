@@ -12,6 +12,7 @@
 import type { ReactNode } from "react";
 import { TaskCheck } from "../kit";
 import { fmtMins } from "../../lib/now";
+import { allDayDates, parseDateISO } from "../../lib/dates";
 import { blockDesignation } from "../../lib/slots";
 import type { ExternalEvent } from "../../lib/types";
 import type { CalendarTap } from "./MobileEventSheet";
@@ -20,15 +21,18 @@ import { at, span, tapFor as tapForLike, type DayPlan, type TimedItem } from "./
 /** What a tap on a timed item opens — `dayPlan`'s one builder, typed for the sheet. */
 const tapFor = (b: TimedItem) => tapForLike(b) as CalendarTap;
 
-/** An all-day event's tap. */
+/** An all-day event's tap. `start` / `end` are the LOCAL midnights of its
+ *  stored dates (`allDayDates`) — read as instants, an ICS / M365 row stored at
+ *  UTC midnight opened its sheet on the previous day west of Greenwich. */
 export function allDayTap(e: ExternalEvent): CalendarTap {
+  const days = allDayDates(e.start_at, e.end_at);
   return {
     kind: "event",
     id: e.id,
     providerEventId: e.provider_event_id,
     title: e.title || "Busy",
-    start: new Date(e.start_at),
-    end: new Date(e.end_at),
+    start: parseDateISO(days.start),
+    end: parseDateISO(days.end),
     allDay: true,
     location: e.location,
     self_rsvp: e.self_rsvp ?? null,

@@ -58,6 +58,7 @@ import {
 } from "./db.ts";
 import {
   stripeClient,
+  StripeApiError,
   StripeSignatureError,
   verifyStripeEvent,
   type FetchLike,
@@ -352,6 +353,20 @@ function invoiceIsOurs(invoice: Obj, prices: Set<string>): boolean {
   });
 }
 
+/** The subscription as Stripe holds it now (falls back to the event's copy
+ *  only when Stripe no longer knows the id). Any other failure throws, so the
+ *  ledger is released and Stripe retries. */
+async function currentSubscription(stripe: StripeClient, eventObj: Obj): Promise<Obj> {
+  const id = asString(eventObj.id);
+  if (!id) return eventObj;
+  try {
+    return await stripe.get<Obj>(`/v1/subscriptions/${encodeURIComponent(id)}`);
+  } catch (e) {
+    if (e instanceof StripeApiError && e.status === 404) return eventObj;
+    throw e;
+  }
+}
+
 function periodEndISO(sub: Obj): string | null {
   const secs = sub?.items?.data?.[0]?.current_period_end ?? sub?.current_period_end;
   if (typeof secs !== "number" || !Number.isFinite(secs)) return null;
@@ -620,15 +635,18 @@ export async function handleStripeWebhook(deps: BillingDeps, req: Request): Prom
       case "customer.subscription.created":
       case "customer.subscription.updated": {
         if (!isOurSubscription(obj, prices)) break;
+        // Stripe delivers out of order: write the subscription's CURRENT state,
+        // never the snapshot in this (possibly older) event.
+        const sub = await currentSubscription(stripe, obj);
         await applyPlanUpdate(sql, {
-          userId: asString(obj.metadata?.user_id) ?? undefined,
-          plan: stripeStatusToPlan(String(obj.status)),
+          userId: asString(sub.metadata?.user_id) ?? undefined,
+          plan: stripeStatusToPlan(String(sub.status)),
           planSource: "stripe",
-          stripeSubscriptionId: obj.id,
-          stripeCustomerId: idOf(obj.customer),
-          priceId: obj.items?.data?.[0]?.price?.id ?? null,
-          currentPeriodEnd: periodEndISO(obj),
-          cancelAtPeriodEnd: obj.cancel_at_period_end === true,
+          stripeSubscriptionId: sub.id,
+          stripeCustomerId: idOf(sub.customer),
+          priceId: sub.items?.data?.[0]?.price?.id ?? null,
+          currentPeriodEnd: periodEndISO(sub),
+          cancelAtPeriodEnd: sub.cancel_at_period_end === true,
         });
         break;
       }

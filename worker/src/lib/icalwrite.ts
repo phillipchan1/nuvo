@@ -24,10 +24,16 @@ export function toIcalUtc(iso: string): string {
   );
 }
 
-/** ISO string → iCalendar DATE value, YYYYMMDD (local calendar day). */
+/** ISO string → iCalendar DATE value, YYYYMMDD — the date the string STATES.
+ *  An all-day day is written as its civil date at UTC midnight
+ *  (`allDayInstant`, src/lib/dates.ts), and Google's `googleStartEnd` reads the
+ *  same leading ten characters, so both providers get the same day. Reading it
+ *  through the runtime's local clock gave whatever day that clock was on. */
 export function toIcalDate(iso: string): string {
+  const civil = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (civil) return `${civil[1]}${civil[2]}${civil[3]}`;
   const d = new Date(iso);
-  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+  return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}`;
 }
 
 /** A brand-new single or recurring event as a full VCALENDAR. */

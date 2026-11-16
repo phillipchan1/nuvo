@@ -8,7 +8,7 @@ import { releaseVelocity, type VelocitySample } from "../../../lib/gesture";
 import { haptic } from "../../../lib/haptics";
 import { useVertical } from "../../../hooks/useVertical";
 import { useMobileSheetStackHistory } from "../../../hooks/useMobileOverlayHistory";
-import Sheet from "../Sheet";
+import Sheet, { flushFocus } from "../Sheet";
 import { Icon } from "../../Icon";
 import { IconButton } from "../../kit";
 import { useRecordActions } from "../MobileRecordActions";
@@ -35,13 +35,22 @@ export default function MobileDetailSheet({
   const d = store.data;
 
   const [stack, setStack] = useState<Frame[]>(() => [frameFor(target)]);
+  /** The open frame — where its fields live. */
+  const pane = useRef<HTMLDivElement>(null);
   // A fresh jump (new item, or the same id re-fired via the nonce) resets the stack.
   useEffect(() => {
+    flushFocus(pane.current);
     setStack([frameFor(target)]);
   }, [target.n]);
 
   const frame = stack[stack.length - 1];
-  const push = (f: Frame) => setStack((s) => [...s, f]);
+  // Every field on these screens saves on blur, and a frame that leaves — a
+  // push, a pop, the sheet closing from history — never blurs it (see
+  // `flushFocus`). Commit it while the frame is still here.
+  const push = (f: Frame) => {
+    flushFocus(pane.current);
+    setStack((s) => [...s, f]);
+  };
   const atRoot = stack.length <= 1;
 
   // History-backed breadcrumbs: the sheet holds a base entry plus one per
@@ -50,12 +59,20 @@ export default function MobileDetailSheet({
   // history and popstate does the slicing.
   useMobileSheetStackHistory(
     stack.length - 1,
-    (d) => setStack((s) => (s.length > d + 1 ? s.slice(0, d + 1) : s)),
-    onClose,
+    (d) => {
+      flushFocus(pane.current);
+      setStack((s) => (s.length > d + 1 ? s.slice(0, d + 1) : s));
+    },
+    () => {
+      flushFocus(pane.current);
+      onClose();
+    },
     "detail",
   );
   const back = () => {
-    if (!atRoot) history.back();
+    if (atRoot) return;
+    flushFocus(pane.current);
+    history.back();
   };
 
   // Push slides in from the right, pop from the left — a navigation stack, not
@@ -76,7 +93,6 @@ export default function MobileDetailSheet({
   // right; let go past a third of the width — or flick — and it pops (through
   // history, exactly like ‹). The root frame has nothing to pop to, so the
   // gesture never engages there.
-  const pane = useRef<HTMLDivElement>(null);
   const edge = useRef<{ x: number; y: number; id: number; engaged: boolean; samples: VelocitySample[] } | null>(null);
   const setPaneX = (x: number, animate: boolean) => {
     const el = pane.current;

@@ -8,7 +8,8 @@
  */
 
 import type { QueryClient } from "@tanstack/react-query";
-import { enqueue, whenDelivered } from "./outbox";
+import { enqueue, outboxOwner, refreshOutboxStatus, setOutboxOwner, whenDelivered } from "./outbox";
+import { clearPersistedCache } from "./persist";
 import { installOwingGuards, invalidateWhenSafe, markOwing, refreshOwing, startSync, syncNow } from "./coordinator";
 import { announceQueuedWrite } from "./handoff";
 import type { NewOp, Op, SyncTable } from "./ops";
@@ -17,7 +18,9 @@ import type { Transport } from "./engine";
 export * from "./ops";
 export {
   MAX_ATTEMPTS,
+  PARK_FLOOR_MS,
   discard,
+  retryParked,
   outboxStatus,
   parkedOps,
   pendingOps,
@@ -69,8 +72,11 @@ export function queueWrite(op: NewOp): Promise<Op> {
   const queued = (async () => {
     const stored = await enqueue(op);
     await refreshOwing();
-    // Fire and forget: a drain failure is the engine's business, not the caller's.
-    if (client) void syncNow(client);
+    // Fire and forget: a drain failure is the engine's business, not the
+    // caller's — through the scheduler, so an interrupted pass backs off and
+    // retries instead of waiting for the next focus.
+    if (running) void running.nudge();
+    else if (client) void syncNow(client);
     // The ⌥Space panel is hidden moments after this; main must not depend on it.
     void announceQueuedWrite(op.table);
     return stored;
@@ -120,6 +126,67 @@ export async function adoptForeignWrites(
   for (const { table, keys } of writes) {
     for (const key of keys) invalidateWhenSafe(qc, table, key);
   }
+}
+
+/** localStorage key: the account the on-disk read cache belongs to. */
+const CACHE_OWNER_KEY = "nuvo.cache-owner";
+
+function readCacheOwner(): string | null {
+  try {
+    return localStorage.getItem(CACHE_OWNER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeCacheOwner(uid: string) {
+  try {
+    localStorage.setItem(CACHE_OWNER_KEY, uid);
+  } catch {
+    /* storage unavailable: the in-process transition check still holds */
+  }
+}
+
+/** The account the last `noteSessionOwner` reported, in this process. */
+let sessionOwner: string | null | undefined;
+
+/**
+ * Tell the sync layer who is signed in. Both auth paths call it on every
+ * session they apply.
+ *
+ *  • **The outbox is stamped and drained per account** — a queue left by a
+ *    signed-out user waits for that user rather than landing in the next one.
+ *  • **The read caches belong to one account.** A sign-out (uid → null), or a
+ *    different account than the one the on-disk cache was written for, wipes
+ *    the in-memory query cache *and* the persisted one. The Worker path's
+ *    sign-out used to clear neither, so the next account on the device opened
+ *    onto the previous one's planner until its own fetches landed.
+ */
+export function noteSessionOwner(qc: QueryClient, uid: string | null): void {
+  const prev = sessionOwner;
+  sessionOwner = uid;
+  const prevOwner = outboxOwner();
+  setOutboxOwner(uid);
+  if (prev === uid) return;
+  const diskOwner = readCacheOwner();
+  const signedOut = prev != null && uid == null;
+  const switched = uid != null && ((prev != null && prev !== uid) || (diskOwner != null && diskOwner !== uid));
+  if (signedOut || switched) {
+    qc.clear();
+    void clearPersistedCache();
+  }
+  if (uid) writeCacheOwner(uid);
+  if (prevOwner !== uid) {
+    // Whose ops count as owed just changed: recount, and if someone is now
+    // signed in, deliver theirs.
+    void refreshOwing().then(() => refreshOutboxStatus());
+    if (uid && running) void running.nudge();
+  }
+}
+
+/** Test seam. */
+export function resetSessionOwnerForTests() {
+  sessionOwner = undefined;
 }
 
 /** Force a sync pass — the pull-to-refresh / "retry now" path. */
