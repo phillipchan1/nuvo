@@ -8455,8 +8455,14 @@ words nobody could act on.
 → **Each mark is a dial** (`Dial`, `MarkSet` in `kit/Readings.tsx`). One colour; empty is just
 empty; a closed dial turns `--ok` with a ✓. Under it, **what's left, in words** — "3 to shape",
 "3 need a time", "11 to go". On the Schedule the first two are buttons: *to shape* lists the
-projects and what each lacks (no outcome, no finish date, no open tasks); *need a time* opens Get
-ready. The run (Done) only says it.
+projects and what each lacks (no outcome, no finish date, no open tasks); *need a time* unfolds
+the projects with homeless work and shows **only those tasks** (draggable onto the grid, with the
+row's "Schedule …" offer when the composer found one). The run (Done) only says it.
+→ **Fixed the same day:** *need a time* first opened Get ready, and on a Sunday that said "Ready."
+over two homeless tasks — the crown reads next week, but the composer only looked for openings in
+the current week, which ends that day, so no card could exist. The dial now opens the tasks (it can
+never be empty: it is the count's own data), and the composer fits a later slate week's work into
+**that** week (`useWeekComposer(now, weekISO)`; the cost and Other times read the offer's own week).
 → **Plain names:** Ready → **Shaped**, Placed → **Scheduled** (the verb the cards took in D-213).
 → **The crown names the week, it doesn't date it** — "This week" or "Next week". The calendar
 header is the one place a span is written.

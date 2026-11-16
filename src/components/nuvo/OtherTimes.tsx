@@ -25,6 +25,7 @@ import { clearOfferChoice, setOfferChoice } from "../../lib/offerPreview";
 import { whenLabel } from "../../lib/readyCards";
 import { instantAt } from "../plan/destinations";
 import { parseDateISO, toDateISO } from "../../lib/dates";
+import { mondayOf } from "../../../supabase/functions/_shared/planningRules.ts";
 import type { Task } from "../../lib/types";
 
 interface Option {
@@ -38,9 +39,10 @@ interface Option {
 /** The first answer, its named alternatives, and your own pick. */
 function useOptions(task: Task, first: Where, mine: Where | null) {
   const [now] = useState(() => new Date());
-  const w = useWeekComposer(now);
+  // The week the first answer sits in — next week's, when the slate is.
+  const w = useWeekComposer(now, mondayOf(first.dayISO));
   const options = useMemo<Option[]>(() => {
-    const days = [parseDateISO(w.today).getDay(), ...w.laterDays];
+    const days = first.dayISO === w.today || w.weekStartISO <= w.today ? [parseDateISO(w.today).getDay(), ...w.laterDays] : w.laterDays;
     const candidates = w.alternatives(task, first, days).map((p) => ({ dayISO: p.dayISO, startMin: p.startMin, durationMin: p.durationMin }));
     const list: Option[] = [
       { key: "first", at: first, reason: "Best fit", cost: costFor(first, w.busy), past: false },

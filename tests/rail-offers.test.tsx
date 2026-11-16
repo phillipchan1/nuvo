@@ -34,6 +34,7 @@ import { VerticalStoreProvider, type VerticalStore } from "../src/hooks/useVerti
 import { AppNavigationProvider } from "../src/hooks/useAppNavigation";
 import { OFFERS_NOW, OFFERS_TODAY, OFFERS_VERTICAL, offersClient, offersInbox, offersToday } from "../src/components/nuvo/OffersFixture";
 import type { Placement } from "../src/lib/compose";
+import { toDateISO } from "../src/lib/dates";
 import type { Task } from "../src/lib/types";
 
 const c = (kind: RailOfferCandidate["kind"], id: string, order: number): RailOfferCandidate => ({
@@ -327,6 +328,32 @@ describe("Hold <time> on a today task with no time", () => {
       expect(end <= 11 * 60 || p.startMin >= 12 * 60).toBe(true);
       expect(end <= 13 * 60 || p.startMin >= 16 * 60).toBe(true);
     }
+  });
+});
+
+describe("on a weekend the slate is next week, and so is the fit (D-219)", () => {
+  afterEach(() => localStorage.clear());
+
+  it("finds next week's openings for next week's work — never 'Ready.' over homeless tasks", async () => {
+    localStorage.setItem("nuvo-working-days", JSON.stringify([1, 2, 3, 4, 5]));
+    // Sunday evening: this week (Mon–Sun) has no working day left.
+    const sunday = new Date(OFFERS_NOW);
+    sunday.setDate(sunday.getDate() + ((7 - sunday.getDay()) % 7));
+    sunday.setHours(18, 0, 0, 0);
+    const nextMonday = new Date(sunday);
+    nextMonday.setDate(sunday.getDate() + 1);
+    const nextWeekISO = toDateISO(nextMonday);
+    const qc = offersClient(offersToday());
+    const loose = offersToday().filter((t) => !t.start_time && t.status !== "done");
+    const wrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+    // The old behaviour: the current week only — nothing left to offer.
+    const before = renderHook(() => useTodayHolds(loose, sunday), { wrapper });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(before.result.current.size).toBe(0);
+    // Given the slate's week, every fit lands inside it.
+    const { result } = renderHook(() => useTodayHolds(loose, sunday, nextWeekISO), { wrapper });
+    await waitFor(() => expect(result.current.size).toBeGreaterThan(0));
+    for (const p of result.current.values()) expect(p.dayISO >= nextWeekISO).toBe(true);
   });
 });
 

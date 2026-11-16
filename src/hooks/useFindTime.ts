@@ -206,14 +206,18 @@ export const HOLDS_CAP = 6;
  *  `held` counted as busy; `laterDays` are the working days after today up to
  *  Sunday; `busy` is the same busy time as names and minutes, for the words
  *  ("Right before Kid date night"). Proposes, never writes (P3). */
-export function useWeekComposer(now: Date) {
+export function useWeekComposer(now: Date, forWeekISO?: string | null) {
   const { settings } = useSettings();
   const [workingDays] = useWorkingDays();
   const today = todayISO(now);
+  // The week to fit into: today's, unless the slate is a LATER week — on a
+  // weekend the crown plans next week, and its work has no room left in a week
+  // that ends today (D-219: Get ready said "Ready." over two homeless tasks).
   const range = useMemo(() => {
-    const monday = startOfWeek(parseDateISO(today), { weekStartsOn: 1 });
+    const thisMonday = startOfWeek(parseDateISO(today), { weekStartsOn: 1 });
+    const monday = forWeekISO && forWeekISO > toDateISO(thisMonday) ? parseDateISO(forWeekISO) : thisMonday;
     return { weekStartISO: toDateISO(monday), start: monday.toISOString(), end: addDays(monday, 7).toISOString() };
-  }, [today]);
+  }, [today, forWeekISO]);
   const { data: timed = [] } = useScheduledTasks(range.start, range.end);
   const { data: slots = [] } = useSlots(range.start, range.end);
   const { data: events = [] } = useExternalEvents(range.start, range.end);
@@ -246,8 +250,10 @@ export function useWeekComposer(now: Date) {
     const alternatives = (task: Task, current: { dayISO: string; startMin: number; durationMin: number }, days: number[]) =>
       alternativesFor(inputFor([], days, []), task, current, 4);
     const later: number[] = [];
-    const sunday = addDays(parseDateISO(range.weekStartISO), 6);
-    for (let d = addDays(parseDateISO(today), 1); d <= sunday; d = addDays(d, 1)) if (workingDays.includes(d.getDay())) later.push(d.getDay());
+    const monday = parseDateISO(range.weekStartISO);
+    const sunday = addDays(monday, 6);
+    const tomorrow = addDays(parseDateISO(today), 1);
+    for (let d = tomorrow > monday ? tomorrow : monday; d <= sunday; d = addDays(d, 1)) if (workingDays.includes(d.getDay())) later.push(d.getDay());
     const toItem = (title: string, s: Date, e: Date): BusyItem => ({
       title,
       dayISO: toDateISO(s),
@@ -276,8 +282,8 @@ export function useWeekComposer(now: Date) {
  *  with no fit this week gets no entry, and so no chip.
  *
  *  Mount it only where the offers can show: it reads the week's calendar. */
-export function useTodayHolds(tasks: readonly Task[], now: Date): Map<string, Placement> {
-  const { compose, today, laterDays } = useWeekComposer(now);
+export function useTodayHolds(tasks: readonly Task[], now: Date, forWeekISO?: string | null): Map<string, Placement> {
+  const { compose, today, laterDays } = useWeekComposer(now, forWeekISO);
   return useMemo(() => {
     const pool = tasks.slice(0, HOLDS_CAP);
     if (!pool.length) return new Map<string, Placement>();

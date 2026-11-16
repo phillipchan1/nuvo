@@ -43,7 +43,7 @@ import type { ThinPath } from "../../lib/thinPath";
 import { PathOffer, pathCandidates, useOfferBudget, useStableCandidates } from "../nuvo/RailOffers";
 import { Icon } from "../Icon";
 import { Button, Chip, CrownLine, Dial, MarkSet, Stop } from "../kit";
-import { startOfWeek } from "date-fns";
+import { mondayOf } from "../../../supabase/functions/_shared/planningRules.ts";
 import { toDateISO } from "../../lib/dates";
 import { marksReady, movingIds, weekMarks } from "../../lib/marks";
 import { useVertical } from "../../hooks/useVertical";
@@ -126,6 +126,8 @@ export default function MobileWeekCrown({
   const weekReady = (crown?.rows.length ?? 0) > 0 && marksReady(marks);
   const [open, setOpenState] = useState(readOpen);
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  // Rows unfolded by "N need a time" show only that work (D-219).
+  const [looseOnly, setLooseOnly] = useState<Set<string>>(new Set());
   const [planOpen, setPlanOpen] = useState(false);
   // Draft the path on the open slate's rows (D-205) — the shut strip and the
   // pinned pips never carry a chip. Two at most on a phone screen, through the
@@ -147,7 +149,7 @@ export default function MobileWeekCrown({
   if (!crown) return null;
   const { rows, landed, total, looseCount, composed, weekISO, track } = crown;
   // No date range (D-219): the calendar's own header says the span.
-  const weekName = weekISO > toDateISO(startOfWeek(new Date(), { weekStartsOn: 1 })) ? "Next week" : "This week";
+  const weekName = weekISO > mondayOf(toDateISO(new Date())) ? "Next week" : "This week";
 
   const setOpen = (v: boolean) => {
     setOpenState(v);
@@ -270,7 +272,13 @@ export default function MobileWeekCrown({
             marks={marks}
             attrsFor={(k) => (k === "placed" ? { "data-crown-week": "", "data-crown-color": "var(--landed)" } : undefined)}
             acts={{
-              placed: onGetReady,
+              // The tasks themselves, unfolded under their projects (D-219) —
+              // never a sheet that can come up empty.
+              placed: () => {
+                const ids = rows.filter((r) => r.loose.length > 0 && r.state !== "shipped" && r.state !== "landed").map((r) => r.rock.id);
+                setOpenIds(new Set(ids));
+                setLooseOnly(new Set(ids));
+              },
               ready: marks[0]?.items?.[0] ? () => onOpenProject(marks[0].items![0].id) : undefined,
             }}
           />
@@ -293,14 +301,21 @@ export default function MobileWeekCrown({
               key={row.rock.id}
               row={row}
               expanded={openIds.has(row.rock.id)}
-              onExpand={() =>
+              looseOnly={looseOnly.has(row.rock.id)}
+              onExpand={() => {
+                setLooseOnly((lo) => {
+                  if (!lo.has(row.rock.id)) return lo;
+                  const n = new Set(lo);
+                  n.delete(row.rock.id);
+                  return n;
+                });
                 setOpenIds((prev) => {
                   const next = new Set(prev);
                   if (next.has(row.rock.id)) next.delete(row.rock.id);
                   else next.add(row.rock.id);
                   return next;
-                })
-              }
+                });
+              }}
               onOpen={() => onOpenProject(row.projectId)}
               pathOffer={pathOffers.has(row.projectId) ? thin.get(row.projectId) ?? null : null}
               onOpenProject={onOpenProject}
@@ -330,6 +345,7 @@ export default function MobileWeekCrown({
 function CrownRow({
   row,
   expanded,
+  looseOnly = false,
   onExpand,
   onOpen,
   pathOffer,
@@ -339,6 +355,8 @@ function CrownRow({
 }: {
   row: WeekCrownRow;
   expanded: boolean;
+  /** unfolded by the Scheduled dial: just the work with no time */
+  looseOnly?: boolean;
   onExpand: () => void;
   onOpen: () => void;
   /** Draft the path, when the budget gave this row the offer (D-205). It takes
@@ -461,7 +479,7 @@ function CrownRow({
               be on either shell before D-111. Placed first (the clock orders
               them), then what has no time; no "has a time" / "loose" headers,
               because each row now says which it is on its own right edge. */}
-          {placed.map((p) => (
+          {!looseOnly && placed.map((p) => (
             <div key={p.task.id}>
               {renderTask(p.task, {
                 whenShown: true,

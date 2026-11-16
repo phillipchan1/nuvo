@@ -109,7 +109,7 @@ export function useReady({
   }, [crown, holdPool]);
   // One compose for both: today's work first (it is today's), then the slate's.
   const pool = useMemo(() => [...holdPool, ...loosePool.map((l) => l.task)], [holdPool, loosePool]);
-  const holds = useTodayHolds(pool, now);
+  const holds = useTodayHolds(pool, now, crown?.weekISO);
 
   // The acts read the latest of everything through a ref, so the cards'
   // identity only changes when what they SAY changes.

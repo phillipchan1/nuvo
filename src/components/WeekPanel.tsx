@@ -51,6 +51,7 @@ import { ProjectShipAssess } from "./record/ShipAssess";
 import type { EmblemSpec } from "../lib/weekEmblem";
 import { Button, Chip, CrownLine, DayCrown, IconButton, MarkLabel, MarkSet, OfferChip, SectionHeader, Stop } from "./kit";
 import { WEEK_REACH_KEY, reachArrivalDelay } from "../lib/motion";
+import { mondayOf } from "../../supabase/functions/_shared/planningRules.ts";
 import { bump } from "../lib/celebrate";
 import { haptic } from "../lib/haptics";
 import { marksReady, movingIds, readDay, weekMarks } from "../lib/marks";
@@ -80,12 +81,6 @@ const rows0 = (c: { rows: readonly unknown[] }) => c.rows.length > 0;
 const WEEK_PLACED_ATTRS = { "data-crown-week": "", "data-crown-color": "var(--landed)" };
 const weekMarkAttrs = (k: string) => (k === "placed" ? WEEK_PLACED_ATTRS : undefined);
 const weekMarkReach = (k: string) => (k === "placed" ? WEEK_REACH_KEY : undefined);
-/** Monday of the current week — the crown names a later week "Next week". */
-function currentWeekISO(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-  return toDateISO(d);
-}
 const OPEN_KEY = "nuvo-rail-week-open";
 function readOpen(): boolean {
   try {
@@ -150,6 +145,9 @@ export default function WeekPanel({
   const [listOpen, setListOpen] = useState(readOpen);
   // The Shaped dial's list — which projects, and what each is missing.
   const [shapeOpen, setShapeOpen] = useState(false);
+  // Rows unfolded by "N need a time" show only that work (D-219) — 19 placed
+  // rows above the one with no time buried it.
+  const [looseOnly, setLooseOnly] = useState<Set<string>>(new Set());
   // The week's slate, read once and shared with the phone's crown — the
   // priorities ARE the projects On Deck committed to this week, derived, so this
   // rail can never drift from the board (or from Set-the-week).
@@ -235,6 +233,22 @@ export default function WeekPanel({
     rows.length === 0 ? "No projects on this week yet" : `${landed} of ${rows.length} landed · ${crown.track.label}`;
 
 
+  // "N need a time" opens THOSE tasks, where they live: every project with
+  // work that has no time unfolds, each with its "Schedule …" offer when the
+  // composer found one. It can never be empty — it is the count's own data
+  // (D-219; it used to open Get ready, which on a weekend found no time in a
+  // week that was over and said "Ready." over two homeless tasks).
+  const showNoTime = () => {
+    const ids = rows.filter((r) => r.loose.length > 0 && r.state !== "shipped" && r.state !== "landed").map((r) => r.rock.id);
+    if (!ids.length) return;
+    if (!listOpen) toggleList();
+    setOpenIds((prev) => new Set([...prev, ...ids]));
+    setLooseOnly(new Set(ids));
+    requestAnimationFrame(() =>
+      document.querySelector(`[data-crown-project="${CSS.escape(rows.find((r) => r.rock.id === ids[0])!.projectId)}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }),
+    );
+  };
+
   const toggleList = () =>
     setListOpen((v) => {
       try {
@@ -261,7 +275,7 @@ export default function WeekPanel({
             {/* No date range (D-219): the calendar header is the one place a
                 span is written, so the two can't disagree. On a weekend the
                 crown reads the week being planned — and says so. */}
-            <MarkLabel k="week">{crown.weekISO > currentWeekISO() ? "Next week" : "This week"}</MarkLabel>
+            <MarkLabel k="week">{crown.weekISO > mondayOf(toDateISO(new Date())) ? "Next week" : "This week"}</MarkLabel>
             <Stop on={weekReady} />
             {!onLine && (
               <span className="crown-week-act">
@@ -287,7 +301,7 @@ export default function WeekPanel({
                 // Scheduled — a card that gives work a time moves that dial.
                 attrsFor={weekMarkAttrs}
                 reachKeyFor={weekMarkReach}
-                acts={{ ready: () => setShapeOpen((v) => !v), placed: onLine }}
+                acts={{ ready: () => setShapeOpen((v) => !v), placed: showNoTime }}
               />
               {shapeOpen && shapeItems.length > 0 && (
                 <div className="crown-shape-list" role="list" aria-label="Projects to shape">
@@ -335,14 +349,22 @@ export default function WeekPanel({
                   timeOffer={timeOffers.get(row.projectId) ?? null}
                   onOpenProject={(id) => openRecord("project", id)}
                   expanded={openIds.has(row.rock.id)}
-                  onExpand={() =>
+                  looseOnly={looseOnly.has(row.rock.id)}
+                  onExpand={() => {
+                    // A hand on the chevron goes back to the whole list.
+                    setLooseOnly((lo) => {
+                      if (!lo.has(row.rock.id)) return lo;
+                      const n = new Set(lo);
+                      n.delete(row.rock.id);
+                      return n;
+                    });
                     setOpenIds((prev) => {
                       const next = new Set(prev);
                       if (next.has(row.rock.id)) next.delete(row.rock.id);
                       else next.add(row.rock.id);
                       return next;
-                    })
-                  }
+                    });
+                  }}
                 />
               ))}
             </div>
@@ -416,6 +438,7 @@ function ProjectStackRow({
   timeOffer,
   onOpenProject,
   expanded,
+  looseOnly = false,
   onExpand,
 }: {
   /** the week's read model — this row computes nothing (see useWeekCrown) */
@@ -433,6 +456,8 @@ function ProjectStackRow({
   timeOffer: ReadyCard | null;
   onOpenProject: (projectId: string) => void;
   expanded: boolean;
+  /** unfolded by the Scheduled dial: just the work with no time */
+  looseOnly?: boolean;
   onExpand: () => void;
 }) {
   const { rock, work, color, placed, loose, open, pct, rolls, continues, canExpand, weightMins, placedLabel } = row;
@@ -606,7 +631,7 @@ function ProjectStackRow({
           which it is — a time chip, or the no-time mark. */}
       {expanded && canExpand && (
         <div className="crown-proj-work">
-          {placed.map((p) => (
+          {!looseOnly && placed.map((p) => (
             <div key={p.task.id}>
               {renderTask(p.task, {
                 draggable: false,
@@ -678,7 +703,7 @@ function TimeChip({ startISO, slotTitle }: { startISO: string; slotTitle: string
 function TimeOfferLine({ card, task, projectName }: { card: ReadyCard; task: Task | null; projectName: string }) {
   const at = card.at!;
   // What it costs (R5), read off the same busy time the composer used.
-  const { busy } = useWeekComposer(new Date());
+  const { busy } = useWeekComposer(new Date(), mondayOf(at.dayISO));
   const cost = costFor(at, busy);
   const start = instantAt(at.dayISO, at.startMin);
   const end = instantAt(at.dayISO, at.startMin + at.durationMin);
