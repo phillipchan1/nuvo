@@ -35,9 +35,11 @@ export interface TaskListKeyActs<T extends KeyRow = Task> {
   /** Complete (or reopen) — the host runs the row's own animation. */
   complete: (targets: T[]) => void;
   trash: (targets: T[]) => void;
-  date: (targets: T[]) => void;
-  move: (targets: T[]) => void;
-  priority: (targets: T[], p: Task["priority"]) => void;
+  /** t · v · 1–4 — absent where the rows have no date, home or priority (the
+   *  Table's project headings), so the key falls through to the page. */
+  date?: (targets: T[]) => void;
+  move?: (targets: T[]) => void;
+  priority?: (targets: T[], p: Task["priority"]) => void;
   rename: (t: T) => void;
   /** Move a row one place (⌥↑ -1, ⌥↓ +1). Absent when the list's order isn't
    *  the user's to set. */
@@ -76,6 +78,7 @@ export function useTaskListKeys<T extends KeyRow = Task>({
   cursor,
   acts,
   handOff = true,
+  selectable,
 }: {
   /** A boolean, or a question asked at keystroke time — for a gate that changes
    *  without re-rendering the host (which pane was pressed last, `keyOwner`). */
@@ -88,10 +91,13 @@ export function useTaskListKeys<T extends KeyRow = Task>({
    *  says no: a block leaves its rows when you page away from it, and the
    *  cursor jumping to a stranger in another week is not "the next row". */
   handOff?: boolean;
+  /** Every row a selection may hold, when it is wider than this list — the
+   *  Table's one selection across all its projects' lists. Defaults to `rows`. */
+  selectable?: T[];
 }) {
   // Read fresh on every keystroke without re-subscribing per render.
-  const live = useRef({ rows, cursor, acts, enabled });
-  live.current = { rows, cursor, acts, enabled };
+  const live = useRef({ rows, cursor, acts, enabled, selectable });
+  live.current = { rows, cursor, acts, enabled, selectable };
   const isOn = () => {
     const on = live.current.enabled;
     return typeof on === "function" ? on() : on;
@@ -122,10 +128,10 @@ export function useTaskListKeys<T extends KeyRow = Task>({
       // knows about the host's own overlays, so ↑↓ in a calendar menu used to
       // walk the rail's cursor behind it, and ⌫ hit both.
       if (document.querySelector("[data-nested-surface]")) return;
-      const { rows, cursor, acts } = live.current;
+      const { rows, cursor, acts, selectable } = live.current;
       const at = cursor.cursorId ? rows.findIndex((t) => t.id === cursor.cursorId) : -1;
       const current = at >= 0 ? rows[at] : null;
-      const selection = rows.filter((t) => cursor.selectedIds.has(t.id));
+      const selection = (selectable ?? rows).filter((t) => cursor.selectedIds.has(t.id));
       const targets = selection.length ? selection : current ? [current] : [];
 
       if (acts.extra?.(e, targets)) {
@@ -231,18 +237,18 @@ export function useTaskListKeys<T extends KeyRow = Task>({
           return handled();
         }
         case "t":
-          if (!targets.length) return;
+          if (!acts.date || !targets.length) return;
           acts.date(targets);
           return handled();
         case "v":
-          if (!targets.length) return;
+          if (!acts.move || !targets.length) return;
           acts.move(targets);
           return handled();
         case "1":
         case "2":
         case "3":
         case "4":
-          if (!targets.length) return;
+          if (!acts.priority || !targets.length) return;
           acts.priority(targets, PRIORITY_KEYS[e.key]);
           return handled();
         case "x": {

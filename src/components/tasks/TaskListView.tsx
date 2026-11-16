@@ -71,6 +71,11 @@ export interface TaskListViewProps {
    *  a whole surface, as everywhere else. */
   /** False for a list that only reads back (finished work): no add box. */
   composer?: boolean;
+  /** One selection held by the host across several lists (the Table): `pool`
+   *  is every task it may hold, so ⌫ / e / t here act on all of them. */
+  selection?: { ids: ReadonlySet<string>; set: (ids: Set<string>) => void; pool: Task[] };
+  /** Drawn faintly on the lit row only — the keys it answers, until learned. */
+  cursorHint?: ReactNode;
   outline?: {
     /** ↑ past the first row, ← or Esc on a row — "up"; ↓ past the add box — "down". */
     onLeave: (dir: "up" | "down") => void;
@@ -102,6 +107,8 @@ export default function TaskListView({
   draft,
   outline,
   composer: withComposer = true,
+  selection: sharedSelection,
+  cursorHint,
 }: TaskListViewProps) {
   const liveMutations = useTaskMutations();
   // A harness that captures into a sink is looking, not editing: its rows'
@@ -117,7 +124,9 @@ export default function TaskListView({
   const renameTask = useRenameAct(mutations);
 
   const [cursorId, setCursorId] = useState<string | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [ownSelected, setOwnSelected] = useState<Set<string>>(new Set());
+  const selectedIds: ReadonlySet<string> = sharedSelection?.ids ?? ownSelected;
+  const setSelectedIds = sharedSelection?.set ?? setOwnSelected;
   const [anchorId, setAnchorId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [menu, setMenu] = useState<
@@ -232,6 +241,7 @@ export default function TaskListView({
   useTaskListKeys({
     enabled: keyboard && !phone && !menu && !editingId && !drafting,
     rows: tasks,
+    selectable: sharedSelection?.pool,
     cursor: { cursorId, setCursorId, selectedIds, setSelectedIds },
     acts: {
       open: (t) => onOpen(t, rowRect(t.id), rowEl(t.id)),
@@ -375,6 +385,11 @@ export default function TaskListView({
                     >
                       ⠿
                     </span>
+                  </>
+                ) : !phone && cursorHint && t.id === cursorId && keyboard ? (
+                  <>
+                    {rowAction?.(t)}
+                    {cursorHint}
                   </>
                 ) : (
                   rowAction?.(t)

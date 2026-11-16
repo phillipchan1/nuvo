@@ -8530,6 +8530,20 @@ pool, no new name beyond *Table* (now one name on both shells — *All* retired)
 account (an empty project opens straight into its add box), and nothing in it is tuned to one
 account.
 
+→ **Open and close are one pair of keys, at every depth (2026-11-15, after first use).** ↵
+opens (a heading's record, a task's popover) and Esc closes it — the Table now stands down
+while anything is open over it (`nav.overlay` / a floor modal / a flow); before, its
+capture-phase Esc cleared a cursor and the record never heard it. Inside a project Esc steps
+out to its heading, and Esc on an open heading folds it. **⇧→ / ⇧←** open and close everything
+(also in Display). **One selection spans the whole Table**, Todoist-style: `x`, ⌘-click and
+⇧-click in any project's list add to it, `e` · `t` · `v` · ⌫ · 1–4 act on all of it, and the
+filter row says "N selected" with Complete and Delete for a mouse or a finger
+(`TaskListView.selection`, `useTaskListKeys({ selectable })`). The lit task shows its keys —
+⌘E rename · e done · x select — the same fading hint as a heading. On a heading `t` · `v` ·
+1–4 now fall through (those acts became optional in the keymap), so 1–3 switch faces there.
+A project closed or filtered away while its tasks held the keys hands them back to its
+heading.
+
 **Not yet:** a task's **steps** (D-103) show in its popover (↵), not inline — no disclosure in
 the outline, and Tab does not turn a task into a step. That needs a row disclosure in `TaskRow`
 and a task↔step mutation that clears the fields migration 60 forbids; it is the next piece.

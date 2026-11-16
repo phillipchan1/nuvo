@@ -21,7 +21,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { ListFilter, SlidersHorizontal } from "lucide-react";
 import { useVertical } from "../../hooks/useVertical";
-import { useAllTasks } from "../../hooks/useTasks";
+import { useAllTasks, useTaskMutations } from "../../hooks/useTasks";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useRecordContextMenu } from "../RecordContextMenu";
@@ -49,6 +49,7 @@ import { domainById, type Domain } from "../../lib/vertical";
 import { ripenessOfInitiative, ripenessOfProject, verdictOf } from "../../lib/tending";
 import { spanElapsed } from "../../lib/pace";
 import { todayISO } from "../../lib/dates";
+import type { Task } from "../../lib/types";
 import { pressable } from "../../lib/a11y";
 
 /** A heading row — what the outline's own keys walk. */
@@ -134,6 +135,7 @@ export default function OutlineFloor({
 }) {
   const { data, updateProject, updateInitiative } = useVertical();
   const { data: allTasks } = useAllTasks();
+  const mutations = useTaskMutations();
   const nav = useAppNavigation();
   const phone = useIsMobile();
   const { onContextMenu, askDelete, menu: recordMenu, open: recordMenuOpen } = useRecordContextMenu();
@@ -233,6 +235,46 @@ export default function OutlineFloor({
     setCursorId(heads[i + 1]?.id ?? projectId);
   };
 
+  // Something opened over the Table — a record (↵ on a heading), a task (↵ on
+  // a row), a create sheet, a flow — owns the keys until it closes, Esc
+  // included. The Table used to keep listening, so its capture-phase Esc
+  // cleared a cursor instead of closing what ↵ had just opened.
+  const onTop = nav.nav.overlay !== "none" || nav.nav.floorModal !== null || nav.nav.flow !== null;
+
+  // The project whose tasks hold the keys was closed, filtered away or left the
+  // view: hand the keys back to its heading (or the nearest), never to nowhere.
+  useEffect(() => {
+    if (!active) return;
+    if (heads.some((h) => h.id === active.id && h.open)) return;
+    setActive(null);
+    setCursorId(heads.some((h) => h.id === active.id) ? active.id : heads.find((h) => h.kind !== "group")?.id ?? null);
+  }, [active, heads]);
+
+  // One selection across every project's tasks, the way Todoist's spans a view:
+  // x / ⌘-click / ⇧-click in any list add to it, and e · t · v · ⌫ · 1–4 in any
+  // list act on all of it.
+  const [taskSel, setTaskSel] = useState<Set<string>>(new Set());
+  const pool = useMemo(
+    () => groups.flatMap((g) => g.items.flatMap((it) => (it.kind === "project" ? [it] : it.projects))).flatMap((p) => p.tasks),
+    [groups],
+  );
+  const selected = useMemo(() => pool.filter((t) => taskSel.has(t.id)), [pool, taskSel]);
+  // a selected task that leaves the view leaves the selection
+  useEffect(() => {
+    if (taskSel.size && selected.length !== taskSel.size) setTaskSel(new Set(selected.map((t) => t.id)));
+  }, [selected, taskSel]);
+  const sharedSelection = useMemo(() => ({ ids: taskSel, set: setTaskSel, pool }), [taskSel, pool]);
+  const bulk = (fn: (t: Task) => void) => {
+    selected.forEach(fn);
+    setTaskSel(new Set());
+  };
+
+  const openAll = () => setExpandedList(heads.filter((h) => h.kind !== "group").map((h) => h.id).concat(allIds(groups)));
+  const closeAll = () => {
+    setActive(null);
+    setExpandedList([]);
+  };
+
   // Keep the lit heading in view as the keys walk.
   useEffect(() => {
     if (cursorId) rowEl(cursorId)?.scrollIntoView({ block: "nearest" });
@@ -243,7 +285,7 @@ export default function OutlineFloor({
   const recordOf = (h: Head) => (h.kind === "project" ? "project" : "initiative") as "project" | "initiative";
 
   useTaskListKeys<Head>({
-    enabled: () => !phone && active === null && !recordMenuOpen && !shipId,
+    enabled: () => !phone && !onTop && active === null && !recordMenuOpen && !shipId,
     rows: heads,
     cursor: { cursorId, setCursorId, selectedIds, setSelectedIds },
     acts: {
@@ -263,9 +305,8 @@ export default function OutlineFloor({
         // the cursor stays on the row until it is actually gone
         queueMicrotask(() => setCursorId(h.id));
       },
-      date: () => {},
-      move: () => {},
-      priority: () => {},
+      // no t · v · 1–4 on a heading: those keys fall through to the page
+      // (1–3 are the faces), rather than being spent on nothing
       rename: (h) => {
         const el = rowEl(h.id)?.querySelector<HTMLElement>(".inline-edit");
         if (!el) return;
@@ -289,7 +330,21 @@ export default function OutlineFloor({
         enter(h.id, "composer");
       },
       extra: (e) => {
+        // ⇧→ / ⇧← open and close everything, from any heading or none.
+        if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+          if (e.key === "ArrowRight") openAll();
+          else closeAll();
+          learn();
+          return true;
+        }
         if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false;
+        // Esc folds an open heading — the close to → / ↵'s open — before it
+        // lets the cursor go. (A selection still clears first: the hook's.)
+        if (e.key === "Escape" && current && current.open && selectedIds.size === 0 && !reaching) {
+          if (current.kind === "group") setFolded(toggle(folded, current.group!.key));
+          else setOpen(current.id, false);
+          return true;
+        }
         const h = current;
         if (!h) return false;
         const i = heads.indexOf(h);
@@ -356,7 +411,7 @@ export default function OutlineFloor({
   useEffect(() => {
     if (phone) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || active || recordMenuOpen) return;
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || active || recordMenuOpen || onTop) return;
       const t = e.target as HTMLElement;
       if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable) return;
       if (document.querySelector("[data-nested-surface]")) return;
@@ -368,7 +423,7 @@ export default function OutlineFloor({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [phone, active, recordMenuOpen]);
+  }, [phone, active, recordMenuOpen, onTop]);
 
   const noun = altitude === "project" ? "project" : "initiative";
   const total = groups.reduce((a, g) => a + g.items.length, 0);
@@ -497,10 +552,12 @@ export default function OutlineFloor({
             <MenuItem checked={grouping === "status" || (view === "everything" && grouping === "when")} onSelect={() => setGrouping("status")}>Status</MenuItem>
             <MenuItem checked={grouping === "none"} onSelect={() => setGrouping("none")}>No grouping</MenuItem>
             <MenuSeparator />
-            <MenuItem onSelect={() => setExpandedList(heads.filter((h) => h.kind !== "group").map((h) => h.id).concat(allIds(groups)))}>
+            <MenuItem shortcut={phone ? undefined : ["⇧", "→"]} onSelect={openAll}>
               Open everything
             </MenuItem>
-            <MenuItem onSelect={() => setExpandedList([])}>Close everything</MenuItem>
+            <MenuItem shortcut={phone ? undefined : ["⇧", "←"]} onSelect={closeAll}>
+              Close everything
+            </MenuItem>
             {!phone && (
               <MenuItem
                 checked={hints}
@@ -518,6 +575,18 @@ export default function OutlineFloor({
             )}
           </Menu>
           <span className="fl-filter-gap" />
+          {selected.length > 0 && (
+            <span className="ol-bulk" role="status">
+              <span className="ol-bulk-n">{selected.length} selected</span>
+              <Button kind="ghost" size="xs" shortcut={phone ? undefined : "E"} onClick={() => bulk((t) => (t.status === "done" ? mutations.uncomplete(t, { undo: "toast" }) : mutations.complete(t, { undo: "toast" })))}>
+                Complete
+              </Button>
+              <Button kind="ghost" size="xs" shortcut={phone ? undefined : "⌫"} onClick={() => bulk((t) => mutations.trash(t, { undo: "toast" }))}>
+                Delete
+              </Button>
+              <IconButton size="xs" label="Clear the selection" icon={<Icon name="close" size={12} />} onClick={() => setTaskSel(new Set())} />
+            </span>
+          )}
           {view === "upcoming" && (
             <FloorStanding
               kind={altitude}
@@ -750,7 +819,9 @@ export default function OutlineFloor({
               tasks={item.tasks}
               context={{ projectId: p.id, initiativeId: p.initiativeId, domainId: p.domainId }}
               contextLabel={{ name: p.name, color: domain?.color }}
-              keyboard={listActive}
+              keyboard={listActive && !onTop}
+              selection={sharedSelection}
+              cursorHint={hints ? <HeadHint keys={["⌘E", "rename", "e", "done", "x", "select"]} /> : undefined}
               onOpen={(t) => nav.openOverlay("task-record", t.id)}
               flush
               reorderable={view !== "completed"}
