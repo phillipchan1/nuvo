@@ -32,9 +32,9 @@ describe("On Deck empty create CTA", () => {
       /onAction=\{\(\) => openFloorModal\("new-project"\)\}/,
     );
 
-    const table = read("components/floors/PortfolioFloor.tsx");
+    const table = read("components/floors/OutlineFloor.tsx");
     expect(table, "Table '+ new project' must stay on the same path").toMatch(
-      /onNew:\s*\(\) => openFloorModal\("new-project"\)/,
+      /openFloorModal\(altitude === "project" \? "new-project" : "new-initiative"\)/,
     );
 
     const shell = read("components/AppShell.tsx");

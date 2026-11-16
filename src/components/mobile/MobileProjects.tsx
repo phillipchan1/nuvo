@@ -15,10 +15,10 @@
 // "All" stays what it was: the flat browse list, reaching backlog/complete work
 // the deck (in-flight only) leaves out.
 //
-// The tab now carries the desktop's FOUR faces, in the desktop's order — On Deck
-// (when) · Groom (what) · All (everything) · Shipped (what landed). Groom and
-// Shipped were desktop-only, which left the phone able to place work it could
-// not shape, and unable to look at what it had finished.
+// The tab carries the desktop's faces, in the desktop's order — On Deck (when)
+// · Table (what, and everything) · Shipped (what landed). Groom folded into the
+// Table's Upcoming view on both shells (D-220); the phone's Table is the same
+// outline as the desktop's, not a list of its own.
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -31,7 +31,7 @@ import { weekName, weekSpan, weekTick } from "../../lib/week";
 import { domainById, isOpenStatus, type Domain, type Project } from "../../lib/vertical";
 import MobileDeck, { type DeckCard, type DeckColumn } from "./deck/MobileDeck";
 import SkeletonRows from "./Skeleton";
-import { PHONE_WEEK_HORIZON, VerticalList } from "./detail/verticalDetail";
+import { PHONE_WEEK_HORIZON } from "./detail/verticalDetail";
 // One card across both shells — the phone must not invent its own grammar (D-048).
 import PlannerCard from "../ondeck/DeckCard";
 import { deckWeight } from "../../lib/pace";
@@ -42,7 +42,7 @@ import type { ThinPath } from "../../lib/thinPath";
 import { pressable } from "../../lib/a11y";
 import { Card, Dot } from "../kit";
 import { PhEmpty, TouchSegmented } from "./touch";
-import MobileGroom from "./MobileGroom";
+import OutlineFloor from "../floors/OutlineFloor";
 import MobileShipped from "./MobileShipped";
 import { useRecordActions } from "./MobileRecordActions";
 import GroomingSessionAction from "../floors/GroomingSessionAction";
@@ -56,7 +56,7 @@ const HORIZON_SPRINTS = PHONE_WEEK_HORIZON;
 const clampIdx = (i: number, H: number) => Math.max(0, Math.min(i, H - 1));
 
 const SEG_KEY = "nuvo-mobile-projects-seg";
-export type BuildFace = "ondeck" | "groom" | "all" | "shipped";
+export type BuildFace = "ondeck" | "all" | "shipped";
 type Seg = BuildFace;
 
 export default function MobileProjects({
@@ -70,7 +70,7 @@ export default function MobileProjects({
   // this" — the phone's right-click. (On the deck below, a hold means "pick it
   // up"; that surface is a drag surface, and its records reach the same acts
   // through the ⋯ in the record itself.)
-  const { actionProps, sheet: actionSheet } = useRecordActions(onOpenItem);
+  const { actionProps, openActions, sheet: actionSheet } = useRecordActions(onOpenItem);
   const { byWeek, weeklyAvgMins } = useCapacity();
   const [maxPerWeek] = useMaxPerWeek();
   const now = useMemo(() => new Date(), []);
@@ -84,7 +84,8 @@ export default function MobileProjects({
   const [seg, setSegState] = useState<Seg>(() => {
     try {
       const v = localStorage.getItem(SEG_KEY);
-      return v === "groom" || v === "all" || v === "shipped" ? v : "ondeck";
+      // Groom folded into the Table (D-220): a phone left on it opens there.
+      return v === "groom" || v === "all" ? "all" : v === "shipped" ? v : "ondeck";
     } catch {
       return "ondeck";
     }
@@ -234,19 +235,16 @@ export default function MobileProjects({
 
       {!ready ? (
         <SkeletonRows rows={4} />
-      ) : seg === "groom" ? (
-        <MobileGroom scope="project" onOpenItem={onOpenItem} />
       ) : seg === "shipped" ? (
         <MobileShipped scope="project" onOpenItem={onOpenItem} />
       ) : seg === "all" ? (
+        // The Table — the same outline as the desktop's (D-220), tap-first.
         <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto fab-clear">
-          <VerticalList
-            d={d}
-            lens="projects"
-            onOpenProject={(id) => onOpenItem("project", id)}
-            onOpenInitiative={(id) => onOpenItem("initiative", id)}
-            onOpenDomain={(id) => onOpenItem("domain", id)}
-            hold={actionProps}
+          <OutlineFloor
+            altitude="project"
+            flush
+            onOpenRecord={(kind, id) => onOpenItem(kind, id)}
+            recordActs={{ hold: actionProps, open: openActions }}
           />
           {actionSheet}
         </div>
@@ -364,8 +362,7 @@ function CapacityGauge({ blocks, demand, over }: { blocks: number; demand: numbe
 
 const FACES: { value: BuildFace; label: string }[] = [
   { value: "ondeck", label: "On Deck" },
-  { value: "groom", label: "Groom" },
-  { value: "all", label: "All" },
+  { value: "all", label: "Table" },
   { value: "shipped", label: "Shipped" },
 ];
 

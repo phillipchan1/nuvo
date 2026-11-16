@@ -90,6 +90,8 @@ been used to argue against things it doesn't forbid.
 | **Summit** | quarterly | Quarter's Gain → Mandates → Portfolio → Months. |
 | ~~**Blueprint**~~ | — | *Retired as a name (D-196).* Its screen went in the Warm Paper rework; its proposer now serves **Draft the projects**. |
 | **On Deck** | continuous | The project timeline you open *first* — coarse calls about which weeks hold what. [`on-deck.md`](../on-deck.md) |
+| **Table** | continuous | The outline of every project (or initiative) and its tasks, at either Build altitude — group ▸ initiative ▸ project ▸ tasks, walked by keyboard or tap. Three fixed views: **Upcoming** (open work by the week it next needs you — where grooming happens now), **Completed** (finished *tasks*, by the week they were finished; whole shipped projects stay on **Shipped**), **Everything** (by status). The phone's face was called *All* until D-220; it is *Table* on both shells. D-220. |
+| ~~**Groom** (the face)~~ | — | *Retired as a face (D-220)* — folded into the **Table**'s Upcoming view on both shells. *Grooming* stays the word for the act (routing, readiness). |
 | **the Refine run** | on demand, phone-first | Grooming as a winnable game — a short card run that moves readiness. [`refine-run.md`](../refine-run.md) |
 | **Grooming lenses** | *(spec)* | Four views: **When** (On Deck, built) · **What** · **How** · **In the way**. [`grooming-lenses.md`](../grooming-lenses.md) |
 

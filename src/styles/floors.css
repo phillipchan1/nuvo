@@ -506,6 +506,127 @@ html:root .fl-archive-row:focus-visible { outline: none; box-shadow: inset 0 0 0
 .fl-meter { position: relative; height: var(--track-h, 3px); border-radius: 2px; background: var(--line-2); overflow: hidden; }
 .fl-meter > i { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: var(--ok); transition: transform var(--d-advance, 680ms) var(--ease-momentum, ease-out); }
 
+/* ══ OUTLINE — the Table (D-220) ═════════════════════════════════════════
+   The List layout as an outline: group ▸ initiative ▸ project ▸ its tasks.
+   Headings are fl-tr rows; the tasks under an open project are the app's one
+   task list (TaskListView), indented under the name. The lit heading wears the
+   selection fill and the accent edge — the same "you are here" as a task row. */
+.fl-list[data-flush] { margin: 0; min-height: 100%; }
+.fl-list[data-flush] .fl-list-head { top: 0; }
+.ol-views { margin-right: 6px; }
+/* The Table's filter row carries more than a plain list's — let it wrap
+   rather than push the search and the create button off the panel. */
+.ol-list .fl-filter { flex-wrap: wrap; row-gap: 4px; padding-block: 4px; }
+.ol-search { width: 200px; margin: 0 4px; }
+
+.ol-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 280px;
+  height: var(--h-xs);
+  padding: 0 2px 0 0;
+  border-radius: var(--r-chip);
+  background: var(--accent-wash);
+}
+.ol-chip-body {
+  min-width: 0;
+  height: 100%;
+  padding: 0 4px 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 450 12px/1 var(--font-sans);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ol-chip-k { color: var(--muted); font-weight: 500; }
+
+.ol-grp { gap: 8px; }
+.ol-grp .ol-span { color: var(--muted); font-weight: 450; font-variant-numeric: tabular-nums; }
+.ol-grp .ol-late { color: var(--signal); }
+.ol-grp-meta {
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 450;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ol-grp[data-lit],
+.ol-row[data-lit] { background: var(--accent-wash); }
+.ol-grp[data-lit]::before,
+.ol-row[data-lit]::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: var(--accent);
+}
+.ol-grp { position: relative; }
+
+.ol-name { gap: 8px; padding-left: calc(var(--depth, 0) * 24px); }
+.ol-row[data-kind="initiative"] .ol-name { font-weight: 600; }
+.ol-name-text { flex: 0 1 auto; min-width: 0; display: flex; }
+/* The list's name edit pulls left 5px to sit its padding on the column edge;
+   inside a flex box that makes the box 5px narrower than its text, and the
+   last letters ellipsize at any width. The pip's gap already spaces it. */
+.ol-name .inline-edit { margin-left: 0; }
+.ol-chev {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-left: -6px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--faint);
+}
+.ol-chev svg { transition: transform var(--d-fast, 110ms) var(--ease-out); }
+.ol-row[aria-expanded="true"] .ol-chev svg { transform: rotate(90deg); }
+@media (hover: hover) {
+  .ol-chev:hover { background: var(--hover); color: var(--ink); }
+}
+
+/* the tasks of an open project sit under its name, on the panel */
+.ol-tasks {
+  padding: 2px 20px 6px calc(20px + 22px + var(--depth, 1) * 24px);
+  border-bottom: 1px solid var(--line-1);
+}
+/* The list takes focus only to hold the keys — its lit row says where you
+   are, so the box itself draws no ring. Rows keep clear of the sticky head
+   (filter row + column header) as the cursor walks them into view. */
+html:root .ol-tasks [role="list"]:focus,
+html:root .ol-tasks [role="list"]:focus-visible { outline: none; box-shadow: none; }
+.ol-list [data-list-row],
+.ol-list .ol-row,
+.ol-list .ol-grp { scroll-margin-top: 112px; scroll-margin-bottom: 24px; }
+.ol-empty {
+  padding: 10px 20px 10px calc(20px + 22px + var(--depth, 1) * 24px);
+  border-bottom: 1px solid var(--line-1);
+  color: var(--faint);
+  font: 450 12px/1.3 var(--font-sans);
+}
+
+/* The keys a lit heading answers — faint, beside it, and gone once learned. */
+.ol-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: 6px;
+  color: var(--faint);
+  font: 450 11px/1 var(--font-sans);
+  white-space: nowrap;
+  animation: ol-hint-in var(--d-slow, 260ms) var(--ease-out) 180ms both;
+}
+.ol-hint > span { display: inline-flex; align-items: center; gap: 4px; }
+@keyframes ol-hint-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .ol-hint { animation: none; } }
+@media (hover: none) { .ol-hint { display: none; } }
+
 /* ══ PHONE ══════════════════════════════════════════════════════════════ */
 @media (max-width: 1180px) {
   .fl-th > [data-col="wide"],
@@ -521,6 +642,13 @@ html:root .fl-archive-row:focus-visible { outline: none; box-shadow: inset 0 0 0
   .fl-tr > [data-col]:not([data-col="keep"]) { display: none; }
   .fl-th, .fl-tr { grid-template-columns: var(--fl-cols-phone, minmax(0, 1fr) auto); padding: 0 16px; }
   .fl-tr { min-height: 48px; }
+  .ol-search { width: 100%; order: 10; margin: 4px 0 0; }
+  .ol-views { order: -1; width: 100%; margin: 0 0 4px; }
+  .ol-name { padding-left: calc(var(--depth, 0) * 16px); }
+  .ol-chev { width: 32px; height: 44px; margin-left: -10px; }
+  .ol-tasks { padding: 0 8px 4px calc(16px + var(--depth, 1) * 16px); }
+  .ol-empty { padding-left: calc(16px + var(--depth, 1) * 16px); }
+  .ol-grp-meta { font-size: 11px; }
   .fl-filter { flex-wrap: wrap; padding: 6px 12px; }
   .fl-stand { display: none; }
   .fl-board { grid-template-columns: minmax(0, 1fr); overflow-x: visible; }

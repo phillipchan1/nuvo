@@ -37,8 +37,7 @@ import SkeletonRows from "./Skeleton";
 // One card across both shells — the phone must not invent its own grammar (D-048).
 import PlannerCard, { type DeckTone } from "../ondeck/DeckCard";
 import { initiativeCardStatus, initiativeWeight } from "../ondeck/deckStatus";
-import { VerticalList } from "./detail/verticalDetail";
-import MobileGroom from "./MobileGroom";
+import OutlineFloor from "../floors/OutlineFloor";
 import MobileShipped from "./MobileShipped";
 import { useRecordActions } from "./MobileRecordActions";
 import DomainSymbol from "../domain/DomainSymbol";
@@ -64,7 +63,7 @@ export default function MobileInitiatives({
   // A hold on the All list opens the record's acts — the phone's right-click.
   // (On the deck a hold picks the bet up; those cards reach the same acts
   // through the ⋯ in the record.)
-  const { actionProps, sheet: actionSheet } = useRecordActions(onOpenItem);
+  const { actionProps, openActions, sheet: actionSheet } = useRecordActions(onOpenItem);
   const [maxPerQuarter] = useMaxPerQuarter();
   const now = useMemo(() => new Date(), []);
   const board = useMemo(() => readInitiativeDeck(d, now, HORIZON_QUARTERS, true), [d, now]);
@@ -79,7 +78,8 @@ export default function MobileInitiatives({
   const [seg, setSegState] = useState<Seg>(() => {
     try {
       const v = localStorage.getItem(SEG_KEY);
-      return v === "groom" || v === "all" || v === "shipped" ? v : "ondeck";
+      // Groom folded into the Table (D-220): a phone left on it opens there.
+      return v === "groom" || v === "all" ? "all" : v === "shipped" ? v : "ondeck";
     } catch {
       return "ondeck";
     }
@@ -236,19 +236,16 @@ export default function MobileInitiatives({
 
       {!ready ? (
         <SkeletonRows rows={4} />
-      ) : seg === "groom" ? (
-        <MobileGroom scope="initiative" onOpenItem={onOpenItem} />
       ) : seg === "shipped" ? (
         <MobileShipped scope="initiative" onOpenItem={onOpenItem} />
       ) : seg === "all" ? (
+        // The Table — the same outline as the desktop's (D-220), tap-first.
         <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto fab-clear">
-          <VerticalList
-            d={d}
-            lens="initiatives"
-            onOpenProject={(id) => onOpenItem("project", id)}
-            onOpenInitiative={(id) => onOpenItem("initiative", id)}
-            onOpenDomain={(id) => onOpenItem("domain", id)}
-            hold={actionProps}
+          <OutlineFloor
+            altitude="initiative"
+            flush
+            onOpenRecord={(kind, id) => onOpenItem(kind, id)}
+            recordActs={{ hold: actionProps, open: openActions }}
           />
           {actionSheet}
         </div>

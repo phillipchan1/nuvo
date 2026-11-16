@@ -8477,3 +8477,64 @@ D-209 did (no colour to decode). Adds no pool and no name: Shaped and Scheduled 
 no-colour-key variants — dials chosen). Driven at `?rail=offers` (desktop), `?weekcrown` at 375px
 and `?decks`; the signed-in Schedule at a weekend (reads "Next week", no Today line). Tests:
 `rail-offers`, `readiness-ladder`, `kit`.*
+
+---
+
+**D-220 · 2026-11-15 · The Table is the outline, and Groom folds into it.**
+
+The Groom board shaped projects one card at a time, in columns of how shaped they were; the
+Table was a filing cabinet that showed nothing below a project. The operator's ask: one place to
+get the coming week ready — see every project *with its tasks*, sorted by when it next needs
+you, and add or fix work there as fast as in Todoist.
+
+→ **The Table is an outline at both altitudes:** a group (when) ▸ an initiative ▸ a project ▸
+its tasks. `lib/outline.ts` (`readOutline`) decides the rows; `floors/OutlineFloor.tsx` draws
+them on both shells. Three **fixed** views — **Upcoming** (open work, grouped by the date it next
+needs you: the soonest open task, else the target; weeks from the kernel's `planningWeekStart`,
+so a weekend reads the week ahead), **Completed** (finished *tasks*, by the week they were
+finished), **Everything** (by status). Initiatives group by target quarter. Filters on fixed
+fields only (domain, status, shape, task date, length, priority) plus three presets; a search
+that reaches into tasks. No saved views, no custom fields — **N-05 stands**.
+
+→ **Groom is gone as a face, on both shells** — On Deck · Table · Shipped. A saved "groom" view
+opens the Table. The phone's *All* list is replaced by the same outline and renamed *Table*.
+**Shipped stays** (Phil, 2026-11-15): Completed is the work that landed, task by task; Shipped is
+the record of whole projects. Completed leaves a shipped project out unless it has finished
+tasks, so the two never list the same thing.
+
+→ **One keymap, extended — not a second one (D-146).** The tasks are `TaskListView`; its new
+`outline` prop hands the keys back at the list's edges (↑ past the first row, ← or Esc → the
+project; ↓ off the add box → the next heading) and lets the host hand them in. The headings walk
+on `useTaskListKeys` too, with →/← to open and close, ↓ from an open project into its tasks, ↑
+onto an open project's add box. `TaskComposer` gained `onArrowDown`; `TaskListView` gained
+`composer={false}` for read-back lists. Faint keycap hints ride the lit heading until the keys
+have been used twelve times (Display → Keyboard hints brings them back) — an exception to "no
+keyboard-hint rows", held to one lit row and gone once learned.
+
+→ **Delete is one key.** ⌫ on a task trashes it with undo (the list's own act). ⌫ on a project
+or initiative opens the record menu already on its Delete step (`useRecordContextMenu().askDelete`)
+— one key and one answer, from the same vocabulary as a right-click (`recordActions`). On the
+phone, a heading's ⋯ opens the record-acts sheet.
+
+**Anchor.** Closes toward **Q4** (*what are the actual steps?*) — every project's tasks are on
+one page, addable inline — and **W2** (*where do my three hours go?*): the coming week's open
+tasks and their estimate sit at the top. Strains **P8** (one question per surface): the Table now
+answers both *what's coming* and *what's in the cabinet*; the views keep them apart. Four no's: no
+pool, no new name beyond *Table* (now one name on both shells — *All* retired), works on an empty
+account (an empty project opens straight into its add box), and nothing in it is tuned to one
+account.
+
+**Not yet:** a task's **steps** (D-103) show in its popover (↵), not inline — no disclosure in
+the outline, and Tab does not turn a task into a step. That needs a row disclosure in `TaskRow`
+and a task↔step mutation that clears the fields migration 60 forbids; it is the next piece.
+
+*Status: built 2026-11-15 on `claude/table-outline` — `lib/outline.ts` (+`tests/outline.test.ts`),
+`floors/OutlineFloor.tsx`, `TaskListView` `outline` / `composer`, `TaskComposer.onArrowDown`,
+`RecordContextMenu.askDelete`; removed `PortfolioFloor`, `InitiativesFloor`, `GroomFloor`,
+`InitiativeGroomFloor`, both readiness strips, `MobileGroom`, `InitiativeGroomWall`. Verified:
+typecheck, build, the outline tests; driven in the `?build=table` / `?build=itable` harness at
+desktop width and 375px (open/close, keys in and out of a project's add box, ⌫ asking and
+cancelling, the filter menu); then against the local Worker on a test account seeded from the
+local database — j/k through a project's real tasks, `a` adding "… fri 30m" (Fri, 30m), ⌫
+trashing it, Esc and ← back out, and the phone's Table at 375px with real rows. **Not yet run
+against production data, and not released.***

@@ -76,6 +76,9 @@ export interface TaskComposerProps {
   /** ↑ from an empty box — the list takes the keys back, cursor on its last
    *  row (or the row this box was placed beside). */
   onArrowUp?: (placedAfter: number | null) => void;
+  /** ↓ from an empty box — past the end of the list, to whatever the host
+   *  draws below it (the Table's next project). */
+  onArrowDown?: () => void;
   /** Called with the error when a create fails; the text is restored either way. */
   onError?: (message: string) => void;
   /** Close after one task (⌘K-style). ⌘↵ always does. */
@@ -197,6 +200,7 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
     enterDisabled,
     enterKeyHint = "enter",
     onArrowUp,
+    onArrowDown,
   },
   ref,
 ) {
@@ -362,6 +366,13 @@ export const TaskComposer = forwardRef<TaskComposerHandle, TaskComposerProps>(fu
       setPlacement(null);
       inputRef.current?.blur();
       onArrowUp(at);
+      return;
+    }
+    if (e.key === "ArrowDown" && onArrowDown && !text) {
+      e.preventDefault();
+      setPlacement(null);
+      inputRef.current?.blur();
+      onArrowDown();
       return;
     }
     if (e.key === "Enter" && enterDisabled) return;

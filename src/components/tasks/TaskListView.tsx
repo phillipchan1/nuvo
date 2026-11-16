@@ -66,6 +66,18 @@ export interface TaskListViewProps {
   /** A project's open draft (Draft the path, D-193): its steps are drawn among
    *  the rows, with the same row, and the list's keys hand over to the draft. */
   draft?: PathDraft | null;
+  /** The list is one stretch of a larger outline (the Table, D-220): its keys
+   *  hand back at its edges, and the host hands them in. Without it the list is
+   *  a whole surface, as everywhere else. */
+  /** False for a list that only reads back (finished work): no add box. */
+  composer?: boolean;
+  outline?: {
+    /** ↑ past the first row, ← or Esc on a row — "up"; ↓ past the add box — "down". */
+    onLeave: (dir: "up" | "down") => void;
+    /** Bumped by the host to hand the keys in: lit on the first or last row, or
+     *  straight into the add box (the first press into an empty project). */
+    entry: { at: "first" | "last" | "composer"; seq: number } | null;
+  };
 }
 
 export default function TaskListView({
@@ -88,6 +100,8 @@ export default function TaskListView({
   className = "",
   dragData,
   draft,
+  outline,
+  composer: withComposer = true,
 }: TaskListViewProps) {
   const liveMutations = useTaskMutations();
   // A harness that captures into a sink is looking, not editing: its rows'
@@ -201,6 +215,20 @@ export default function TaskListView({
     tops.current = next;
   }, [drafting, ids]);
 
+  // Handed in by an outline host: light the row it asked for, or open the box.
+  const entrySeq = outline?.entry?.seq;
+  useLayoutEffect(() => {
+    const at = outline?.entry?.at;
+    if (!at) return;
+    const row = at === "first" ? tasks[0] : at === "last" ? tasks[tasks.length - 1] : undefined;
+    if (row) setCursorId(row.id);
+    else {
+      setCursorId(null);
+      composer.current?.focus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entrySeq]);
+
   useTaskListKeys({
     enabled: keyboard && !phone && !menu && !editingId && !drafting,
     rows: tasks,
@@ -227,7 +255,23 @@ export default function TaskListView({
             announce(next ? `${t.title}, position ${at + 1} of ${ids.length}` : "Can't move this row any further");
           }
         : undefined,
-      toComposer: () => composer.current?.focus(),
+      // Off the end: the add box — or, with none, on down the outline.
+      toComposer: withComposer ? () => composer.current?.focus() : outline ? () => outline.onLeave("down") : undefined,
+      extra: outline
+        ? (e) => {
+            if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false;
+            const atTop = cursorId === null || cursorId === tasks[0]?.id;
+            const leaveUp =
+              ((e.key === "ArrowUp" || e.key === "k") && atTop) ||
+              e.key === "ArrowLeft" ||
+              e.key === "h" ||
+              (e.key === "Escape" && selectedIds.size === 0);
+            if (!leaveUp) return false;
+            setCursorId(null);
+            outline.onLeave("up");
+            return true;
+          }
+        : undefined,
       add: (anchor, where) => {
         const sortOrder = anchor ? orderBeside(tasks, anchor, where) : undefined;
         composer.current?.focus(
@@ -374,7 +418,7 @@ export default function TaskListView({
         {items.length === 0 && emptyHint && <div className="task-list-empty">{emptyHint}</div>}
       </div>
 
-      <TaskComposer
+      {withComposer && <TaskComposer
         ref={composer}
         // The add box sits on the rows' own left edge — flush rows, flush box.
         className={flush ? "task-composer-flush" : ""}
@@ -383,14 +427,17 @@ export default function TaskListView({
         placeholder={composerPlaceholder}
         autoFocus={composerAutoFocus && !phone}
         submitOnBlur={phone}
-        onLeave={() => listRef.current?.focus()}
+        onLeave={() => (outline && tasks.length === 0 ? outline.onLeave("up") : listRef.current?.focus())}
+        onArrowDown={outline ? () => outline.onLeave("down") : undefined}
         onArrowUp={(placedAfter) => {
+          // An empty stretch of an outline: ↑ goes back to its heading.
+          if (outline && tasks.length === 0) return outline.onLeave("up");
           // Back to the row the box sat beside, else the last row.
           const beside = placedAfter == null ? null : [...tasks].reverse().find((t) => t.sort_order <= placedAfter);
           setCursorId((beside ?? tasks[tasks.length - 1])?.id ?? null);
           listRef.current?.focus();
         }}
-      />
+      />}
 
       {menu?.kind === "date" && (
         <TaskDateMenu anchor={menu.anchor} targets={menu.targets} mutations={mutations} onClose={() => setMenu(null)} />

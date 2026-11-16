@@ -792,7 +792,7 @@ export default function OnDeckPlanner({
           done: readyN + doneN,
           total: placed.length,
           noun: "ready",
-          onOpen: placed.length > 0 ? () => setProjectView("groom") : undefined,
+          onOpen: placed.length > 0 ? () => setProjectView("all") : undefined,
           openTitle: "Shape the projects that need it",
           // The deck as a track: ready (and shipped) solid, mid-groom tinted,
           // raw open — the same three states the cards' rings draw.

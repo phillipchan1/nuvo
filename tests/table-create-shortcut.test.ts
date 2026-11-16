@@ -19,21 +19,16 @@ function read(relPath: string) {
   return readFileSync(join(SRC, relPath), "utf8");
 }
 
-const TABLE_FLOORS = [
-  "components/floors/PortfolioFloor.tsx",
-  "components/floors/InitiativesFloor.tsx",
-  "components/floors/Collection.tsx",
-] as const;
+const TABLE_FLOORS = ["components/floors/OutlineFloor.tsx", "components/floors/Collection.tsx"] as const;
 
 describe("Table create-shortcut copy", () => {
-  it("Projects Table tells the user to press P", () => {
-    const table = read("components/floors/PortfolioFloor.tsx");
-    expect(table, `${rel("components/floors/PortfolioFloor.tsx")} must name P`).toMatch(/newKey: "P"/);
-  });
-
-  it("Initiatives Table tells the user to press I — the twin of the same lie", () => {
-    const table = read("components/floors/InitiativesFloor.tsx");
-    expect(table, `${rel("components/floors/InitiativesFloor.tsx")} must name I`).toMatch(/newKey: "I"/);
+  // One Table at both altitudes since D-220: its "+ New" keycap is P for
+  // projects and I for initiatives.
+  it("the Table names P for projects and I for initiatives", () => {
+    const table = read("components/floors/OutlineFloor.tsx");
+    expect(table, `${rel("components/floors/OutlineFloor.tsx")} must name P / I`).toMatch(
+      /altitude === "project" \? "P" : "I"/,
+    );
   });
 
   it("Collection / Table floors do not advertise N as create", () => {

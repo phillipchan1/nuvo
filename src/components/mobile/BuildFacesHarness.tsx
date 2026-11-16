@@ -1,5 +1,6 @@
-// Standalone verify harness for the phone's two NEW Build faces — Groom
-// (MobileGroom) and Shipped (MobileShipped) — plus the long-press record acts
+// Standalone verify harness for the phone's Build faces — the Table
+// (OutlineFloor, D-220: Groom folded into it) and Shipped (MobileShipped) —
+// plus the long-press record acts
 // (MobileRecordActions), over fixture data at phone width. Reached at ?build,
 // mounted in main.tsx. Not part of any real surface. Precedent: DomainHarness
 // (?domains), CalendarHarness (?horizon), PlanWeekHarness (?planweek).
@@ -14,6 +15,7 @@
 import { useMemo, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { VerticalStoreProvider, type VerticalStore } from "../../hooks/useVertical";
+import { AppNavigationProvider } from "../../hooks/useAppNavigation";
 import { TaskCaptureSinkContext, type TaskCaptureSink } from "../../hooks/useTaskCapture";
 
 // Fixtures only: a capture lands in the harness's own fixture list (its
@@ -39,7 +41,7 @@ import type {
   VTask,
   VerticalData,
 } from "../../lib/vertical";
-import MobileGroom from "./MobileGroom";
+import OutlineFloor from "../floors/OutlineFloor";
 import MobileShipped from "./MobileShipped";
 import MobileProjects from "./MobileProjects";
 import MobileInitiatives from "./MobileInitiatives";
@@ -268,9 +270,9 @@ const SOLO: Record<string, { tab: "projects" | "initiatives" | "tasks"; render: 
   week: { tab: "tasks", render: () => <WeekCards /> },
   projects: { tab: "projects", render: () => <MobileProjects onOpenItem={() => {}} /> },
   initiatives: { tab: "initiatives", render: () => <MobileInitiatives onOpenItem={() => {}} /> },
-  groom: { tab: "projects", render: () => <MobileGroom scope="project" onOpenItem={() => {}} /> },
+  table: { tab: "projects", render: () => <OutlineFloor altitude="project" flush /> },
   shipped: { tab: "projects", render: () => <MobileShipped scope="project" onOpenItem={() => {}} /> },
-  igroom: { tab: "initiatives", render: () => <MobileGroom scope="initiative" onOpenItem={() => {}} /> },
+  itable: { tab: "initiatives", render: () => <OutlineFloor altitude="initiative" flush /> },
   ishipped: { tab: "initiatives", render: () => <MobileShipped scope="initiative" onOpenItem={() => {}} /> },
 };
 
@@ -309,6 +311,7 @@ export default function BuildFacesHarness() {
 
   return (
     <QueryClientProvider client={qc}>
+      <AppNavigationProvider>
       <TaskCaptureSinkContext.Provider value={sink}>
       <VerticalStoreProvider value={store}>
         {SOLO[solo] ? (
@@ -317,22 +320,22 @@ export default function BuildFacesHarness() {
         <div className="atmosphere min-h-screen p-4">
           <div className="mb-3 flex items-center gap-3">
             <span className="text-caption text-muted">
-              The phone's Build faces at 375px — or one at a time: ?build=projects · initiatives · groom ·
-              shipped · igroom · ishipped
+              The phone's Build faces at 375px — or one at a time: ?build=projects · initiatives · table ·
+              shipped · itable · ishipped
             </span>
             <Button size="xs" onClick={toggleTheme}>
               Theme
             </Button>
           </div>
           <div className="flex gap-5 overflow-x-auto pb-6">
-            <Frame label="Projects › Groom">
-              <MobileGroom scope="project" onOpenItem={noop} />
+            <Frame label="Projects › Table">
+              <OutlineFloor altitude="project" flush />
             </Frame>
             <Frame label="Projects › Shipped">
               <MobileShipped scope="project" onOpenItem={noop} />
             </Frame>
-            <Frame label="Initiatives › Groom">
-              <MobileGroom scope="initiative" onOpenItem={noop} />
+            <Frame label="Initiatives › Table">
+              <OutlineFloor altitude="initiative" flush />
             </Frame>
             <Frame label="Initiatives › Shipped">
               <MobileShipped scope="initiative" onOpenItem={noop} />
@@ -342,6 +345,7 @@ export default function BuildFacesHarness() {
         )}
       </VerticalStoreProvider>
       </TaskCaptureSinkContext.Provider>
+      </AppNavigationProvider>
     </QueryClientProvider>
   );
 }

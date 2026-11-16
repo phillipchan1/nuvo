@@ -194,14 +194,17 @@ it needs to work on a phone.
   **taps** to its sheet instead of dragging. Verify both at once at `?weekcrown`
   (`mobile/WeekCrownHarness.tsx`), which also renders the in-situ Calendar tab at two
   horizons — the frame where "the strip survives the stand-back" is visible.
-- **The Build rungs wear the same four faces on both shells** — **On Deck · Groom · All
-  (Table) · Shipped**, in that order, at the project *and* initiative altitudes. Desktop:
-  `FloorPane`'s `RungTabs`. Phone: the segmented header in `MobileProjects` /
-  `MobileInitiatives`. The phone's Groom and Shipped (`mobile/MobileGroom.tsx`,
-  `mobile/MobileShipped.tsx`) are **layouts over the same read models** the desktop floors
-  use (`readOnDeck` · `allOpenInitiativeLanes` · `readShipped`) — a wall of columns becomes
-  a thinnest-first stack of cards. Never re-derive "how shaped is this" in a surface.
-  Verify both at `?build` (`mobile/BuildFacesHarness.tsx`) — see D-099.
+- **The Build rungs wear the same three faces on both shells** — **On Deck · Table ·
+  Shipped**, in that order, at the project *and* initiative altitudes (D-099; Groom folded
+  into the Table, D-220). Desktop: `FloorPane`'s tabs. Phone: the segmented header in
+  `MobileProjects` / `MobileInitiatives`. **The Table is ONE component on both shells** —
+  `floors/OutlineFloor.tsx` over one read model, `lib/outline.ts` (`readOutline`: the
+  views Upcoming · Completed · Everything, grouping, filters, search). Never decide which
+  rows a Table shows in a surface. Its tasks are `TaskListView` (D-146) with the `outline`
+  prop — the list hands the keys back at its edges, so ↑↓→← walk one outline. Its
+  headings speak `useTaskListKeys` too (⌫ asks to delete, from the record menu); no
+  second keymap. The phone's Shipped (`mobile/MobileShipped.tsx`) is a layout over
+  `readShipped`. Verify at `?build=table` / `?build=itable` (`mobile/BuildFacesHarness.tsx`).
 - **Both planner decks read By domain through one set of parts** (D-179) —
   `ondeck/DomainLanes.tsx`: `domainLanes` (which domains get a lane, in the domains' order;
   hiding never hides work), `LaneLabel`, `LaneCell` (create control + the empty-cell socket),

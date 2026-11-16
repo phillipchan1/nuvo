@@ -563,7 +563,7 @@ export default function InitiativeDeck({ startIn }: { /** a harness's way into t
           done: onTrack,
           total: board.lanes.length,
           noun: "on track",
-          onOpen: board.lanes.length > 0 ? () => setInitiativeView("groom") : undefined,
+          onOpen: board.lanes.length > 0 ? () => setInitiativeView("all") : undefined,
           openTitle: "Shape the bets that need it",
           // On track solid, still being shaped tinted, at risk open.
           track:

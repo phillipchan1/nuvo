@@ -40,6 +40,9 @@ interface OpenState {
   id: string;
   x: number;
   y: number;
+  /** Open straight on Delete's confirm step — ⌫ on a row (the Table), so a
+   *  delete is one key and one answer, from the same menu a right-click opens. */
+  confirmDelete?: boolean;
 }
 
 type Item = RecordAction;
@@ -62,6 +65,11 @@ export function useRecordContextMenu() {
 
   const close = useCallback(() => setState(null), []);
 
+  /** ⌫ on a record's row: the menu, already asking. */
+  const askDelete = useCallback((kind: Kind, id: string, at: { x: number; y: number }) => {
+    setState({ kind, id, x: at.x, y: at.y, confirmDelete: true });
+  }, []);
+
   const menu = (
     <>
       {state && <RecordMenu state={state} onClose={close} onShip={setShipId} />}
@@ -69,13 +77,12 @@ export function useRecordContextMenu() {
     </>
   );
 
-  return { onContextMenu, menu, closeMenu: close };
+  return { onContextMenu, askDelete, menu, closeMenu: close, open: state !== null || shipId !== null };
 }
 
 function RecordMenu({ state, onClose, onShip }: { state: OpenState; onClose: () => void; onShip: (id: string) => void }) {
   const { data, updateProject, deleteProject, updateInitiative, deleteInitiative } = useVertical();
   const { openRecord } = useAppNavigation();
-  const [confirm, setConfirm] = useState<Item | null>(null);
   const week = useRecordWeekActs(state.kind, state.id);
 
   const items = buildRecordActions(state.kind, state.id, data, {
@@ -88,6 +95,10 @@ function RecordMenu({ state, onClose, onShip }: { state: OpenState; onClose: () 
     onClose,
     week,
   });
+  // ⌫ on a row opens on the Delete step itself; Cancel falls back to the menu.
+  const [confirm, setConfirm] = useState<Item | null>(() =>
+    state.confirmDelete ? items.find((i) => i.kind === "action" && i.danger) ?? null : null,
+  );
 
   // Anchored at the pointer and FLIPPED by its measured size (the kit's
   // placement), the way an NSMenu opens up/left near a screen edge. A new

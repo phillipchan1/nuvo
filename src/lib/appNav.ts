@@ -156,12 +156,15 @@ export function readNavState(raw: unknown): AppNavState | null {
     calView: (s.calView as string) === "agenda" ? "timeGridWeek" : s.calView,
     // Heal retired project views ("portfolio"/"detail" full page, "sprint" This
     // Week) → On Deck, the front door.
-    projectView: (["ondeck", "groom", "all", "shipped"] as ProjectView[]).includes(s.projectView as ProjectView) ? (s.projectView as ProjectView) : "ondeck",
+    // Groom folded into the Table (D-220) — a saved "groom" lands there.
+    projectView: (s.projectView as string) === "groom" ? "all" : (["ondeck", "all", "shipped"] as ProjectView[]).includes(s.projectView as ProjectView) ? (s.projectView as ProjectView) : "ondeck",
     // Heal retired initiative views (old "portfolio" front door, and the now-gone
     // "detail" full page — a bet opens in the Record modal instead) → On Deck.
-    initiativeView: (["ondeck", "groom", "all", "shipped"] as DetailView[]).includes(s.initiativeView as DetailView)
-      ? (s.initiativeView as DetailView)
-      : "ondeck",
+    initiativeView: (s.initiativeView as string) === "groom"
+      ? "all"
+      : (["ondeck", "all", "shipped"] as DetailView[]).includes(s.initiativeView as DetailView)
+        ? (s.initiativeView as DetailView)
+        : "ondeck",
     overlaySubId: (s as { overlaySubId?: string | null; overlayParentId?: string | null }).overlaySubId
       ?? (s as { overlayParentId?: string | null }).overlayParentId
       ?? null,
