@@ -8852,3 +8852,37 @@ crown's frame) — held by it wearing the crown's own padding and hairline. No n
 renders above `.rail-scroll`, not inside it; the week heads the readings with no doubled hairline.
 The initiative Seal not driven on a live account (the local database was reset under this
 session).*
+
+**D-231 · 2026-11-16 · Every rail leads with a finish ring: Today, This week, This quarter.**
+*(Asked by the operator: "today could have its own rings of completed and scheduled but im not sure
+if we're going to have 5 rings … mock it with great animation etc and feels rewarding for
+ambitious people … and we'd consider projects and intiatives consistency". Mock:
+[Today's Ring](https://claude.ai/artifact/3KhuEab77Qy35UCEAryeiU).)*
+
+→ **One ring, two arcs, for the unit you can finish now.** The faint outer arc is what has its
+time, the solid inner arc what is done. The Schedule's rail: **Today** — today's tasks, scheduled
+outside, done inside, "N need a time" under it lighting the first one in Today's list. The project
+deck: **This week** — the week's slate from `useWeekCrown` (never a second reading of it, D-110),
+time held outside, landed inside. The initiative deck: **This quarter** — this quarter's bets,
+moving outside, shipped inside. Each rail's horizon (This week · Next 4 weeks · Next 4 quarters)
+keeps its three dials under the ring. Not five rings: one hero and its horizon.
+
+→ **The reward grows with what it means** (`lib/celebrate`): a finish under the ring steps it
+(swell, a few sparks, a light haptic); the unit closing swells it, opens one round outline for a
+day and two for a week or a quarter, throws 16 / 24 / 32 sparks, draws a check in where the count
+was, and the ember stop drops onto the title, with the success haptic. Only on the user's own act,
+never on mount or undo; transform and opacity only; off under reduced motion. Still refused
+(D-203): sound, streaks, levels, a running tally.
+
+→ **`DayCrown` is now a `UnitCrown`** (kit): the same part at three clock speeds, so the
+desktop's day, deck and bet heroes can't drift. Phone: unchanged (its crowns are their own layouts
+and come next).
+
+Anchor: W6 (did anything move) · A4 · W2 (the outer arc is what has a time). Strains **P9** (more
+motion) — held by it firing only on your act — and **P14** (a second hero shape) — held by it
+being one kit part on every rail. New name: **This week** as the project deck's hero.
+
+*Status: built 2026-11-16 on `claude/readiness-dials`. Driven at `?rail=offers`: 1/6 → finishing
+all six steps the ring and closes it (check drawn, "Today." with its stop, one outline and 16
+sparks fired); "3 need a time" opened Today's list on the first loose task. At `?decks`: This week
+1/4 and This quarter 0/1 over their horizons. Pinned in `tests/readiness-ladder.test.tsx`.*

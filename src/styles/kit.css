@@ -1037,3 +1037,22 @@ html:root button.k-crown-line:focus-visible { outline: none; box-shadow: 0 0 0 2
   white-space: nowrap;
   transform: translate(-50%, -50%) rotate(-6deg);
 }
+
+/* ── The finish ring and the unit crown (D-231) ──────────────────────────────
+   One mark for what you can finish now: the faint outer arc has its time, the
+   solid inner arc is done. Closing draws a check in where the count was. */
+.k-unit { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.k-unit-text { display: grid; gap: 3px; min-width: 0; flex: 1; justify-items: start; }
+.k-unit-hero { margin: 0; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.k-unit-line { margin: 0; color: var(--muted); font: 450 12.5px/1.4 var(--font-sans); font-variant-numeric: tabular-nums; }
+.k-unit[data-closed] .k-unit-line { color: var(--ink); }
+.k-unit-todo { text-align: left; }
+.k-finish { position: relative; display: inline-flex; flex: none; }
+.k-finish svg { width: 100%; height: 100%; overflow: visible; }
+.k-finish-out, .k-finish-in { fill: none; stroke: var(--accent); stroke-linecap: round; transition: stroke-dasharray var(--d-moment) var(--ease-spring); }
+.k-finish-out { opacity: 0.38; }
+.k-finish-check { fill: none; stroke: var(--accent); stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; }
+.k-finish[data-closed] .k-finish-check { stroke-dashoffset: 0; transition: stroke-dashoffset var(--d-moment) var(--ease-out) 260ms; }
+.k-finish-mid { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--ink); font: 700 15px/1 var(--font-sans); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; transition: opacity var(--d-base); }
+.k-finish[data-closed] .k-finish-mid { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .k-finish-out, .k-finish-in, .k-finish-check, .k-finish-mid { transition: none; } }

@@ -42,6 +42,7 @@ import { PIP_TONE, projectCardStatus, thinWord } from "./deckStatus";
 import GetReadyRail from "../plan/GetReadyRail";
 import { deckPlanLine, planCard, projectDeckCards, rowOffers, subjectOf, type OutcomeDraft } from "../../lib/deckReady";
 import type { ReadyCard } from "../../lib/readyCards";
+import { useWeekCrown } from "../../hooks/useWeekCrown";
 import { occupantSpan, walkOrder, type Occupant } from "../../lib/planProjects";
 import type { AskScaffold } from "../../lib/scaffoldAsk";
 import PlanProjectsRail, { LivePlanProjectsRail, type AddPlannedTasks } from "./PlanProjectsRail";
@@ -143,6 +144,8 @@ export default function OnDeckPlanner({
   // The deck's readings (D-209): Ready · Fits · Shipped. Fits is this week's
   // share of each placed project's pace against this week's open hours — the
   // same demand the timeline's pinch reads (demandByWeekDetailed).
+  // the week's slate, as the Schedule reads it (D-110) — the deck's This week
+  const weekCrown = useWeekCrown();
   const deckMarks = (() => {
     const ws = byWeek[0]?.weekStart;
     const owed = new Map((ws ? demandByWeekDetailed(data, now, [ws])[0].contributors : []).map((c) => [c.project.id, c.mins]));
@@ -812,6 +815,24 @@ export default function OnDeckPlanner({
           // The readings (D-209).
           title: "On Deck",
           marks: placed.length > 0 ? deckMarks : undefined,
+          // This week's projects as a finish ring (D-231) — the Schedule's
+          // week slate (useWeekCrown), never a second reading of it: held time
+          // outside, landed inside; all landed is the week's moment.
+          unit:
+            weekCrown && weekCrown.total > 0
+              ? {
+                  title: "This week",
+                  outer: weekCrown.rows.filter((r) => r.state === "shipped" || r.state === "landed" || r.loose.length === 0).length / weekCrown.total,
+                  n: weekCrown.landed,
+                  of: weekCrown.total,
+                  closed: weekCrown.landed === weekCrown.total,
+                  said:
+                    weekCrown.landed === weekCrown.total
+                      ? `All ${weekCrown.total} landed.`
+                      : `Next to land: ${weekCrown.rows.find((r) => r.state !== "shipped" && r.state !== "landed")?.title ?? ""}`,
+                  tier: "week",
+                }
+              : null,
           fixes: {
             // Every project behind "N to shape", nearest first — its shaping
             // card when it has one, else its first gap with the record to open.

@@ -14,7 +14,7 @@
 
 import { memo, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { advanceSegment, play, reachArrivalDelay } from "../../lib/motion";
-import { bump, closeDial, dropStop, pop, ring } from "../../lib/celebrate";
+import { bump, closeDial, closeRing, dropStop, pop, stepRing, type FinishTier } from "../../lib/celebrate";
 import { haptic } from "../../lib/haptics";
 import { MARK_DEFS, markTitle, spanWords, type DayRead, type Mark, type MarkKey, type MarkPiece } from "../../lib/marks";
 import { cx } from "./cx";
@@ -299,30 +299,138 @@ function clock(d: Date): string {
   return `${hh}${m ? `:${String(m).padStart(2, "0")}` : ""}${h < 12 ? "am" : "pm"}`;
 }
 
+/** **The finish ring** (D-231) — one mark for the unit you can finish now: a
+ *  day, a week's projects, a quarter's bets. Two arcs: the faint outer one is
+ *  what has its time (scheduled · held · moving), the solid inner one what is
+ *  done. Each finish under it steps it; the unit closing is the moment — the
+ *  ring swells and rings, a check draws in, sparks fly — sized by `tier`.
+ *  Motion only on a change this part watched, never on mount. */
+export function FinishRing({
+  outer,
+  inner,
+  n,
+  of,
+  closed,
+  tier,
+  size = 72,
+}: {
+  /** what has its time, 0–1; null draws the inner arc alone */
+  outer: number | null;
+  /** what is done, 0–1 */
+  inner: number;
+  n: number;
+  of: number;
+  closed: boolean;
+  tier: FinishTier;
+  size?: number;
+}) {
+  const el = useRef<HTMLSpanElement | null>(null);
+  const was = usePrev(`${n}/${closed ? 1 : 0}`);
+  useLayoutEffect(() => {
+    if (was === null) return;
+    const [n0, c0] = was.split("/").map(Number);
+    if (closed && !c0) closeRing(el.current, tier);
+    else if (n > n0) stepRing(el.current);
+  }, [n, closed, was, tier]);
+  const c = size / 2;
+  const wo = Math.max(3, Math.round(size / 16));
+  const wi = Math.max(5, Math.round(size / 10));
+  const ro = c - wo / 2;
+  const ri = outer == null ? c - wi / 2 : ro - wo / 2 - 2.5 - wi / 2;
+  const arc = (r: number, f: number) => `${Math.max(0, Math.min(1, f)) * 2 * Math.PI * r} ${2 * Math.PI * r}`;
+  const rot = `rotate(-90 ${c} ${c})`;
+  const ck = size * 0.12;
+  return (
+    <span ref={el} className="k-finish" data-closed={closed ? "" : undefined} data-tier={tier} style={{ width: size, height: size }}>
+      <svg viewBox={`0 0 ${size} ${size}`} aria-hidden>
+        {outer != null && (
+          <>
+            <circle className="k-dial-track" cx={c} cy={c} r={ro} strokeWidth={wo} />
+            {outer > 0 && <circle className="k-finish-out" cx={c} cy={c} r={ro} strokeWidth={wo} strokeDasharray={arc(ro, outer)} transform={rot} />}
+          </>
+        )}
+        <circle className="k-dial-track" cx={c} cy={c} r={ri} strokeWidth={wi} />
+        {inner > 0 && <circle className="k-finish-in" cx={c} cy={c} r={ri} strokeWidth={wi} strokeDasharray={arc(ri, inner)} transform={rot} />}
+        <path className="k-finish-check" d={`M${c - ck * 1.1} ${c + ck * 0.05} l${ck * 0.75} ${ck * 0.75} l${ck * 1.45} -${ck * 1.5}`} pathLength={1} />
+      </svg>
+      <span className="k-finish-mid">{n}/{of}</span>
+    </span>
+  );
+}
+
+/** **The unit crown** (D-231) — a rail's hero at any altitude: the finish ring
+ *  beside the unit's name (with its ember stop), one line of what's next or
+ *  how it closed, and — while some of it has no time — the act that finds it.
+ *  The Schedule's Today, the project deck's This week, the initiative deck's
+ *  This quarter: one shape, three clock speeds. */
+export const UnitCrown = memo(function UnitCrown({
+  title,
+  outer,
+  n,
+  of,
+  closed,
+  said,
+  todo,
+  tier,
+  attrs,
+}: {
+  title: string;
+  outer: number | null;
+  n: number;
+  of: number;
+  closed: boolean;
+  said: string;
+  todo?: { label: string; run: () => void } | null;
+  tier: FinishTier;
+  attrs?: Record<string, string>;
+}) {
+  const line = useRef<HTMLParagraphElement | null>(null);
+  const prev = usePrev(closed);
+  useLayoutEffect(() => {
+    if (prev !== false || !closed) return;
+    // how it closed rises in after the ring has had its moment
+    play(line.current, [{ transform: "translateY(6px)", opacity: 0 }, { transform: "none", opacity: 1 }], "--d-land", "--ease-land", 520);
+  }, [closed, prev]);
+  return (
+    <div className="k-unit" data-closed={closed ? "" : undefined} {...attrs}>
+      <FinishRing outer={outer} inner={of > 0 ? n / of : 0} n={n} of={of} closed={closed} tier={tier} />
+      <div className="k-unit-text">
+        <h2 className="k-unit-hero text-display masthead">
+          {title}
+          <Stop on={closed} />
+        </h2>
+        {said && (
+          <p ref={line} className="k-unit-line" aria-live="polite">
+            {said}
+          </p>
+        )}
+        {todo && !closed && (
+          <button type="button" className="k-dial-todo k-unit-todo" data-act="" onClick={todo.run}>
+            {todo.label}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+});
+
+/** The day (D-209, D-231): today's own tasks as a finish ring — scheduled
+ *  outside, done inside — closed the moment the last one is, with the hour you
+ *  got back. */
 export const DayCrown = memo(function DayCrown({
   day,
   next,
+  loose,
   attrs,
 }: {
   day: DayRead;
   /** what's next, in words ("Measure wall at 4pm"), while the day is open */
   next?: string | null;
+  /** today's tasks with no time yet, and the act that finds them */
+  loose?: { n: number; run: () => void } | null;
   attrs?: Record<string, string>;
 }) {
-  const hero = useRef<HTMLHeadingElement | null>(null);
-  const line = useRef<HTMLParagraphElement | null>(null);
-  const prev = usePrev(day.closed);
-  const { onDefine, node } = useDefine();
-  useLayoutEffect(() => {
-    if (prev !== false || !day.closed) return;
-    // The day closed under your hand: the hero pops and rings, the stop drops
-    // (Stop plays itself), the hour you got back rises in.
-    bump(hero.current, 120, 1.06);
-    ring(hero.current, 260);
-    haptic("success");
-    play(line.current, [{ transform: "translateY(6px)", opacity: 0 }, { transform: "none", opacity: 1 }], "--d-land", "--ease-land", 520);
-  }, [day.closed, prev]);
-
+  const timed = day.tasks.filter((t) => t.start_time || t.slot_id || t.status === "done").length;
   const said = day.closed
     ? day.closedAtDate
       ? day.backMins
@@ -333,22 +441,16 @@ export const DayCrown = memo(function DayCrown({
       ? `Next: ${next}`
       : "";
   return (
-    <div className="k-day" data-closed={day.closed ? "" : undefined} data-crown-day="" {...attrs}>
-      <div className="k-day-head">
-        <h2 ref={hero} className="k-day-hero text-display masthead">
-          Today
-          <Stop on={day.closed} />
-        </h2>
-        <MarkLabel k="day" onDefine={onDefine}>
-          {day.closed ? "All done" : `${day.done} of ${day.total} done`}
-        </MarkLabel>
-      </div>
-      {said && (
-        <p ref={line} className="k-day-line" aria-live="polite">
-          {said}
-        </p>
-      )}
-      {node}
-    </div>
+    <UnitCrown
+      title="Today"
+      outer={day.total > 0 ? timed / day.total : 0}
+      n={day.done}
+      of={day.total}
+      closed={day.closed}
+      said={said}
+      todo={loose && loose.n > 0 ? { label: `${loose.n} ${loose.n === 1 ? "needs" : "need"} a time`, run: loose.run } : null}
+      tier="day"
+      attrs={{ "data-crown-day": "", ...attrs }}
+    />
   );
 });

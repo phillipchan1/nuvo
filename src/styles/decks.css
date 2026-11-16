@@ -966,3 +966,9 @@ html:root .deck-fix-name:focus-visible { outline: none; box-shadow: 0 0 0 2px va
 .deck-fix-why { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted); }
 .deck-fix[data-kind="risk"] .deck-fix-why { color: var(--signal); }
 @media (max-width: 767px) { .deck-fix-name { min-height: 44px; } }
+
+/* The deck's unit ring above its horizon (D-231) — the Schedule's Today, one
+   clock speed up: the same padding and hairline as the rail's day. */
+.pr-unit { padding: 16px 16px 14px; border-bottom: 1px solid var(--line-1); min-width: 0; }
+.k-crown-eyebrow[data-horizon] { display: inline-flex; align-items: baseline; gap: 3px; color: var(--ink); font-weight: 600; }
+.k-crown-eyebrow[data-horizon] .k-stop { width: 5px; height: 5px; }

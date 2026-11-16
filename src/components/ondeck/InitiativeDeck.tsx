@@ -494,6 +494,28 @@ export default function InitiativeDeck({ startIn }: { /** a harness's way into t
     return plan ? [...deckCards, plan] : deckCards;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deckCards, notReady.length]);
+  // The bets whose quarter is this one (parked ones aren't being finished).
+  const quarterUnit = (() => {
+    const bets = board.lanes.filter((l) => l.quarterIdx === 0 && l.state !== "parked");
+    if (!bets.length) return null;
+    const moving = new Set(movingIds(data, now));
+    const shipped = bets.filter((l) => l.state === "done");
+    const next = bets.find((l) => l.state !== "done");
+    return {
+      title: "This quarter",
+      outer: bets.filter((l) => l.state === "done" || moving.has(l.initiative.id)).length / bets.length,
+      n: shipped.length,
+      of: bets.length,
+      closed: shipped.length === bets.length,
+      said:
+        shipped.length === bets.length
+          ? `Every bet this quarter shipped.`
+          : next
+            ? `${moving.has(next.initiative.id) ? "Moving" : "Next"}: ${next.initiative.name}`
+            : "",
+      tier: "quarter" as const,
+    };
+  })();
   /** A bet's fix: its own deck card when one matches, else its record. */
   const betFix = (id: string, name: string, match: (c: ReadyCard) => boolean, why: string): ReadyCard =>
     deckCards.find((c) => subjectOf(c) === id && match(c)) ?? {
@@ -591,6 +613,9 @@ export default function InitiativeDeck({ startIn }: { /** a harness's way into t
           // The readings (D-209).
           title: "This quarter",
           marks: board.lanes.length > 0 ? betMarks : undefined,
+          // This quarter's bets as a finish ring (D-231): moving outside,
+          // shipped inside; every one shipped is the season's moment.
+          unit: quarterUnit,
           fixes: {
             // Every bet behind each number, its own card when it has one (the
             // act that fixes it), else the record to open (D-227).

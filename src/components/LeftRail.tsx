@@ -1055,7 +1055,19 @@ function LeftRail({
       <div data-tauri-drag-region className="rail-titlebar-drag w-full shrink-0" aria-hidden />
       {/* Today stays put above the scroll (D-230): finishing the day is the
           moment the rail exists for, so it never scrolls out of sight. */}
-      <RailDay today={today} />
+      <RailDay
+        today={today}
+        // "1 needs a time" lights that task in Today's list, where its offer is
+        onLoose={(t) => {
+          claimKeys("rail");
+          crownHasKeys.current = false;
+          setCrownCursor(null);
+          setTab("today");
+          setTrayOpen(true);
+          setSelectedId(t.id);
+          setKeyCursor(true);
+        }}
+      />
       <div data-tauri-drag-region="deep" className="rail-scroll min-h-0 flex-1 overflow-y-auto">
         {/* The crown — the planner's one hero (the week's span), its fact, and
             the week's projects. Its door is "Plan the week". */}

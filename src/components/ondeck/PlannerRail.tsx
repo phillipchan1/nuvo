@@ -18,7 +18,8 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { Icon } from "../Icon";
-import { Button, Crown, CrownLine, IconButton, MarkSet, SectionHeader, Stop } from "../kit";
+import { Button, Crown, CrownLine, IconButton, MarkSet, SectionHeader, Stop, UnitCrown } from "../kit";
+import type { FinishTier } from "../../lib/celebrate";
 import { marksReady, type Mark, type MarkKey } from "../../lib/marks";
 import type { ReadyCard } from "../../lib/readyCards";
 import { DeckFixList } from "./DeckFixList";
@@ -62,6 +63,18 @@ export interface RailCrown {
   walk?: { label: string; run: () => void } | null;
   /** told when a dial's list opens or closes (the deck fetches ✦ drafts) */
   onUnfold?: (k: MarkKey | null) => void;
+  /** The unit you can finish now, as a finish ring above the horizon's dials
+   *  (D-231): the project deck's This week, the initiative deck's This
+   *  quarter — the same hero the Schedule's Today wears. */
+  unit?: {
+    title: string;
+    outer: number | null;
+    n: number;
+    of: number;
+    closed: boolean;
+    said: string;
+    tier: FinishTier;
+  } | null;
 }
 
 export default function PlannerRail({
@@ -119,9 +132,18 @@ export default function PlannerRail({
       {/* ── the crown — the readiness, as the surface's one hero ─────────────── */}
       {crown.marks ? (
         <>
+          {crown.unit && (
+            <div className="pr-unit">
+              <UnitCrown {...crown.unit} />
+            </div>
+          )}
           <div className="k-crown" data-crown="">
             <div className="k-crown-k">
-              <span className="k-crown-eyebrow">{crown.eyebrow}</span>
+              <span className="k-crown-eyebrow" data-horizon={crown.unit ? "" : undefined}>
+                {crown.eyebrow}
+                {/* with a unit ring above, the horizon heads its dials and wears the stop */}
+                {crown.unit && <Stop on={marksReady(crown.marks)} />}
+              </span>
               <span className="k-crown-grow" />
               {crown.onOpen && (
                 <IconButton
@@ -132,10 +154,12 @@ export default function PlannerRail({
                 />
               )}
             </div>
-            <h2 className="k-crown-hero text-display masthead">
-              {crown.title}
-              <Stop on={marksReady(crown.marks)} />
-            </h2>
+            {!crown.unit && (
+              <h2 className="k-crown-hero text-display masthead">
+                {crown.title}
+                <Stop on={marksReady(crown.marks)} />
+              </h2>
+            )}
             <MarkSet
               marks={crown.marks}
               // A card that writes Reaches the deck (D-207) — it lands on Ready.

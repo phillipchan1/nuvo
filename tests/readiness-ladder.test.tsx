@@ -23,7 +23,7 @@ import {
   quarterStartISO,
 } from "../supabase/functions/_shared/planningRules";
 import { MARK_DEFS, initiativeDeckMarks, marksReady, projectDeckMarks, readDay, spanWords } from "../src/lib/marks";
-import { DayCrown, MarkSet, Stop } from "../src/components/kit/Readings";
+import { DayCrown, FinishRing, MarkSet, Stop } from "../src/components/kit/Readings";
 import RestDeck from "../src/components/plan/RestDeck";
 import type { ReadyCard } from "../src/lib/readyCards";
 import type { Task } from "../src/lib/types";
@@ -41,6 +41,8 @@ vi.mock("../src/lib/celebrate", () => ({
   closeDial: vi.fn(),
   bump: vi.fn(),
   seal: vi.fn(),
+  stepRing: vi.fn(),
+  closeRing: vi.fn(),
 }));
 
 // ── the kernel ──────────────────────────────────────────────────────────────
@@ -284,10 +286,35 @@ describe("Readings kit parts", () => {
     render(
       <DayCrown
         day={{ total: 2, done: 2, closed: true, closedAt: null, closedAtDate: new Date(2026, 10, 17, 15, 4), backMins: 116, tasks: [] }}
-        pieces={[]}
       />,
     );
     expect(screen.getByText("Done at 3:04pm. 1h 56m of your day back.")).toBeTruthy();
+  });
+
+  it("the finish ring steps on a finish, closes once at its tier, and is quiet on mount and undo (D-231)", () => {
+    const at = (n: number) => <FinishRing outer={1} inner={n / 3} n={n} of={3} closed={n >= 3} tier="week" />;
+    const { rerender } = render(at(1));
+    expect(celebrate.stepRing).not.toHaveBeenCalled();
+    rerender(at(2));
+    expect(celebrate.stepRing).toHaveBeenCalledTimes(1);
+    rerender(at(3));
+    expect(celebrate.closeRing).toHaveBeenCalledTimes(1);
+    expect(celebrate.closeRing).toHaveBeenLastCalledWith(expect.anything(), "week");
+    // the close is the moment, not a step as well
+    expect(celebrate.stepRing).toHaveBeenCalledTimes(1);
+    rerender(at(2));
+    expect(celebrate.stepRing).toHaveBeenCalledTimes(1);
+    expect(celebrate.closeRing).toHaveBeenCalledTimes(1);
+  });
+
+  it("the day's ring offers what still needs a time, and only while open", () => {
+    const run = vi.fn();
+    const day = { total: 3, done: 1, closed: false, closedAt: null, closedAtDate: null, backMins: null, tasks: [] };
+    const { rerender } = render(<DayCrown day={day} loose={{ n: 2, run }} />);
+    fireEvent.click(screen.getByRole("button", { name: "2 need a time" }));
+    expect(run).toHaveBeenCalled();
+    rerender(<DayCrown day={{ ...day, done: 3, closed: true }} loose={{ n: 2, run }} />);
+    expect(screen.queryByRole("button", { name: /need a time/ })).toBeNull();
   });
 
   it("each mark label carries its definition for hover, focus and a screen reader", () => {

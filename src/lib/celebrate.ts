@@ -71,21 +71,22 @@ export function ring(el: Element | null | undefined, delayMs = 0, round = false)
   a.onfinish = a.oncancel = () => d.remove();
 }
 
-/** Eight sparks off the centre of an element — the ember stop's moment. */
-export function burst(el: Element | null | undefined, delayMs = 0): void {
+/** Sparks off the centre of an element — the ember stop's moment. Eight by
+ *  default; a bigger finish throws more, further (D-231). */
+export function burst(el: Element | null | undefined, delayMs = 0, count = 8, reach = 1): void {
   if (!el || motionOff() || typeof document === "undefined") return;
   const r = el.getBoundingClientRect();
   const x = r.left + r.width / 2;
   const y = r.top + r.height / 2;
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < count; i++) {
     const d = document.createElement("span");
     d.className = "k-spark";
     d.setAttribute("aria-hidden", "true");
     d.dataset.tone = i % 2 ? "accent" : "signal";
     Object.assign(d.style, { left: `${x}px`, top: `${y}px` });
     document.body.appendChild(d);
-    const ang = (i / 8) * Math.PI * 2 - Math.PI / 2;
-    const dist = 14 + (i % 3) * 4;
+    const ang = (i / count) * Math.PI * 2 - Math.PI / 2 + (count > 8 ? (i % 2) * 0.2 : 0);
+    const dist = (14 + (i % 3) * 4 + (count > 8 ? r.width * 0.35 : 0)) * reach;
     const a = play(
       d,
       [
@@ -218,4 +219,29 @@ export function closeDial(el: HTMLElement | null | undefined, tier: "small" | "m
   ring(el, delayMs + 120, true);
   if (tier === "large") burst(el, delayMs + 160);
   setTimeout(() => haptic(tier === "large" ? "success" : "medium"), delayMs);
+}
+
+/** What a finish weighs, in the ring's own words (D-231): a day, a week's
+ *  projects, a quarter's bets. The reward grows with what it means. */
+export type FinishTier = "day" | "week" | "quarter";
+
+/** **A step** — one thing finished under the ring: a small swell and a few
+ *  sparks. The tap the old piece gave, drawn for a circle. */
+export function stepRing(el: HTMLElement | null | undefined): void {
+  bump(el, 0, 1.07);
+  burst(el, 60, 6, 0.7);
+  haptic("light");
+}
+
+/** **The close** — the ring's unit is finished (D-231). The ring swells, a
+ *  round outline opens off it (two for a week or a quarter), sparks fly, and
+ *  the haptic lands. The check drawing in and the ember stop dropping are the
+ *  ring's and the title's own (CSS + `Stop`). */
+export function closeRing(el: HTMLElement | null | undefined, tier: FinishTier): void {
+  bump(el, 0, tier === "day" ? 1.16 : 1.2);
+  ring(el, 120, true);
+  if (tier !== "day") ring(el, 340, true);
+  burst(el, 200, tier === "day" ? 16 : tier === "week" ? 24 : 32, tier === "day" ? 1.2 : 1.6);
+  if (tier === "quarter") burst(el, 480, 16, 2.2);
+  haptic("success");
 }

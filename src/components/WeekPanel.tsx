@@ -923,14 +923,20 @@ function dayNext(day: ReturnType<typeof readDay> | null): string | null {
 /** The day, held above the rail's scroll (D-230): "Today · 2 of 5 done" is
  *  the rail's hero, and finishing it is the moment the day exists for — so it
  *  never scrolls out of sight while you work down the week's projects. */
-export function RailDay({ today }: { today: readonly Task[] }) {
+export function RailDay({ today, onLoose }: { today: readonly Task[]; onLoose?: (t: Task) => void }) {
   const { settings } = useSettings();
   const workEnd = settings?.work_end_minutes ?? 990;
   const day = useMemo(() => readDay(today, workEnd), [today, workEnd]);
+  // what has no time yet — the ring's outer arc short of closing (D-231)
+  const loose = day.tasks.filter((t) => t.status !== "done" && !t.start_time && !t.slot_id);
   if (day.total === 0) return null;
   return (
     <div className="rail-day">
-      <DayCrown day={day} next={dayNext(day)} />
+      <DayCrown
+        day={day}
+        next={dayNext(day)}
+        loose={onLoose && loose.length > 0 ? { n: loose.length, run: () => onLoose(loose[0]) } : null}
+      />
     </div>
   );
 }
