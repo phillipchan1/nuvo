@@ -73,6 +73,7 @@ import { useStableHandler } from "../hooks/useStableHandler";
 import { consumeLanding, landBlock, markLanding, reachToCrown } from "../lib/motion";
 import { syncCalendarEvents, type CalendarBlockInput } from "../lib/syncCalendarEvents";
 import { gridSyncPlan } from "../lib/calendarGridSync";
+import { useFadePastDays } from "../hooks/useCalendarPrefs";
 import { getLocate, subscribeLocate } from "../lib/locate";
 // One spelling for what a block IS — shared with Plan the week's grid.
 import {
@@ -456,6 +457,7 @@ function CalendarPane({
   plan?: PlanOverlay | null;
 }) {
   const calRef = useRef<FullCalendar>(null);
+  const [fadePast] = useFadePastDays();
   const { scale: uiScale } = useUiScale();
   const { recordUndo } = useOptionalUndoStack();
   const [utilsOpen, setUtilsOpen] = useState(false);
@@ -1866,7 +1868,9 @@ function CalendarPane({
           allDay: true,
           editable: true,
           durationEditable: false,
-          classNames: ["evt-task", "evt-allday"],
+          // Always open (done is filtered above) — `evt-open` keeps its ink
+          // when "Fade past days" quiets the rest of a past column.
+          classNames: ["evt-task", "evt-allday", "evt-open"],
           extendedProps: {
             kind: "task" as const,
             refId: t.id,
@@ -1967,7 +1971,8 @@ function CalendarPane({
         // A plain slot is hatched `--slot` — open time held for several things.
         // A project's sitting is CLAIMED time, so its hatch, ring and edge wear
         // the project's domain hue instead (D-109). The shell reads `barColor`.
-        classNames: ["evt-slot"],
+        // `evt-open`: a child is still unticked — "Fade past days" leaves it lit.
+        classNames: done < children.length ? ["evt-slot", "evt-open"] : ["evt-slot"],
         extendedProps: {
           kind: "slot" as const,
           refId: s.id,
@@ -4557,6 +4562,7 @@ function CalendarPane({
       data-calendar-pane=""
       data-plan-dim={plan?.dimCalendar ? "" : undefined}
       data-plan-pick={plan?.onPickTime ? "" : undefined}
+      data-fade-past={fadePast ? "" : undefined}
       className="relative flex h-full min-w-0 flex-1 flex-col">
       {/* A write that failed is wrong, not now: --danger, never the ember. */}
       {createError && (
