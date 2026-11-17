@@ -8,13 +8,14 @@ import {
 import type { EventRow } from "../lib/eventHash.ts";
 import { deleteProviderEvents, reconcileEvents } from "./eventSync.ts";
 import {
+  dropCalendar,
   listGoogleAccountIds,
   loadGoogleAccountById,
   logSync,
   markSyncResult,
   saveCalendars,
 } from "./owned.ts";
-import { gFetch, isGoogleSeriesMaster, mapGoogleEvent } from "./tokens.ts";
+import { GoogleAuthError, gFetch, isGoogleSeriesMaster, mapGoogleEvent } from "./tokens.ts";
 import {
   CHANNEL_RENEW_AHEAD_MS,
   POLL_STALE_MS,
@@ -70,6 +71,35 @@ async function fetchGoogleSeriesInstances(
   return rows;
 }
 
+/** Google refused to list a calendar's events. Carries the status so the
+ *  per-calendar runner can tell "this calendar is gone" from a blip. */
+export class CalendarListError extends Error {
+  readonly calendarId: string;
+  readonly status: number;
+  constructor(calendarId: string, status: number) {
+    super(`events list ${calendarId}: ${status}`);
+    this.calendarId = calendarId;
+    this.status = status;
+  }
+}
+
+/** Is this calendar really gone from the account — not just failing?
+ *
+ *  Two independent answers have to agree before Nuvo drops a calendar and its
+ *  events: the events list said 404, AND the account's own calendar list no
+ *  longer has it (the user deleted or unsubscribed it, or lost access). A 404
+ *  from the list alone, or any doubt about the second call, keeps the calendar
+ *  and records the error instead (D-243). */
+export async function calendarIsGone(
+  sql: Sql,
+  env: Env,
+  account: GoogleAccount,
+  calendarId: string,
+): Promise<boolean> {
+  const res = await gFetch(sql, env, account, `/users/me/calendarList/${encodeURIComponent(calendarId)}`);
+  return res.status === 404;
+}
+
 async function syncCalendar(
   sql: Sql,
   env: Env,
@@ -94,7 +124,14 @@ async function syncCalendar(
   let reconcileWindow = !usingToken;
   let seen: EventRow[] = [];
 
-  do {
+  // `for (;;)`, not `do … while (pageToken)`: the 410 branch below restarts the
+  // listing with `continue`, and in a do/while `continue` jumps to the
+  // condition — with pageToken just cleared, that EXITED the loop having
+  // fetched nothing, then swept the window against zero events. Under
+  // EMPTY_SWEEP_FLOOR stored rows that wiped the calendar's window; above it,
+  // the mass-delete guard threw on every sync, forever, because the dead token
+  // was never replaced (D-243).
+  for (;;) {
     const params = listParams(usingToken ? syncToken : null);
     if (pageToken) params.set("pageToken", pageToken);
     const res = await gFetch(
@@ -104,14 +141,16 @@ async function syncCalendar(
       `/calendars/${encodeURIComponent(cal.id)}/events?${params}`,
     );
     if (res.status === 410 && usingToken) {
+      // Sync token expired: re-list the whole window and sweep against it.
       usingToken = false;
       syncToken = null;
+      cal.sync_token = null;
       pageToken = null;
       reconcileWindow = true;
       seen = [];
       continue;
     }
-    if (!res.ok) throw new Error(`events list ${cal.id}: ${res.status}`);
+    if (!res.ok) throw new CalendarListError(cal.id, res.status);
     const body = (await res.json()) as {
       items?: Record<string, unknown>[];
       nextPageToken?: string;
@@ -146,8 +185,11 @@ async function syncCalendar(
     }
 
     pageToken = body.nextPageToken ?? null;
-    if (!pageToken && body.nextSyncToken) cal.sync_token = body.nextSyncToken;
-  } while (pageToken);
+    if (!pageToken) {
+      if (body.nextSyncToken) cal.sync_token = body.nextSyncToken;
+      break;
+    }
+  }
 
   await reconcileEvents(
     sql,
@@ -205,6 +247,75 @@ export async function watchCalendar(
   return true;
 }
 
+/** A sync run over several calendars where every calendar failed. Already
+ *  logged per calendar; carried up so the account still backs off. */
+class AllCalendarsFailed extends Error {
+  readonly logged = true;
+}
+
+/**
+ * Sync each calendar on its own (D-243). One calendar failing — a sweep the
+ * mass-delete guard refused, a 403, a 5xx — is recorded on THAT calendar
+ * (`sync_error`, plus a sync_log row) and the rest still sync and still get
+ * their new sync tokens saved. Before, the first failure threw out of the loop:
+ * the calendars after it never synced and no calendar's token was saved, so a
+ * single broken calendar froze the whole account.
+ *
+ * A calendar Google says is gone (events 404 + absent from the calendar list)
+ * is dropped with its events. An auth failure is account-wide and rethrown.
+ * `after` runs for each calendar that wasn't dropped (e.g. re-watch).
+ */
+async function syncCalendars(
+  sql: Sql,
+  env: Env,
+  account: GoogleAccount,
+  mode: SyncMode,
+  cals: CalendarEntry[],
+  after?: (cal: CalendarEntry) => Promise<void>,
+): Promise<{ synced: number; failed: number; dropped: number }> {
+  let synced = 0;
+  let failed = 0;
+  let dropped = 0;
+  let firstError: unknown = null;
+  for (const cal of cals) {
+    try {
+      await syncCalendar(sql, env, account, cal);
+      cal.sync_error = null;
+      cal.sync_error_at = null;
+      synced++;
+    } catch (e) {
+      if (e instanceof GoogleAuthError) throw e;
+      if (e instanceof CalendarListError && e.status === 404 && (await calendarIsGone(sql, env, account, cal.id).catch(() => false))) {
+        if (cal.channel_id && cal.resource_id) {
+          await gFetch(sql, env, account, "/channels/stop", {
+            method: "POST",
+            body: JSON.stringify({ id: cal.channel_id, resourceId: cal.resource_id }),
+          }).catch(() => undefined);
+        }
+        const events = await dropCalendar(sql, account, cal.id);
+        await logSync(sql, "google", "calendar-gone", "ok", `${cal.id}: dropped with ${events} events`, account.user_id);
+        dropped++;
+        continue;
+      }
+      const message = redactSecrets(e instanceof Error ? e.message : String(e));
+      cal.sync_error = message;
+      cal.sync_error_at = new Date().toISOString();
+      await logSync(sql, "google", `sync-${mode}`, "error", message, account.user_id);
+      failed++;
+      firstError ??= e;
+    }
+    if (after) await after(cal);
+  }
+  if (failed > 0 && synced === 0) {
+    // Persist what this run learned (errors, a cleared dead token) before
+    // the account is marked failed.
+    await saveCalendars(sql, account);
+    const msg = firstError instanceof Error ? firstError.message : String(firstError);
+    throw new AllCalendarsFailed(msg);
+  }
+  return { synced, failed, dropped };
+}
+
 async function runOneAccount(
   sql: Sql,
   env: Env,
@@ -218,18 +329,15 @@ async function runOneAccount(
 
   try {
     if (mode === "full") {
-      for (const cal of visible) {
-        cal.sync_token = null;
-        await syncCalendar(sql, env, account, cal);
+      for (const cal of visible) cal.sync_token = null;
+      await syncCalendars(sql, env, account, mode, visible, async (cal) => {
         await watchCalendar(sql, env, account, cal, reqUrl);
-      }
+      });
       await saveCalendars(sql, account);
       await logSync(sql, "google", "full-sync", "ok", undefined, account.user_id);
     } else if (mode === "incremental") {
-      for (const cal of visible) {
-        if (calendarId && cal.id !== calendarId) continue;
-        await syncCalendar(sql, env, account, cal);
-      }
+      const targets = calendarId ? visible.filter((c) => c.id === calendarId) : visible;
+      await syncCalendars(sql, env, account, mode, targets);
       await saveCalendars(sql, account);
       await logSync(sql, "google", "incremental-sync", "ok", undefined, account.user_id);
     } else if (mode === "poll") {
@@ -238,19 +346,21 @@ async function runOneAccount(
         return Date.now() - last > POLL_STALE_MS;
       });
       if (stale.length === 0) return;
-      for (const cal of stale) await syncCalendar(sql, env, account, cal);
+      await syncCalendars(sql, env, account, mode, stale);
       await saveCalendars(sql, account);
       await logSync(sql, "google", "poll-sync", "ok", undefined, account.user_id);
     } else if (mode === "renew-channels") {
+      const unwatched: CalendarEntry[] = [];
       let touched = false;
       for (const cal of visible) {
         const exp = cal.channel_expires_at ? new Date(cal.channel_expires_at).getTime() : 0;
         if (exp < Date.now() + CHANNEL_RENEW_AHEAD_MS) {
           const watched = await watchCalendar(sql, env, account, cal, reqUrl);
-          if (!watched) await syncCalendar(sql, env, account, cal);
+          if (!watched) unwatched.push(cal);
           touched = true;
         }
       }
+      if (unwatched.length) await syncCalendars(sql, env, account, mode, unwatched);
       if (touched) await saveCalendars(sql, account);
       await logSync(sql, "google", "renew-channels", "ok", undefined, account.user_id);
     } else if (mode === "resubscribe") {
@@ -284,6 +394,7 @@ async function runOneAccount(
     if (mode !== "renew-channels" && mode !== "resubscribe") {
       await markSyncResult(sql, account.id, account.user_id, false);
     }
+    if (e instanceof AllCalendarsFailed) throw e;
     await logSync(
       sql,
       "google",

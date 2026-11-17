@@ -71,7 +71,10 @@ async function syncCalendar(account: GoogleAccount, cal: CalendarEntry): Promise
   // page by page would make page 1's rows look like the whole calendar.
   let seen: EventRow[] = [];
 
-  do {
+  // `for (;;)`, not `do … while (pageToken)`: in a do/while the 410 branch's
+  // `continue` jumps to the condition and, with pageToken cleared, exits having
+  // fetched nothing (D-243).
+  for (;;) {
     const params = listParams(usingToken ? syncToken : null);
     if (pageToken) params.set("pageToken", pageToken);
     const res = await gFetch(
@@ -88,6 +91,7 @@ async function syncCalendar(account: GoogleAccount, cal: CalendarEntry): Promise
       pageToken = null;
       reconcileWindow = true;
       seen = [];
+      cal.sync_token = null;
       continue;
     }
     if (!res.ok) throw new Error(`events list ${cal.id}: ${res.status} ${await res.text()}`);
@@ -128,8 +132,11 @@ async function syncCalendar(account: GoogleAccount, cal: CalendarEntry): Promise
     }
 
     pageToken = body.nextPageToken ?? null;
-    if (!pageToken && body.nextSyncToken) cal.sync_token = body.nextSyncToken;
-  } while (pageToken);
+    if (!pageToken) {
+      if (body.nextSyncToken) cal.sync_token = body.nextSyncToken;
+      break;
+    }
+  }
 
   // Write only genuinely-changed rows. An incremental pull usually returns an
   // empty delta and writes nothing; even a full re-import after a 410 now

@@ -9334,3 +9334,58 @@ calendar task's menu on the dev account; the slot item was not driven (no slot o
 today). **Not done:** a "Focus" act in the calendar block's own popover; the rail's slot header
 has no right-click; the
 focused block is not marked on the grid. Not driven on a real account's data.*
+
+**D-243 · 2026-11-17 · A Google calendar syncs on its own: one broken calendar no longer freezes
+the account, and a calendar Google no longer lists is dropped.** *(Asked: one production Google
+account had failed every sync since at least 2026-10-16 with "refusing to sweep N stored events …
+the provider returned no events at all", on two `@import.calendar.google.com` calendars. Because
+one calendar failed, the account's other calendars stopped updating too.)*
+
+→ **The empty answer was ours, not Google's.** Google listed both calendars' events fine (read
+through the Calendar connector, 2026-11-17). The calendars' sync tokens dated from 2026-08-17 and
+Google had expired them, so it answered `410`. The 410 branch in `syncCalendar` restarts the
+listing with `continue`, but it sat inside `do { … } while (pageToken)`, and with `pageToken` just
+cleared `continue` **left the loop having fetched nothing**. The window sweep then compared zero
+events with 59 and 317 stored ones and the mass-delete guard (`sweepSafety.ts`) refused, correctly.
+Under the guard's floor (25 rows) the same path **silently wiped** a calendar's window instead.
+The dead token was never replaced, so every poll replayed it. The legacy Supabase `google-sync`
+had the same loop, which is why the calendars stopped on 2026-08-17, before the Worker cutover.
+The loop is now `for (;;)` with an explicit `break`, and a 410 also clears the stored token.
+
+→ **Each calendar succeeds or fails alone** (`syncCalendars` in `google/sync.ts`, all four sync
+modes). Before, the first failure threw out of the loop: the calendars after it never synced and
+**no calendar's new sync token was saved**, because `saveCalendars` came after the loop. Now a
+failure is written on that calendar (`sync_error`, `sync_error_at` in `calendar_accounts.calendars`,
+cleared by its next good sync, exposed in the account status), logged once to `sync_log`, and the
+rest carry on and save. The account counts as synced if any calendar synced. Only when every
+calendar fails does it back off, as before. An auth failure (`GoogleAuthError`: no refresh token,
+or the refresh refused) stays account-wide and is not smeared onto each calendar.
+
+→ **A calendar that is really gone is dropped, with its events.** It needs two answers that agree:
+the events list says `404`, **and** `GET /users/me/calendarList/{id}` says `404` (deleted,
+unsubscribed, or access lost). Then Nuvo stops its push channel, removes it from the account and
+deletes its stored events (`dropCalendar`, a locked read-modify-write so a concurrent save can't
+bring it back), and logs `calendar-gone`. A 404 from the events list alone keeps the calendar and
+its events and records the error. A blip must never delete. That's the guard's lesson, applied to
+a whole calendar.
+
+→ **A 401 refreshes once and retries** (`gFetch`). The sealed access token's expiry can say "alive"
+while Google says otherwise (revoked, minted under a rotated client secret, clock skew). Before,
+that answered 401 until the token aged out. A refresh that Google refuses with `invalid_grant`
+still marks the account for reconnect.
+
+→ **Rejected: loosening the guard, or skipping the sweep after a 410.** The guard did its job. It
+was the only thing between this bug and 376 deleted events. And a 410 re-list is the one moment
+a sweep must run, or deletions missed while the token was dead never land.
+
+Anchor: no ledger row. This is backend correctness ("is my calendar true?", P7: it must hold on a
+lived-in account with stale tokens). No new user-facing name. Nothing yet *shows* `sync_error`.
+
+*Status: built 2026-11-17 on `claude/distracted-hermann-797ba7`. `worker/src/googleCalendarSync.check.ts`
+(40 checks, in `check:worker`) replays the account: a lone 410 calendar (the old code wipes it to
+`[]`), a mixed account with a 500, a gone calendar, a 404-but-listed one, two expired tokens across
+pages and a stale access token, a recovery run, an all-fail run and a dead grant. 24 of its checks
+fail on the old code. **No schema change. Needs a Worker deploy.** Read-only in prod: nothing written.
+Once deployed, the next poll should re-list both import calendars in their window (sweeping events
+deleted upstream since August) and save fresh tokens. **Not done:** the client doesn't show a
+calendar's `sync_error` yet.*
