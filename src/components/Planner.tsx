@@ -94,6 +94,7 @@ export default function Planner({
     closeOverlay,
     closeFlow,
     navigate,
+    setSettingsSection,
     panelAnchor,
     panelAnchorEl,
     openRecord,
@@ -727,7 +728,10 @@ export default function Planner({
           its breadcrumb holds the rail's width, so the tabs never move (D-208).
           Plan/Shutdown → ⌘K + the morning prompt; Nuvo → the rows it offers on (D-205); settings → ⌘,. */}
 
-      <ReconnectBanner accounts={accounts} onManualReconnect={() => openOverlay("settings")} />
+      <ReconnectBanner accounts={accounts} onManualReconnect={() => {
+          setSettingsSection("connections");
+          openOverlay("settings");
+        }} />
 
       {/* Focus follows you off the Schedule (D-242, prototype): the pill floats
           while a floor covers the rail, and takes you back to the block. */}
