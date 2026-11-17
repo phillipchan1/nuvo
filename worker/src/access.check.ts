@@ -93,7 +93,8 @@ const B_ROW: Record<PlannerTable, string> = {
   week_reviews: "bbbbbbbb-cccc-4000-8000-000000000001",
   sprints: "bbbbbbbb-6666-4000-8000-000000000001",
   reminders: REMINDER_B,
-  event_domain_routing: "bbbbbbbb-dddd-4000-8000-000000000001",
+  // Routing is keyed (user_id, event_key) in production — no `id`; the key is the event_key.
+  event_domain_routing: "evt-b",
   user_settings: B,
 };
 
@@ -203,10 +204,12 @@ const bookA = await contacts(storeA, "friend");
 ok(bookA.every((c) => c.email !== "friend-b@example.test"), "contacts: A cannot see B contacts");
 ok(bookA.some((c) => c.email === "friend-a@example.test"), "contacts: A sees own contacts");
 
+// Production mints every account an inbound token by default, so compare, don't expect null.
+const tokenBBefore = await scalar<string>("SELECT inbound_token FROM user_settings WHERE user_id = $1", [B]);
 const tokenA = await rotateInboundToken(storeA);
 ok(typeof tokenA === "string" && tokenA.length > 8, "rotateInboundToken: A can rotate own");
 ok(
-  (await scalar<string>("SELECT inbound_token FROM user_settings WHERE user_id = $1", [B])) == null,
+  (await scalar<string>("SELECT inbound_token FROM user_settings WHERE user_id = $1", [B])) === tokenBBefore,
   "rotateInboundToken: B token untouched",
 );
 
@@ -355,12 +358,12 @@ ok(
   "updateOwned label: B name unchanged",
 );
 ok(
-  (await updateOwned(storeA, "recurrences", B_ROW.recurrences, { rrule: "FREQ=YEARLY" })) === null,
+  (await updateOwned(storeA, "recurrences", B_ROW.recurrences, { title: "stolen", freq: "yearly" })) === null,
   "updateOwned recurrence: A cannot edit B",
 );
 ok(
-  (await scalar<string>("SELECT rrule FROM recurrences WHERE id = $1", [B_ROW.recurrences])) === "FREQ=DAILY",
-  "updateOwned recurrence: B rrule unchanged",
+  (await scalar<string>("SELECT title || ' ' || freq FROM recurrences WHERE id = $1", [B_ROW.recurrences])) === "B series daily",
+  "updateOwned recurrence: B series unchanged",
 );
 ok(
   (await updateOwned(storeA, "week_reviews", B_ROW.week_reviews, { report: { stolen: true } })) === null,
@@ -399,7 +402,8 @@ for (const table of PLANNER_TABLES) {
   if (table === "user_settings") {
     ok(listed.every((row) => row.user_id === A), `listOwned ${table}: A only own settings`);
   } else {
-    ok(!listed.some((row) => row.id === bid), `listOwned ${table}: A cannot list B ${table}`);
+    const key = (row: Record<string, unknown>) => (table === "event_domain_routing" ? row.event_key : row.id);
+    ok(!listed.some((row) => key(row) === bid), `listOwned ${table}: A cannot list B ${table}`);
     ok((await getOwned(storeA, table, bid)) === null, `getOwned ${table}: A cannot read B`);
   }
 }
@@ -420,7 +424,8 @@ for (const table of PLANNER_TABLES) {
   if (table === "user_settings") continue;
   const bid = B_ROW[table];
   ok((await deleteOwned(storeA, table, bid)) === 0, `deleteOwned ${table}: A cannot delete B`);
-  ok((await count(table, table === "user_settings" ? "user_id = $1" : "id = $1", [bid])) === 1, `deleteOwned ${table}: B row still present`);
+  const keyCol = table === "event_domain_routing" ? "event_key" : "id";
+  ok((await count(table, `${keyCol} = $1`, [bid])) === 1, `deleteOwned ${table}: B row still present`);
 }
 
 const storeC = makeStore(sql, C);

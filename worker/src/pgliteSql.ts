@@ -16,6 +16,13 @@ function isJsonParam(value: unknown): value is JsonParam {
   return typeof value === "object" && value !== null && JSON_MARK in value;
 }
 
+/** `{"a","b"}` — a Postgres array literal, each element quoted and escaped. */
+function arrayLiteral(items: unknown[]): string {
+  const quote = (v: unknown) =>
+    v == null ? "NULL" : `"${String(v).split("\\").join("\\\\").split('"').join('\\"')}"`;
+  return `{${items.map(quote).join(",")}}`;
+}
+
 export function makePgliteSql(db: PGlite): Sql {
   const query = (async (strings: TemplateStringsArray, ...values: unknown[]) => {
     let text = "";
@@ -40,7 +47,15 @@ export function makePgliteSql(db: PGlite): Sql {
           typeof item === "string" &&
           /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item),
         );
-        text += uuidish ? `$${params.length}::uuid[]` : `$${params.length}::text[]`;
+        if (uuidish) {
+          text += `$${params.length}::uuid[]`;
+        } else {
+          // Like postgres.js: an untyped array literal, so the server infers the
+          // element type — `provider = ANY(...)` against production's enum
+          // column fails under a forced ::text[].
+          params[params.length - 1] = arrayLiteral(value);
+          text += `$${params.length}`;
+        }
       } else {
         text += `$${params.length}`;
       }

@@ -46,6 +46,14 @@ interface Seed {
 
 async function task(s: Seed): Promise<string> {
   const tid = id();
+  if (s.rec) {
+    // Production's tasks.recurrence_id is a real FK, so the series has to exist.
+    await db.query(
+      `INSERT INTO recurrences (id, user_id, kind, freq, anchor_date)
+       VALUES ($1, $2, 'task', 'weekly', $3) ON CONFLICT (id) DO NOTHING`,
+      [s.rec.series, s.user ?? ME, s.rec.date],
+    );
+  }
   await db.query(
     `INSERT INTO tasks (id, user_id, title, status, do_date, start_time, roll_count,
                         recurrence_id, recurrence_date, recurrence_overridden, slot_id, parent_task_id)
@@ -115,7 +123,8 @@ const future = await task({ title: "Later", doDate: "2026-11-20" });
 const undated = await task({ title: "Someday", status: "inbox", doDate: null });
 const done = await task({ title: "Finished", status: "done", doDate: "2026-11-10" });
 const parent = await task({ title: "Project work", doDate: TODAY });
-const step = await task({ title: "A step", doDate: "2026-11-09", parent });
+// A step never carries a date in production (tasks_step_is_not_schedulable), so rollover has nothing to move.
+const step = await task({ title: "A step", doDate: null, parent });
 const theirs = await task({ user: OTHER, title: "Theirs", doDate: "2026-11-01" });
 
 // A task whose own date is stale but whose slot passed on Nov 13.
@@ -166,7 +175,7 @@ ok((await row(inbox)).do_date === TODAY && (await row(inbox)).status === "planne
 ok((await row(future)).do_date === "2026-11-20", "future work stays");
 ok((await row(undated)).do_date === null, "undated work stays undated");
 ok((await row(done)).do_date === "2026-11-10", "done work stays");
-ok((await row(step)).do_date === "2026-11-09", "a step is never rolled");
+ok((await row(step)).do_date === null, "a step is never rolled");
 ok((await row(theirs)).do_date === "2026-11-01", "another user's work is never touched");
 
 // Slot children are judged by the slot's date and leave the slot.

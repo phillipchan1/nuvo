@@ -32,6 +32,7 @@ import {
   postgresInputError,
   readJson,
   requireJsonObject,
+  requireRowKey,
   requireUuid,
 } from "./http.ts";
 import {
@@ -415,7 +416,7 @@ app.get("/api/data/:table/:id", async (c) => {
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const got = await requireStore(c);
   if ("error" in got) return got.error;
-  const row = await getOwned(got.store, table, requireUuid(c.req.param("id")));
+  const row = await getOwned(got.store, table, requireRowKey(table, c.req.param("id")));
   if (!row) return json({ error: "not found" }, 404, OPEN_CORS);
   return json({ data: row }, 200, OPEN_CORS);
 });
@@ -437,7 +438,7 @@ app.patch("/api/data/:table/:id", async (c) => {
   const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
   const body = requireJsonObject(await readJson<unknown>(c));
-  const row = await updateOwned(got.store, table, requireUuid(c.req.param("id")), body);
+  const row = await updateOwned(got.store, table, requireRowKey(table, c.req.param("id")), body);
   if (!row) return json({ error: "not found" }, 404, OPEN_CORS);
   return json({ data: row }, 200, OPEN_CORS);
 });
@@ -447,7 +448,7 @@ app.delete("/api/data/:table/:id", async (c) => {
   if (!isPlannerTable(table)) return json({ error: "unknown table" }, 404, OPEN_CORS);
   const got = await requireWritableStore(c);
   if ("error" in got) return got.error;
-  const n = await deleteOwned(got.store, table, requireUuid(c.req.param("id")));
+  const n = await deleteOwned(got.store, table, requireRowKey(table, c.req.param("id")));
   if (!n) return json({ error: "not found" }, 404, OPEN_CORS);
   return json({ deleted: n }, 200, OPEN_CORS);
 });

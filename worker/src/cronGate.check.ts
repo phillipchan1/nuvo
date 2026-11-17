@@ -182,7 +182,7 @@ await db.query(`UPDATE user_settings SET reminder_prefs = $1::jsonb, time_zone =
 await db.query(`UPDATE tasks SET start_time = NULL, deadline = NULL, do_date = NULL`);
 const startA = new Date(now0 + 20 * 60_000).toISOString();
 await db.query(
-  `UPDATE tasks SET status = 'planned', start_time = $1, duration_minutes = 30, title = 'A standup' WHERE id = 'aaaaaaaa-2222-4000-8000-000000000001'`,
+  `UPDATE tasks SET status = 'planned', start_time = $1, do_date = ($1::timestamptz)::date, duration_minutes = 30, title = 'A standup' WHERE id = 'aaaaaaaa-2222-4000-8000-000000000001'`,
   [startA],
 );
 await db.query(
@@ -252,7 +252,7 @@ await db.query(
   ["bbbbbbbb-ffff-4000-8000-000000000001", B, "https://push.example.test/user-b", vapid.p256dh, vapid.auth],
 );
 await db.query(
-  `UPDATE tasks SET status = 'planned', start_time = $1, duration_minutes = 30, title = 'B block' WHERE id = 'bbbbbbbb-2222-4000-8000-000000000001'`,
+  `UPDATE tasks SET status = 'planned', start_time = $1, do_date = ($1::timestamptz)::date, duration_minutes = 30, title = 'B block' WHERE id = 'bbbbbbbb-2222-4000-8000-000000000001'`,
   [new Date(now0 + 18 * 60_000 + 5 * 60_000 + 10_000).toISOString()],
 );
 const poke = gatePokeFor({ method: "PATCH", path: "/api/rest/v1/tasks", status: 204, touchedDb: true, user: B });

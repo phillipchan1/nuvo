@@ -9227,3 +9227,55 @@ operator-specific beyond being asked for by one.
 on open anytime tasks and unfinished slots), `SettingsModal.tsx`, `index.css`. Verified in the dev app
 on a staged week in light and dark: past blocks at 0.38, a late task and an 0/5 slot at full ink,
 today and later unchanged, the switch toggling the grid live. Not yet on the phone Calendar.*
+
+**D-241 · 2026-11-17 · `neon.sql` is generated from production, and a drift check runs before every migration.**
+*(Asked: agent and MCP writes to `recurrences` and `event_domain_routing` fail in prod because
+`worker/src/store.ts` writes `recurrences.rrule` and `event_domain_routing.id`, and prod has
+neither. Fix the Worker, make `neon.sql` truthful, and add a guard.)*
+
+→ **The cause was the schema file, not the two writes.** The cutover made production by copying
+Supabase's tables. `neon.sql` was hand-written for the rehearsal, and every Worker check builds its
+database from it. So the checks and every migration were tested against a shape prod doesn't have.
+A `pg_dump --schema-only` of prod, diffed against `neon.sql` on an empty database, found that
+`neon.sql` had only two columns prod lacks (`rrule`, routing `id`). Prod, in turn, had 92 columns,
+four enums, a generated column, an identity column, ~45 constraints and ~25 indexes that
+`neon.sql` lacked.
+
+→ **One of those had already broken production.** `external_events.recurring_event_id` is
+*generated* in prod (`raw ->> 'recurringEventId'`). The Google sync paths (`google/eventSync.ts`,
+`events.ts`, `seriesRows.ts`) wrote it explicitly, so every changed Google event failed with
+`cannot insert a non-DEFAULT value into column "recurring_event_id"`. Prod's `sync_log` shows it,
+and the newest Google event in prod is from 2026-11-13 18:03Z. The writes no longer name the
+column, and prod derives the same value from `raw`, which is the Google event.
+
+→ **Worker writes now follow prod's shape, copied from the SPA.** Recurrences: the rule is
+columns (`freq`, `interval`, `byweekday`, `anchor_date`…), the same fields `useRecurrence`
+writes through `/api/data`. Invalid input returns null, never a 500, and `project_id` /
+`domain_id` are now owner-checked. Routing: keyed `(user_id, event_key)`. `domain_id` (the
+model's) and `manual_domain_id` (the person's) are written only when given, so setting one never
+clears the other. `/api/data/event_domain_routing/:key` takes the event_key.
+
+→ **`neon.sql`'s tables are generated** (`scripts/schema-drift.mjs --emit-tables`), so
+`CREATE TABLE IF NOT EXISTS` matches prod column for column and constraint for constraint.
+Applied on top of the prod copy it changes nothing. **`npm run check:schema-drift`** diffs it
+against a live `pg_dump` of prod (read-only) and must be clean before and after any migration.
+`--migration <file>` applies a migration to the dump copy in one transaction first.
+Chosen over committing a prod snapshot for CI: a snapshot drifts too, and the repo is public. The
+cost is that the check is manual and needs prod access. See [`schema-drift.md`](../schema-drift.md).
+
+→ **The checks now run on prod's constraints.** Several fixtures prod would refuse had to change:
+a step with a date, a start time with no `do_date`, a contact with no account, a task pointing at
+a missing series. `pgliteSql.ts` now binds string arrays untyped, like postgres.js, so
+`provider = ANY(…)` works against the enum. `worker/src/prodShape.check.ts` drives the agent/MCP
+recurrence and routing writes and the Google sync write. It runs on PGlite in `check:worker`, and
+on the pg_dump copy with `PROD_COPY_URL`.
+
+Anchor: no ledger row; this is correctness of the backend. No new user-facing name.
+
+*Status: built 2026-11-17 on `claude/busy-bose-dfc320`. **No prod schema change.** Proven on a
+pg_dump of prod (`prodShape.check.ts`, 229 checks, against `nuvo_drift_prod`), and the old SQL
+fails there as it does in prod. **Needs a Worker deploy** to bring Google sync back. Found, not
+fixed: the agent's `create_recurring_*` / `update_recurring_*` tools are still stubbed
+`{ ok: true, skipped }` in `agentExec.ts`, so no agent tool reaches the recurrence writes yet. A
+local rehearsal DB made by an older `neon.sql` keeps its old shape (the upgrade ALTERs add missing
+columns, not constraints). Rebuild it to match prod.*

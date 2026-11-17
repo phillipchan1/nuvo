@@ -66,6 +66,7 @@ Statuses are owned by each doc's own header.
 - [`account-deletion.md`](./account-deletion.md) — in-app wipe (Settings → Account · locked screen). Type DELETE.
 - [`ios-releases.md`](./ios-releases.md) — iPhone TestFlight auto-upload, widgets + Siri roadmap.
 - [`cloudflare-cutover.md`](./cloudflare-cutover.md) — Workers + Neon + Better Auth rehearsal (inert unless `VITE_API_BASE_URL` is set).
+- [`schema-drift.md`](./schema-drift.md) — `neon.sql` is generated from production; run `npm run check:schema-drift` before any migration (D-240).
 - [`cloudflare-migration/inventory.md`](./cloudflare-migration/inventory.md) — every Supabase use, before a cutover.
 - [`cloudflare-migration/access-audit.md`](./cloudflare-migration/access-audit.md) — Worker route × table access matrix. Neon has no RLS; this is the tenant wall.
 - [`cloudflare-migration/route-inventory.md`](./cloudflare-migration/route-inventory.md) — every agent / MCP / function / cron route: tables, ported+tested / no-DB / blocked.

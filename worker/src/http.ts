@@ -28,6 +28,17 @@ export function requireUuid(value: string | undefined, label = "id"): string {
   return value;
 }
 
+/**
+ * A planner row's key from a path. Every table is keyed by a uuid `id` except
+ * event_domain_routing, which production keys (user_id, event_key) — there the
+ * path segment is the event_key (D-240).
+ */
+export function requireRowKey(table: string, value: string | undefined): string {
+  if (table !== "event_domain_routing") return requireUuid(value);
+  if (!value || value.length > 512 || value.includes("\0")) throw new BadRequestError("event_key is malformed");
+  return value;
+}
+
 export async function readJson<T>(c: Context): Promise<T> {
   const text = await c.req.text();
   if (text.includes("\0")) throw new BadRequestError("malformed body");
