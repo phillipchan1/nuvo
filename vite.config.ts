@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -123,6 +124,12 @@ export default defineConfig({
     target: ["es2021", "chrome100", "safari13"],
     sourcemap: false,
     rollupOptions: {
+      // Two pages: the app, and the desktop's floating focus pill (D-242) —
+      // its own entry so that window never boots auth, queries or sync.
+      input: {
+        main: fileURLToPath(new URL("./index.html", import.meta.url)),
+        focus: fileURLToPath(new URL("./focus.html", import.meta.url)),
+      },
       output: {
         // The two vendor slabs that would otherwise sit inside the entry chunk.
         // Splitting them keeps every initial file well under the workbox 2 MiB

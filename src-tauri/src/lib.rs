@@ -42,12 +42,160 @@ tauri_panel! {
             is_floating_panel: true
         }
     })
+    // The floating focus pill (D-242). It never takes the keyboard: a click on
+    // its check must not pull focus out of the app you're working in.
+    panel!(FocusPillPanel {
+        config: {
+            can_become_key_window: false,
+            can_become_main_window: false,
+            is_floating_panel: true
+        }
+    })
     // Resign-key → dismiss: clicking into another app (or hitting another app's
     // hotkey) hides the panel, so "click away = done" still holds without the
     // old JS blur listener (which an NSPanel's delegate would no longer fire).
     panel_event!(SpotlightPanelDelegate {
         window_did_resign_key(notification: &NSNotification) -> ()
     })
+}
+
+// Whether the focus pill is up — ours to track, like SPOTLIGHT_VISIBLE.
+#[cfg(target_os = "macos")]
+static FOCUS_PILL_VISIBLE: AtomicBool = AtomicBool::new(false);
+
+// Margin from the screen's visible edges, in points.
+#[cfg(target_os = "macos")]
+const FOCUS_PILL_INSET: f64 = 16.0;
+
+// Turn the pre-declared "focus" window into a non-activating, never-key panel
+// that floats over every app, on every Space, over fullscreen too. Its webview
+// is focus.html — a mirror the main window feeds (src/lib/focusPill.ts).
+#[cfg(target_os = "macos")]
+fn install_focus_pill_panel(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window("focus") else {
+        return;
+    };
+    let Ok(panel) = window.to_panel::<FocusPillPanel>() else {
+        eprintln!("[nuvo] could not convert the focus pill window to an NSPanel");
+        return;
+    };
+    panel.set_level(PanelLevel::Floating.value());
+    panel.set_style_mask(StyleMask::empty().nonactivating_panel().into());
+    // NSPanel hides itself when its app deactivates — and the pill exists for
+    // exactly the time Nuvo is NOT the active app.
+    panel.set_hides_on_deactivate(false);
+    // …and ⌘H hides every window an app owns. Hiding Nuvo is one of the ways
+    // you leave it to go work, so the pill must outlive it.
+    if let Ok(ptr) = window.ns_window() {
+        use tauri_nspanel::objc2_app_kit::NSWindow;
+        // SAFETY: ns_window() hands back this window's live NSWindow*.
+        let w: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+        w.setCanHide(false);
+    }
+    panel.set_collection_behavior(
+        CollectionBehavior::new()
+            .full_screen_auxiliary()
+            .can_join_all_spaces()
+            .into(),
+    );
+}
+
+// Put the pill in the bottom-right of the screen you're on (the one with the
+// menu bar's key window — NSScreen.mainScreen), inside the Dock and menu bar.
+#[cfg(target_os = "macos")]
+fn place_focus_pill<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>) {
+    use tauri_nspanel::objc2_app_kit::{NSScreen, NSWindow};
+    use tauri_nspanel::objc2_foundation::{MainThreadMarker, NSPoint};
+    let Some(mtm) = MainThreadMarker::new() else { return };
+    let Ok(ptr) = win.ns_window() else { return };
+    // SAFETY: ns_window() hands back this window's live NSWindow*.
+    let w: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+    let Some(screen) = NSScreen::mainScreen(mtm) else { return };
+    let vf = screen.visibleFrame();
+    let wf = w.frame();
+    let x = vf.origin.x + vf.size.width - wf.size.width - FOCUS_PILL_INSET;
+    let y = vf.origin.y + FOCUS_PILL_INSET;
+    w.setFrameOrigin(NSPoint { x, y });
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn show_focus_pill(app: tauri::AppHandle) {
+    #[cfg(debug_assertions)]
+    eprintln!("[focus-pill] show");
+    if FOCUS_PILL_VISIBLE.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    if let Some(win) = app.get_webview_window("focus") {
+        place_focus_pill(&win);
+    }
+    if let Ok(panel) = app.get_webview_panel("focus") {
+        // orderFrontRegardless — up without becoming key, without activating.
+        panel.show();
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn hide_focus_pill(app: tauri::AppHandle) {
+    #[cfg(debug_assertions)]
+    eprintln!("[focus-pill] hide");
+    FOCUS_PILL_VISIBLE.store(false, Ordering::SeqCst);
+    if let Ok(panel) = app.get_webview_panel("focus") {
+        panel.hide();
+    }
+}
+
+// Fit the pill's window to its card, keeping the BOTTOM-RIGHT corner where it
+// is (AppKit frames are bottom-up, so the origin stays and the top moves). A
+// transparent window taller than its card is invisible glass that eats clicks.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn fit_focus_pill(app: tauri::AppHandle, height: f64) {
+    use tauri_nspanel::objc2_app_kit::NSWindow;
+    use tauri_nspanel::objc2_foundation::{NSRect, NSSize};
+    let Some(win) = app.get_webview_window("focus") else { return };
+    let Ok(ptr) = win.ns_window() else { return };
+    // SAFETY: ns_window() hands back this window's live NSWindow*.
+    let w: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+    let f = w.frame();
+    let h = height.clamp(40.0, 240.0);
+    #[cfg(debug_assertions)]
+    eprintln!("[focus-pill] fit {height}");
+    if (h - f.size.height).abs() < 0.5 {
+        return;
+    }
+    w.setFrame_display(NSRect::new(f.origin, NSSize::new(f.size.width, h)), true);
+}
+
+// Other desktops: a plain always-on-top window.
+#[cfg(all(desktop, not(target_os = "macos")))]
+#[tauri::command]
+fn show_focus_pill(app: tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(win) = app.get_webview_window("focus") {
+        let _ = win.show();
+    }
+}
+
+#[cfg(all(desktop, not(target_os = "macos")))]
+#[tauri::command]
+fn hide_focus_pill(app: tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(win) = app.get_webview_window("focus") {
+        let _ = win.hide();
+    }
+}
+
+#[cfg(all(desktop, not(target_os = "macos")))]
+#[tauri::command]
+fn fit_focus_pill(app: tauri::AppHandle, height: f64) {
+    use tauri::Manager;
+    if let Some(win) = app.get_webview_window("focus") {
+        let scale = win.scale_factor().unwrap_or(1.0);
+        let width = win.inner_size().map(|s| s.width as f64 / scale).unwrap_or(384.0);
+        let _ = win.set_size(tauri::LogicalSize::new(width, height.clamp(40.0, 240.0)));
+    }
 }
 
 // Turn the pre-declared "spotlight" window into a non-activating panel. Runs
@@ -323,7 +471,7 @@ pub fn run() {
         // ⌥Space panel — it has its own fixed dimensions.
         .plugin(
             tauri_plugin_window_state::Builder::default()
-                .with_denylist(&["spotlight"])
+                .with_denylist(&["spotlight", "focus"])
                 // Size/position only — visibility is app-managed (⌘W hides, dock restores).
                 .with_state_flags(
                     tauri_plugin_window_state::StateFlags::SIZE
@@ -358,6 +506,9 @@ pub fn run() {
         surface_main,
         align_traffic_lights,
         restart_for_update,
+        show_focus_pill,
+        hide_focus_pill,
+        fit_focus_pill,
     ]);
 
     builder
@@ -365,6 +516,9 @@ pub fn run() {
             // Reskin the spotlight window into a non-activating NSPanel.
             #[cfg(target_os = "macos")]
             install_spotlight_panel(app.handle());
+            // …and the focus pill into a never-key floating panel (D-242).
+            #[cfg(target_os = "macos")]
+            install_focus_pill_panel(app.handle());
 
             // Put the traffic lights where the spine reserves room for them.
             // `trafficLightPosition` in tauri.conf.json does NOT survive here:

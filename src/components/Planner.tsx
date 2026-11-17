@@ -39,6 +39,12 @@ import { repairLineText } from "./plan/RepairLine";
 import { useReady } from "./plan/useReadyCards";
 import { useOfferChoice, useOfferPreview } from "../lib/offerPreview";
 import { readDay } from "../lib/marks";
+import { toBusyBlocks } from "../lib/now";
+import { createPortal } from "react-dom";
+import { useFocus } from "../hooks/useFocus";
+import { FocusPillView, performPillAct, useFocusPillSnapshot } from "./focus/FocusPill";
+import { useFocusPillWindow } from "../hooks/useFocusPillWindow";
+import type { FocusPillAct } from "../lib/focusPill";
 import type { CrownLineData } from "../lib/crownLine";
 import { useWorkingDays } from "../hooks/useWorkingDays";
 const PlanRail = lazy(() => import("./plan/PlanRail"));
@@ -366,6 +372,13 @@ export default function Planner({
   // lists an empty slot as held time (lib/slotRuns, D-178). Same filter
   // `todayTasksForRail` uses, so the header and its tasks can't disagree.
   const todaySlots = useMemo(() => slots.filter((s) => s.do_date === today), [slots, today]);
+  // The focus pill's read (D-242) — the rail's own pool and busy time.
+  const focus = useFocus();
+  const focusPool = useMemo(() => [...todayTasksForRail, ...inbox], [todayTasksForRail, inbox]);
+  const focusBusy = useMemo(
+    () => (focus?.mode === "on" ? toBusyBlocks(events as ExternalEvent[], todayTasksForRail, settings?.hidden_calendar_ids ?? []) : []),
+    [focus, events, todayTasksForRail, settings?.hidden_calendar_ids],
+  );
   // The day (D-209), read once here for the grid: closed before the working day
   // ends, the rest of it is drawn as yours. (The rail reads the same tasks.)
   const workEnd = settings?.work_end_minutes ?? 990;
@@ -396,6 +409,23 @@ export default function Planner({
     (s: Slot) => grid.slotTitle(s, slotTasksBySlot[s.id] ?? []),
     [grid, slotTasksBySlot],
   );
+  // One snapshot, two pills: in the app off the Schedule, and the desktop's
+  // floating window while Nuvo isn't in front (lib/focusPill).
+  const pillSnap = useFocusPillSnapshot({
+    target: focus?.mode === "on" ? focus.target : null,
+    pool: focusPool,
+    slots: todaySlots,
+    slotTitle,
+    busy: focusBusy,
+    now,
+  });
+  const pillAct = (a: FocusPillAct) =>
+    performPillAct(a, focusPool, {
+      complete: (t) => mutations.complete(t),
+      show: () => navigate({ rung: "day" }),
+      next: () => navigate({ rung: "day" }),
+    });
+  useFocusPillWindow(pillSnap, pillAct);
   /** The project a sitting is FOR — its name, and the domain hue it carries up
    *  the vertical — so the grid can say what kind of block it is. */
   const slotProject = grid.slotProject;
@@ -698,6 +728,10 @@ export default function Planner({
           Plan/Shutdown → ⌘K + the morning prompt; Nuvo → the rows it offers on (D-205); settings → ⌘,. */}
 
       <ReconnectBanner accounts={accounts} onManualReconnect={() => openOverlay("settings")} />
+
+      {/* Focus follows you off the Schedule (D-242, prototype): the pill floats
+          while a floor covers the rail, and takes you back to the block. */}
+      {pillSnap && !onSchedule && createPortal(<FocusPillView snap={pillSnap} now={now} onAct={pillAct} />, document.body)}
 
       {/* Hidden (inherited through `contents`) while a floor covers the Schedule,
           as the KeepAlive below is — its controls must not take focus behind it. */}

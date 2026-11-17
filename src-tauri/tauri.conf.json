@@ -35,6 +35,21 @@
         "center": true,
         "focus": false,
         "shadow": false
+      },
+      {
+        "label": "focus",
+        "url": "focus.html",
+        "width": 384,
+        "height": 84,
+        "visible": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "focus": false,
+        "shadow": false,
+        "acceptFirstMouse": true
       }
     ],
     "security": {

@@ -9317,6 +9317,20 @@ been P11's named failure; there is one now.
 change ships mobile-ready", not a gap to close: don't port it to `MobileShell`. An iPad wide
 enough to wear the desktop shell (D-209) has it, because it has the rail.
 
+→ **The pill — focus while you work somewhere else** (added the same day, asked by the operator after
+a mock: "a very minimal version, maybe even overlay of the app"). Not a full-screen overlay: the work
+in a block happens in other apps, so a Nuvo that covers the screen is either in the way or gone the
+moment you switch. Instead one line — the ring, the task you're on, the block's line, its check —
+in two places, ONE view (`focus/FocusPill.tsx`): inside the app, bottom-right on any page but the
+Schedule (the rail already says it there); on the desktop, an always-on-top window over every app
+while Nuvo isn't in front. That window (`focus.html`, its own entry) is a **mirror**: main reads the
+focus, flattens it (`lib/focusPill.ts`), sends it over a Tauri event, and does what the pill's taps
+ask with its own mutations — the pill never signs in, queries or writes, so the ⌥Space panel's
+second session and its token-rotation hazard (lib/authSync) don't recur. It is a non-activating,
+never-key NSPanel (`FocusPillPanel` in `src-tauri/src/lib.rs`): ticking it never takes the keyboard
+from the app you're in. Not a list — the block's other tasks stay in the rail (one row, D-111); the
+title takes you there.
+
 → **Anchor.** Ledger **D1** (*what's the one thing that matters?*), answered at the grain it is
 asked inside a block. **Strains P9** (a reward), held the D-093 / D-231 way. Four no's: no pool (a
 focus is a view, stored only in localStorage for the day it started); one name, and the old one
@@ -9331,7 +9345,14 @@ task or slot") rides the one task menu (`TaskActionsMenu`, rail and calendar, `�
 the calendar's slot menu, offered only for today's work and never inside a focus; on a selection
 it reads "Focus on N". Driven: the rail menu (one task, a selection of two, ⌘. in the menu) and a
 calendar task's menu on the dev account; the slot item was not driven (no slot on that account
-today). **Not done:** a "Focus" act in the calendar block's own popover; the rail's slot header
+today). The pill: driven in the dev app on the dev account (Projects page, a picked focus of two, the title
+back to the Schedule) and at `?focus` (ticked to the close from the pill, the rail closing with it);
+the desktop window, run with `tauri dev` from this worktree on the dev account: with TextEdit in
+front, main logged `show` and the window list had the pill on-screen at the floating level, 384×74,
+bottom-right; hiding Nuvo (NSRunningApplication.hide, ⌘H's call) left it on-screen with the main
+window gone — `canHide = false`, since ⌘H hides every window an app owns. The operator then ran
+it on their own machine — switching apps and ⌘H — and confirmed it works. **Not done:** the pill can't be
+dragged; its line is cut at 360px; a "Focus" act in the calendar block's own popover; the rail's slot header
 has no right-click; the
 focused block is not marked on the grid. Not driven on a real account's data.*
 

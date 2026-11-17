@@ -18,6 +18,9 @@ import { toDateISO } from "../../lib/dates";
 import type { ExternalEvent, Slot, Task } from "../../lib/types";
 import type { VerticalData } from "../../lib/vertical";
 import type { useTaskMutations } from "../../hooks/useTasks";
+import { useFocus } from "../../hooks/useFocus";
+import { toBusyBlocks } from "../../lib/now";
+import FocusPill from "./FocusPill";
 
 const IDLE = new URLSearchParams(window.location.search).get("focus") === "idle";
 const NOW = new Date();
@@ -139,6 +142,10 @@ function FocusInner() {
 
   const today = tasks.filter((t) => t.do_date === ISO && t.status !== "trashed");
   const inbox = tasks.filter((t) => !t.do_date && t.status !== "done");
+  // The pill rides beside the rail here, so the two can be seen agreeing.
+  const focus = useFocus();
+  const pool = [...today, ...inbox];
+  const busy = toBusyBlocks(EVENTS, today, []);
 
   return (
     <VerticalStoreProvider value={store}>
@@ -159,6 +166,19 @@ function FocusInner() {
           onOpenSlot={(s) => say(`open slot · ${s.title}`)}
           events={EVENTS}
         />
+        {focus?.mode === "on" && (
+          <FocusPill
+            target={focus.target}
+            pool={pool}
+            slots={[SLOT]}
+            slotTitle={(s) => s.title}
+            busy={busy}
+            now={NOW}
+            onComplete={(t) => base.complete && (base.complete as (t: Task) => void)(t)}
+            onShow={() => say("show the block")}
+            onNext={() => say("focus on the next")}
+          />
+        )}
         <div className="mono flex flex-1 flex-col gap-1 p-4 text-micro text-muted" data-log>
           <button type="button" className="self-start underline" onClick={() => setTasks(TASKS)}>
             Reset the fixture
