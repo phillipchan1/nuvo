@@ -18,11 +18,13 @@ import {
   LEASE_MS,
   planTick,
   PUSH_HORIZON_MS,
+  WAKE_GRID_MS,
+  nextFullRunAt,
 } from "./cronGate.ts";
 import { gatePokeFor } from "./gatePoke.ts";
 import { MINUTE_CRON, runMinuteTick } from "./cronJobs.ts";
 import { installPushFetchForTests, nextLookAt } from "./pushDispatch.ts";
-import { calendarSyncInterval, googleChannelsLive } from "./google/owned.ts";
+import { calendarSyncInterval, googleChannelsLive, nextSyncAt } from "./google/owned.ts";
 import type { Env } from "./env.ts";
 
 const fails: string[] = [];
@@ -38,7 +40,7 @@ const T = Date.UTC(2026, 10, 16, 12, 0, 0);
   const first = planTick(emptyGateState(), T);
   ok(first.plan.push === "all" && first.plan.calendar, "fresh state runs everything");
   const reported = applyReport(first.state, { push: { scope: "all", next: { u1: T + 10 * 60_000, u2: null } }, calendar: { next: T + 30 * 60_000 } }, T);
-  ok(reported.pushAllAt === T + FULL_RUN_CAP_MS, "a full run sets the next one a cap away");
+  ok(reported.pushAllAt === T + FULL_RUN_CAP_MS - CAL_PULL_MS, "a full run sets the next one on the wake clock, inside the cap");
   ok(reported.pushNext.u1 === T + 10 * 60_000 && !("u2" in reported.pushNext), "report keeps only accounts that can fire");
 
   const quiet = planTick(reported, T + 60_000);
@@ -108,6 +110,39 @@ const T = Date.UTC(2026, 10, 16, 12, 0, 0);
   ok(calendarSyncInterval("icloud", 0) === 900 && calendarSyncInterval("ics", 0) === 1800, "icloud 15 min, ics 30 min");
   ok(calendarSyncInterval("google", 9) === 600 * 32 && calendarSyncInterval("ics", 9) === 1800 * 32, "backoff stops doubling after five failures");
   ok(CAL_PULL_MS < calendarSyncInterval("google", 0) * 1000, "pull window is shorter than the shortest claim lease");
+}
+
+// ── The shared wake clock (D-247) ───────────────────────────────────────────
+{
+  const MIN = 60_000;
+  const onGrid = (ms: number, g: number) => ms % g === 0;
+  // A full run lands on the minute the gate wakes for a grid point's polls, never past the cap.
+  for (let off = 0; off < 2 * WAKE_GRID_MS; off += 7 * MIN + 13_000) {
+    const now = T + off;
+    const at = nextFullRunAt(now);
+    ok(onGrid(at + CAL_PULL_MS, WAKE_GRID_MS), `full run on the wake clock (now +${off / MIN}m)`);
+    ok(at <= now + FULL_RUN_CAP_MS && at > now + LEASE_MS, `full run inside the cap and past the lease (now +${off / MIN}m)`);
+  }
+  // Every 30-min account, whatever its phase, polls on :00 or :30 — 15 to 45 min later.
+  for (let off = 0; off < WAKE_GRID_MS; off += 61_000) {
+    const now = T + off;
+    const at = nextSyncAt(now, 1800);
+    ok(onGrid(at, WAKE_GRID_MS) && at - now >= 15 * MIN - 61_000 && at - now <= 45 * MIN, `30-min poll snaps to :00/:30 (phase ${off / 1000}s)`);
+  }
+  // Once aligned it stays exactly 30 min apart, even when the gate pulls it 5 min early.
+  const aligned = T + 30 * MIN;
+  ok(nextSyncAt(aligned - CAL_PULL_MS, 1800) === aligned + 30 * MIN, "a poll pulled 5 min early still lands on the next grid point");
+  ok(nextSyncAt(aligned + 90_000, 1800) === aligned + 30 * MIN, "a poll that ran 90s late still lands on the next grid point");
+  // Short intervals use the 10-min grid, whose points include :00 and :30, and are never re-claimed at once.
+  for (const secs of [600, 900, 1200]) {
+    for (let off = 0; off < 10 * MIN; off += 53_000) {
+      const now = T + off;
+      const at = nextSyncAt(now, secs);
+      ok(onGrid(at, 10 * MIN) && at >= now + CAL_PULL_MS + LEASE_MS && at - now <= secs * 1000 + 10 * MIN, `${secs}s poll on the 10-min grid, past the next look (phase ${off / 1000}s)`);
+    }
+  }
+  // Backoff keeps the clock too.
+  ok(onGrid(nextSyncAt(T + 7 * MIN, 1800 * 32), WAKE_GRID_MS), "a backed-off account still polls on the clock");
 }
 
 // ── Wiring ──────────────────────────────────────────────────────────────────
