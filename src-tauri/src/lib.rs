@@ -63,9 +63,10 @@ tauri_panel! {
 #[cfg(target_os = "macos")]
 static FOCUS_PILL_VISIBLE: AtomicBool = AtomicBool::new(false);
 
-// Margin from the screen's visible edges, in points.
+// Margin from the screen's visible edges, in points. The window's own frame
+// already holds the card 24pt in and 36pt up (room for its shadow).
 #[cfg(target_os = "macos")]
-const FOCUS_PILL_INSET: f64 = 16.0;
+const FOCUS_PILL_INSET: f64 = 0.0;
 
 // Turn the pre-declared "focus" window into a non-activating, never-key panel
 // that floats over every app, on every Space, over fullscreen too. Its webview
@@ -193,7 +194,7 @@ fn fit_focus_pill(app: tauri::AppHandle, height: f64) {
     use tauri::Manager;
     if let Some(win) = app.get_webview_window("focus") {
         let scale = win.scale_factor().unwrap_or(1.0);
-        let width = win.inner_size().map(|s| s.width as f64 / scale).unwrap_or(384.0);
+        let width = win.inner_size().map(|s| s.width as f64 / scale).unwrap_or(408.0);
         let _ = win.set_size(tauri::LogicalSize::new(width, height.clamp(40.0, 240.0)));
     }
 }

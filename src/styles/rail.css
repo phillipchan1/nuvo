@@ -1243,5 +1243,9 @@ html.focus-window #root {
   background: transparent;
   overflow: hidden;
 }
-.focus-pill-frame { padding: 10px 12px 14px; }
-.focus-pill-frame .focus-pill { position: static; width: auto; }
+/* The window clips whatever it doesn't hold, so the frame is sized to the
+   shadow's full reach — clipped, a soft shadow reads as a dark box. The pill's
+   own window wears the lighter float shadow (--shadow-lift: reaches ~22px out,
+   ~34px below); 360 card + 2×24 = the window's 408pt (tauri.conf.json). */
+.focus-pill-frame { padding: 12px 24px 36px; }
+.focus-pill-frame .focus-pill { position: static; width: auto; box-shadow: var(--shadow-lift); }
