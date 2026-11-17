@@ -98,8 +98,12 @@ export function useCalendarRefresh() {
   const { mutate } = mutation;
   const refresh = useCallback(() => mutate({}), [mutate]);
   const fullRefresh = useCallback(() => mutate({ fullSync: true }), [mutate]);
+  const { mutateAsync } = mutation;
+  /** `refresh` for a caller that needs to read the result (Settings' Retry, D-244). */
+  const refreshAsync = useCallback(() => mutateAsync({}), [mutateAsync]);
   return {
     refresh,
+    refreshAsync,
     fullRefresh,
     refreshing: mutation.isPending,
     error: mutation.error,

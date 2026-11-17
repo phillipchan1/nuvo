@@ -267,6 +267,12 @@ export interface CalendarInfo {
   summary: string;
   color: string | null;
   visible: boolean;
+  /** When this calendar last synced successfully (Google; written by the Worker). */
+  last_synced_at?: string | null;
+  /** Why its last sync failed, or null once it syncs again (D-243). Read through
+   *  `calendarSyncFailure` (`lib/calendarSync.ts`), never directly in a surface. */
+  sync_error?: string | null;
+  sync_error_at?: string | null;
 }
 
 export interface CalendarAccount {
