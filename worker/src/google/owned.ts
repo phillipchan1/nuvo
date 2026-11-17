@@ -116,6 +116,8 @@ export function publicGoogleAccount(account: GoogleAccount): GoogleAccountStatus
       summary: c.summary,
       visible: c.visible,
       last_synced_at: c.last_synced_at ?? null,
+      sync_error: c.sync_error ?? null,
+      sync_error_at: c.sync_error_at ?? null,
     })),
   };
 }
@@ -206,6 +208,43 @@ export async function saveCalendars(sql: Sql, account: GoogleAccount): Promise<v
   });
   // What this run has now is the baseline for any later save it makes.
   loadedCalendars.set(account, snapshotCalendars(account.calendars));
+}
+
+/**
+ * Drop a calendar Google says is gone from this account, with its events
+ * (D-243). Locked read-modify-write, like `saveCalendars`, so a concurrent run
+ * cannot write the entry back; `mergeCalendars` only maps over what the row
+ * holds now, so a later save by a run that loaded it does not resurrect it.
+ * Returns how many stored events went with it.
+ */
+export async function dropCalendar(sql: Sql, account: GoogleAccount, calendarId: string): Promise<number> {
+  const deleted = await sql.begin(async (tx) => {
+    const rows = await tx`
+      SELECT calendars FROM calendar_accounts
+      WHERE id = ${account.id}
+        AND user_id = ${account.user_id}
+      FOR UPDATE
+    `;
+    if (!rows[0]) return 0;
+    const kept = asCalendars((rows[0] as { calendars: unknown }).calendars).filter((c) => c.id !== calendarId);
+    await tx`
+      UPDATE calendar_accounts
+      SET calendars = ${jsonParam(tx as unknown as Sql, kept)},
+          updated_at = now()
+      WHERE id = ${account.id}
+        AND user_id = ${account.user_id}
+    `;
+    const gone = await tx`
+      DELETE FROM external_events
+      WHERE account_id = ${account.id}
+        AND user_id = ${account.user_id}
+        AND calendar_id = ${calendarId}
+      RETURNING id
+    `;
+    return gone.length;
+  });
+  account.calendars = account.calendars.filter((c) => c.id !== calendarId);
+  return Number(deleted);
 }
 
 export async function markReconnect(sql: Sql, accountId: string, userId: string): Promise<void> {

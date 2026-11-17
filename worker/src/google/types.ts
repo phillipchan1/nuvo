@@ -8,6 +8,11 @@ export interface CalendarEntry {
   resource_id?: string | null;
   channel_expires_at?: string | null;
   last_synced_at?: string | null;
+  /** Why this calendar's last sync failed, or null once it syncs again (D-243).
+   *  One calendar failing no longer stops the account's other calendars, so the
+   *  failure has to live on the calendar it belongs to. */
+  sync_error?: string | null;
+  sync_error_at?: string | null;
 }
 
 export interface GoogleAccount {
@@ -38,6 +43,8 @@ export type GoogleAccountStatus = {
     summary: string;
     visible: boolean;
     last_synced_at: string | null;
+    sync_error: string | null;
+    sync_error_at: string | null;
   }>;
 };
 

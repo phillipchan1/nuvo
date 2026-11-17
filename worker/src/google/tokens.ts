@@ -5,6 +5,12 @@ import { openToken, parseTokenKeyring } from "../secrets.ts";
 import { GOOGLE_API, GOOGLE_TOKEN_URL, type GoogleAccount } from "./types.ts";
 import { calendarAccountAad, logSync, markReconnect, saveAccessToken } from "./owned.ts";
 
+/** The account's Google grant can't produce an access token (no refresh token,
+ *  or the refresh itself failed). Account-wide: every calendar would fail the
+ *  same way, so a per-calendar sync loop rethrows it instead of recording it on
+ *  one calendar and moving on (D-243). */
+export class GoogleAuthError extends Error {}
+
 function accessStillValid(expiresAtIso: string | null): boolean {
   if (!expiresAtIso) return false;
   return new Date(expiresAtIso).getTime() > Date.now() + 60_000;
@@ -59,7 +65,7 @@ export async function getAccessToken(sql: Sql, env: Env, account: GoogleAccount)
   if (!account.refresh_token_enc || !account.refresh_token_iv || account.key_version == null) {
     await markReconnect(sql, account.id, account.user_id);
     await logSync(sql, "google", "token-refresh", "error", "no refresh token stored", account.user_id);
-    throw new Error("no refresh token");
+    throw new GoogleAuthError("no refresh token");
   }
 
   const ring = await parseTokenKeyring(env);
@@ -88,11 +94,11 @@ export async function getAccessToken(sql: Sql, env: Env, account: GoogleAccount)
     // 429 or other blip throws, so the caller's normal backoff retries it.
     if (await isRevokedGrant(res)) await markReconnect(sql, account.id, account.user_id);
     await logSync(sql, "google", "token-refresh", "error", `refresh failed: ${res.status}`, account.user_id);
-    throw new Error("google token refresh failed");
+    throw new GoogleAuthError("google token refresh failed");
   }
   const tok = (await res.json()) as { access_token?: string; expires_in?: number };
   const accessToken = tok.access_token;
-  if (!accessToken) throw new Error("google token refresh failed");
+  if (!accessToken) throw new GoogleAuthError("google token refresh failed");
   const expires = new Date(Date.now() + (tok.expires_in ?? 3600) * 1000).toISOString();
   await saveAccessToken(sql, env, account, accessToken, expires);
   return accessToken;
@@ -105,16 +111,25 @@ export async function gFetch(
   path: string,
   init: RequestInit = {},
 ): Promise<Response> {
-  const token = await getAccessToken(sql, env, account);
   const url = path.startsWith("http") ? path : `${GOOGLE_API}${path}`;
-  return outboundFetch(url, {
-    ...init,
-    headers: {
-      ...(init.headers ?? {}),
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-  });
+  const send = (token: string) =>
+    outboundFetch(url, {
+      ...init,
+      headers: {
+        ...(init.headers ?? {}),
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+  const res = await send(await getAccessToken(sql, env, account));
+  if (res.status !== 401) return res;
+  // Our expiry said the access token was alive and Google says it isn't
+  // (revoked, issued under a rotated client secret, clock skew). Refresh once
+  // and retry; a dead grant fails the refresh, which marks reconnect (D-243).
+  // Without this a stale sealed token answered 401 on every call until it aged out.
+  account.access_token = null;
+  account.access_token_expires_at = null;
+  return send(await getAccessToken(sql, env, account));
 }
 
 export function isGoogleSeriesMaster(e: { recurrence?: unknown; recurringEventId?: unknown }): boolean {
