@@ -22,6 +22,11 @@ export const ROUTES: Record<string, RouteHead> = {
     desc: HOME_DESC,
     canonical: HOME_CANONICAL,
   },
+  '/method': {
+    title: 'How the ambitious get it all done — the five habits · Nuvo',
+    desc: 'One place for everything. The long view. A time and a place for every task. A measured day. All of it tied together. The five habits of people who finish big things, and how Nuvo makes each one the default.',
+    canonical: 'https://nuvo.day/method',
+  },
   '/privacy': {
     title: 'Privacy Policy — Nuvo',
     desc: 'What Nuvo collects, why, and how your calendar data is handled.',
@@ -53,4 +58,4 @@ ROUTES['/help'] = { ...ROUTES['/support'] }
  *  OAuth branding reviewer fetches "/" without running JS, and an un-prerendered
  *  SPA shell there reads as "the home page does not explain the app's purpose"
  *  and "the app name doesn't match" — there is no name or copy to find. */
-export const PRERENDER_PATHS = ['/', '/privacy', '/terms', '/support', '/share']
+export const PRERENDER_PATHS = ['/', '/method', '/privacy', '/terms', '/support', '/share']

@@ -109,6 +109,7 @@ been used to argue against things it doesn't forbid.
 | **Demand** | Σ required weekly pace across in-flight projects. |
 | **Capacity** | Real available hours this week, calendar-derived. |
 | **Commitment** | `Demand ÷ Capacity`. `<0.7` under · `0.7–1.0` healthy · `>1.0` over. |
+| **Drift** | *Site and story only.* The villain in [`brandscript.md`](./brandscript.md) §2 and on `nuvo.day/method`: the slow, blameless distance between what you say matters and what your calendar spends you on. Not an app label: [`commitment-model.md`](../commitment-model.md)'s projected-finish delta is computed but never shown as "Drift". D-246. |
 | **Pace** | `remaining effort ÷ weeks until target` — the portfolio→week conversion. `src/lib/pace.ts` |
 | **Memory** | What Nuvo has learned about you and you answered: kept (Nuvo plans with it) or refused (it stops looking). Its own page, opened from the sidebar's foot (the ✦ in a ring) or the phone chat's header; sections **Noticed** · **What Nuvo uses** · **Still watching** · **You said no**. Answers in `user_settings.memory`; observations are recomputed, never stored. [`memory.md`](../memory.md), D-194 |
 | **Rhythm** | Memory's time chapter: your working hours, habits, open windows and chores you keep writing, read from 8 weeks of your own calendar and tasks. `_shared/memory/rhythm.ts`. (The Schedule's Rhythm *view* is spec, not built.) |

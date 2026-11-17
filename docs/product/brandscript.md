@@ -124,8 +124,8 @@ guide never panics, never hypes, never scolds. It says *"here's what's true,"* t
   *Commitment* explainer (demand ÷ capacity, why your week feels impossible) · a Warm Paper
   screenshot tour of Schedule + Domain.
 
-*Currently the site has the direct CTA only. Adding one transitional CTA is the single
-highest-leverage marketing gap — see [`roadmap.md`](./roadmap.md).*
+*The transitional CTA is now `nuvo.day/method` — five habits, one system, a partner inside each
+([D-246](./decisions.md)). Whether it converts is unmeasured.*
 
 ## 6 · That helps them avoid Failure
 
