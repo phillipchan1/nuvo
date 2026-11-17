@@ -9409,7 +9409,9 @@ a sweep must run, or deletions missed while the token was dead never land.
 Anchor: no ledger row. This is backend correctness ("is my calendar true?", P7: it must hold on a
 lived-in account with stale tokens). No new user-facing name. Nothing yet *shows* `sync_error`.
 
-*Status: built 2026-11-17 on `claude/distracted-hermann-797ba7`. `worker/src/googleCalendarSync.check.ts`
+*Status: **shipped 2026-11-17** — PR #173, Worker version 7354bc44 (now 3dea2cd6). In production the
+stuck account's next run re-listed both import calendars, all five of its
+calendars synced clean, and its backoff reset to 0. Built on `claude/distracted-hermann-797ba7`. `worker/src/googleCalendarSync.check.ts`
 (40 checks, in `check:worker`) replays the account: a lone 410 calendar (the old code wipes it to
 `[]`), a mixed account with a 500, a gone calendar, a 404-but-listed one, two expired tokens across
 pages and a stale access token, a recovery run, an all-fail run and a dead grant. 24 of its checks
@@ -9462,7 +9464,8 @@ in Settings. Four no's: no pool, no place. One new name, **Not syncing**, which 
 **Reconnect** (the account's act). Works on dirty data by definition. Not the builder's account
 only.
 
-*Status: built 2026-11-17 on `claude/intelligent-brahmagupta-66a235`, stacked on D-243 (PR #173).
+*Status: **shipped 2026-11-17** — PR #174, live on the web app with master; D-243's Worker is deployed,
+so `sync_error` is written in production. Built on `claude/intelligent-brahmagupta-66a235`, stacked on D-243 (PR #173).
 Driven in the dev app against the local Worker with a seeded account (one calendar failing since
 Aug 17, one for 3 days): desktop and 375px, Retry ("Still not syncing"), hide into the drawer and
 back. `tests/calendar-sync-failure.test.ts`. Not driven against a real failing Google calendar. Its
@@ -9551,8 +9554,12 @@ Anchor: no ledger row; this is cost, not product. Strains **P7** a little: a cha
 the Worker can take up to 3 hours to appear on a device that stays open and never writes (a launch
 or any write of its own catches it at once). No new user-facing name.
 
-*Status: built 2026-11-17 on `claude/interesting-einstein-351ac2` (as D-240; renumbered D-245 on rebase). Not deployed. No Neon schema
-change. `wrangler deploy` creates the Durable Object from migration `v2-sync-marker`. In Workers
+*Status: **shipped 2026-11-17** — PR #171, Worker version 3dea2cd6 (migration `v2-sync-marker` created
+the Durable Object). First minutes in production: feed polls go `/check` → edge answer or one Postgres
+read + `/prove`; no `[sync-marker] … failed` lines. Built on `claude/interesting-einstein-351ac2` (as
+D-240; renumbered D-245 on rebase). No Neon schema change. **Measured after deploy: Neon still never
+suspended** — its `last_active` moved every 5–6 min for 50 min. A 10-min `wrangler tail` showed no quiet
+feed poll reaching Postgres; what did was calendar polls on staggered clocks. That is D-247. In Workers
 logs, `[sync-marker] … failed` lines are the thing to watch. Pinned in `worker/src/syncMarker.check.ts`
 (the state machine, storage round trip, poke rules, end to end on PGlite: an idle hour of polls is
 0 SQL statements, a phone edit arrives on the next poll, every fail-open path; plus the writer scan)
@@ -9627,3 +9634,30 @@ routed and prerendered at `/method`. Typecheck + build + prerender green. The pr
 no-JS final state) was viewed at desktop width and at 375px: single column on the phone, no
 horizontal overflow. **Not run:** the scroll motion in a live browser (no dev-server slot was
 free), a real iPhone.*
+
+**D-247 · 2026-11-17 · Background work lands on a shared clock, so an idle hour wakes Neon twice.**
+*(Follow-up to D-239/D-245. With quiet feed polls answered at the edge, production Neon still never
+suspended: its `last_active` advanced every 5–6 minutes. Eleven calendar accounts each polled on their
+own phase — every one re-armed `now() + interval` after its own sync, so their next times were spread
+over ~11 minutes and stayed spread forever — and the cron gate woke once per spread-out account, about
+every five minutes, which is exactly Neon's suspend timeout. The hourly full run added a wake of its
+own at whatever minute the last one had ended.)*
+
+→ **Polls snap to a 30-minute clock (:00 and :30).** `nextSyncAt` (`worker/src/google/owned.ts`), used
+by `markSyncResult` for every provider, rounds `now + interval` to the nearest point of
+`WAKE_GRID_MS` (`cronGate.ts`); intervals under 30 min use a 10-min grid, whose points include :00 and
+:30. The gate already wakes `CAL_PULL_MS` early and claims everything due by then (D-239), so every
+account on a grid point is polled in one wake. → **The full run joins it:** `nextFullRunAt` puts the
+backstop on the minute the gate wakes for a grid point, inside the 60-min cap, instead of a cap after
+the last one. Nothing else about the gate changes; pokes still wake it at once.
+
+What it costs: a 30-min poll is now 15–45 min after the last (exactly 30 once aligned), and one
+account's first poll after deploy may come early to join the clock. Google accounts with live push
+channels hear about real changes by push, so the poll is their backstop; an ICS feed can be up to 15
+min staler than before. Strains **P7** slightly for feed subscriptions. No ledger row (cost), no
+user-facing name, no schema change.
+
+*Status: built 2026-11-17 on `ship/status-lines`. Pinned in `worker/src/cronGate.check.ts` ("The shared
+wake clock": every phase of a 30-min account lands on :00/:30 within 15–45 min; once aligned it stays
+30 min even when pulled 5 min early or run 90 s late; short intervals sit on the 10-min grid past the
+next look; the full run lands on a wake minute inside the cap).*

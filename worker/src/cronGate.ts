@@ -50,6 +50,25 @@ export const CAL_PULL_MS = 5 * 60_000;
 /** What a planned run holds its accounts to until it reports: a lost report retries next minute. */
 export const LEASE_MS = 60_000;
 
+/**
+ * The shared clock every background wake lands on (D-247): :00 and :30.
+ * Neon suspends after five idle minutes, so what costs compute is not how
+ * much the cron does but how many separate moments it does it at. Calendar
+ * polls (google/owned.ts `nextSyncAt`) and the full run (`nextFullRunAt`) both
+ * snap to it, so an idle hour wakes Neon twice instead of every few minutes.
+ */
+export const WAKE_GRID_MS = 30 * 60_000;
+
+/**
+ * When the next full run is due: the last grid point inside the cap, less the
+ * pull window — the very minute the gate wakes for that grid point's calendar
+ * polls — so the backstop shares their wake instead of adding its own.
+ */
+export function nextFullRunAt(nowMs: number): number {
+  const at = Math.floor((nowMs + FULL_RUN_CAP_MS) / WAKE_GRID_MS) * WAKE_GRID_MS - CAL_PULL_MS;
+  return at > nowMs + LEASE_MS ? at : at + WAKE_GRID_MS;
+}
+
 export interface GateState {
   v: 1;
   pushNext: Record<string, number>;
@@ -138,7 +157,7 @@ export function applyReport(state: GateState, report: GateReport, nowMs: number)
     if (scope === "all") {
       // Everyone the run did not return has nothing that can fire.
       next.pushNext = {};
-      next.pushAllAt = nowMs + FULL_RUN_CAP_MS;
+      next.pushAllAt = nextFullRunAt(nowMs);
     } else {
       for (const user of scope) delete next.pushNext[user];
     }

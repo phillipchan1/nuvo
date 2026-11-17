@@ -6,6 +6,7 @@
 import type { Sql } from "../db.ts";
 import { jsonParam } from "../db.ts";
 import { asJsonArray } from "../lib/jsonbShape.ts";
+import { CAL_PULL_MS, LEASE_MS, WAKE_GRID_MS } from "../cronGate.ts";
 import type { Env } from "../env.ts";
 import { parseTokenKeyring, sealToken } from "../secrets.ts";
 import type { CalendarEntry, GoogleAccount, GoogleAccountStatus, GoogleEventListItem } from "./types.ts";
@@ -341,6 +342,23 @@ export const GOOGLE_POLL_SECS = 600;
 export const GOOGLE_WATCHED_POLL_SECS = 1800;
 const BASE_POLL_SECS: Record<string, number> = { m365: 600, icloud: 900, ics: 1800 };
 
+/** Below the shared grid, an interval snaps to this finer one (10 min) — whose points include :00 and :30. */
+const FINE_GRID_MS = 10 * 60_000;
+
+/**
+ * When an account polls next: about `secs` from now, snapped to the shared
+ * wake clock (D-247) so every account's poll lands on the same few minutes of
+ * the hour and Neon sleeps between them. Rounds to the nearest grid point, so
+ * a 30-min poll comes 15–45 min later (once aligned, exactly 30); never so
+ * soon that the gate's next look — pull window plus lease — claims it again.
+ */
+export function nextSyncAt(nowMs: number, secs: number): number {
+  const grid = secs * 1000 >= WAKE_GRID_MS ? WAKE_GRID_MS : FINE_GRID_MS;
+  let at = Math.round((nowMs + secs * 1000) / grid) * grid;
+  while (at < nowMs + CAL_PULL_MS + LEASE_MS) at += grid;
+  return at;
+}
+
 export function calendarSyncInterval(provider: string, failures: number, watched = false): number {
   const base =
     provider === "google"
@@ -375,10 +393,11 @@ export async function markSyncResult(sql: Sql, accountId: string, userId: string
   const provider = String(row.provider ?? "google");
   const watched = provider === "google" && googleChannelsLive(row.calendars, Date.now());
   const secs = calendarSyncInterval(provider, nextFailures, watched);
+  const nextAt = new Date(nextSyncAt(Date.now(), secs)).toISOString();
   await sql`
     UPDATE calendar_accounts
     SET sync_failures = ${nextFailures},
-        next_sync_at = now() + (${secs} * interval '1 second'),
+        next_sync_at = ${nextAt}::timestamptz,
         updated_at = now()
     WHERE id = ${accountId}
       AND user_id = ${userId}
