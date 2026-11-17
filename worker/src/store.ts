@@ -376,6 +376,9 @@ export async function upsertEventDomainRouting(
 ): Promise<Record<string, unknown> | null> {
   if (!(await assertOwnedFks(store, "event_domain_routing", row))) return null;
   const sql = store.sql;
+  // No owner WHERE on the update: the conflict target is (user_id, event_key)
+  // and the inserted user_id is always this owner's, so the only row that can
+  // conflict is the caller's own. access.check pins it (A upserting B's key).
   const setDomain = "domain_id" in row ? 1 : 0;
   const setManual = "manual_domain_id" in row ? 1 : 0;
   const domainId = row.domain_id ?? null;
@@ -388,7 +391,6 @@ export async function upsertEventDomainRouting(
       domain_id = CASE WHEN ${setDomain} = 1 THEN EXCLUDED.domain_id ELSE event_domain_routing.domain_id END,
       manual_domain_id = CASE WHEN ${setManual} = 1 THEN EXCLUDED.manual_domain_id ELSE event_domain_routing.manual_domain_id END,
       routed_at = now()
-    WHERE event_domain_routing.user_id = ${store.userId}
     RETURNING *
   `;
   return rows.length ? rows[0] ?? null : null;

@@ -287,6 +287,19 @@ ok(
   (await scalar<string>("SELECT domain_id::text FROM event_domain_routing WHERE event_key = $1", ["evt-a"])) === DOMAIN_A,
   "upsertOwned routing: A's evt-a domain unchanged",
 );
+// Routing is keyed (user_id, event_key): A upserting B's event_key makes A's own
+// row and never reaches B's, because only the caller's row can conflict.
+const DOMAIN_B_ROUTED = await scalar<string>("SELECT domain_id::text FROM event_domain_routing WHERE user_id = $1 AND event_key = 'evt-b'", [B]);
+const aOnBKey = await upsertOwned(storeA, "event_domain_routing", { event_key: "evt-b", manual_domain_id: DOMAIN_A });
+ok(aOnBKey?.user_id === A, "upsertOwned routing: A on B's event_key writes A's own row");
+ok(
+  (await scalar<string>("SELECT domain_id::text FROM event_domain_routing WHERE user_id = $1 AND event_key = 'evt-b'", [B])) === DOMAIN_B_ROUTED &&
+    (await scalar<string>("SELECT manual_domain_id::text FROM event_domain_routing WHERE user_id = $1 AND event_key = 'evt-b'", [B])) == null,
+  "upsertOwned routing: B's evt-b row untouched by A's upsert",
+);
+ok((await count("event_domain_routing", "event_key = $1", ["evt-b"])) === 2, "upsertOwned routing: A and B each own an evt-b row");
+ok((await deleteOwned(storeA, "event_domain_routing", "evt-b")) === 1, "deleteOwned routing: A deletes only its own evt-b");
+ok((await count("event_domain_routing", "user_id = $1 AND event_key = $2", [B, "evt-b"])) === 1, "deleteOwned routing: B's evt-b still present");
 
 const aDomainBefore = await scalar<string>("SELECT domain_id::text FROM projects WHERE id = $1", [PROJECT_A]);
 ok(
