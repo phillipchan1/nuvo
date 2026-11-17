@@ -34,10 +34,11 @@ export async function runGoogleResubscribe(sql: Sql, env: Env, reqUrl?: string) 
  * Cloudflare Queues (Workers Paid included ops — no extra spend). Cron CPU on
  * Paid is 15 min wall; 50 × ~2s worst-case stays inside that.
  */
-export async function runCalendarDispatch(sql: Sql, env: Env, reqUrl?: string) {
-  const google = await claimDueGoogleAccounts(sql, DISPATCH_BATCH);
+export async function runCalendarDispatch(sql: Sql, env: Env, reqUrl?: string, pullMs = 0) {
+  const google = await claimDueGoogleAccounts(sql, DISPATCH_BATCH, pullMs);
   // M365 off (no MS_* secrets): don't claim those rows at all.
-  const others = await claimDueAccounts(sql, m365Enabled(env) ? ["m365", "icloud", "ics"] : ["icloud", "ics"], DISPATCH_BATCH);
+  const others = await claimDueAccounts(sql, m365Enabled(env) ? ["m365", "icloud", "ics"] : ["icloud", "ics"], DISPATCH_BATCH, pullMs);
+  const users = [...new Set([...google.map((r) => r.user_id), ...others.map((a) => a.user_id)])];
   let ran = 0;
   const failures: string[] = [];
   for (const row of google) {
@@ -65,7 +66,7 @@ export async function runCalendarDispatch(sql: Sql, env: Env, reqUrl?: string) {
       failures.push(account.id);
     }
   }
-  return { ok: true, claimed: google.length + others.length, ran, failures: failures.length };
+  return { ok: true, claimed: google.length + others.length, ran, failures: failures.length, users };
 }
 
 export const GOOGLE_CRON_JOBS = ["google-renew", "calendar-dispatch", "google-resubscribe"] as const;

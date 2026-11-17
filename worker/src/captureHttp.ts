@@ -37,6 +37,7 @@ export async function handleCapture(c: Context<AppEnv>): Promise<Response> {
     return json({ error: "Token lacks inbox:write scope" }, 403, CAPTURE_CORS);
   }
   const store = await bootstrapUser(makeStore(io.sql, conn.user_id), null);
+  c.set("gateUser", store.userId);
 
   if (c.req.method === "GET") {
     const since = new URL(c.req.url).searchParams.get("since");

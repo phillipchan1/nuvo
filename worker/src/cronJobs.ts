@@ -34,7 +34,8 @@ import { runIcloudContacts, runIcloudSync } from "./calendar/icloud.ts";
 import { runIcsSync } from "./calendar/icsFeed.ts";
 import { runM365Sync } from "./calendar/m365.ts";
 import { m365Enabled } from "./lib/ms.ts";
-import { claimDueAccounts } from "./calendar/store.ts";
+import { claimDueAccounts, nextCalendarSyncAt } from "./calendar/store.ts";
+import { gatePlan, gatePoke, gateReport, isQuiet, type GateReport, type TickPlan } from "./cronGate.ts";
 import { runCalendarDispatch, runGoogleCronJob } from "./google/cron.ts";
 import { claimDueGoogleAccounts } from "./google/owned.ts";
 import { runGoogleSync } from "./google/sync.ts";
@@ -71,6 +72,8 @@ export interface CronResult {
   skipped?: boolean;
   reason?: string;
 }
+
+export const MINUTE_CRON = "* * * * *";
 
 /** cron expression (UTC) → job names. Same tick can run more than one. */
 export const CRON_BY_SCHEDULE: Record<string, readonly string[]> = {
@@ -187,6 +190,10 @@ async function runReminderPrune(sql: Sql): Promise<{ deleted: number; users: num
 
 const DUE_BATCH = 100;
 
+export function otherCalendarProviders(env: Env): string[] {
+  return m365Enabled(env) ? ["m365", "icloud", "ics"] : ["icloud", "ics"];
+}
+
 // M365 off (no MS_*): its skip never moves next_sync_at, so leaving m365 in
 // would re-enqueue the same rows every minute ahead of real work.
 //
@@ -194,11 +201,11 @@ const DUE_BATCH = 100;
 // due account is sent ONCE per interval — not again every minute while its
 // message waits in the queue. The consumer's markSyncResult then sets the
 // real next time; a lost message just waits out one interval.
-export async function enqueueDueCalendarAccounts(sql: Sql, env: Env): Promise<number> {
+export async function enqueueDueCalendarAccounts(sql: Sql, env: Env, pullMs = 0): Promise<number> {
   const queue = env.CALENDAR_SYNC_QUEUE;
   if (!queue) return 0;
-  const google = await claimDueGoogleAccounts(sql, DUE_BATCH);
-  const others = await claimDueAccounts(sql, m365Enabled(env) ? ["m365", "icloud", "ics"] : ["icloud", "ics"], DUE_BATCH);
+  const google = await claimDueGoogleAccounts(sql, DUE_BATCH, pullMs);
+  const others = await claimDueAccounts(sql, otherCalendarProviders(env), DUE_BATCH, pullMs);
   const rows = [
     ...google.map((r) => ({ id: r.id, user_id: r.user_id, provider: "google" })),
     ...others.map((a) => ({ id: a.id, user_id: a.user_id, provider: a.provider })),
@@ -287,6 +294,96 @@ export async function runCronJob(job: string, env: Env, sql: Sql | null): Promis
   return blocked(name);
 }
 
+/**
+ * The `* * * * *` tick behind the cron gate (D-239). Asks the gate first; a
+ * quiet minute returns without opening SQL — Neon is never touched, so its
+ * compute can suspend. Otherwise runs calendar-dispatch and / or
+ * push-dispatch for exactly what the gate says is due, then reports when each
+ * next needs a look. No gate (binding unset, DO error) → both jobs run
+ * ungated, as before. `openDb` is called at most once, and only when a job runs.
+ */
+export async function runMinuteTick(
+  env: Env,
+  openDb: () => Sql | null,
+  nowMs = Date.now(),
+): Promise<CronResult[]> {
+  // Unflipped (preview / pre-cutover): the jobs skip before SQL anyway, and
+  // the gate is not worth a DO call.
+  if (gateCron(env, "push-dispatch")) {
+    return handleScheduled({ cron: MINUTE_CRON }, env, (job) => runCronJob(job, env, null));
+  }
+  const plan: TickPlan | null = await gatePlan(env, nowMs);
+  if (plan && isQuiet(plan)) {
+    return [
+      { job: "calendar-dispatch", status: 200, skipped: true, reason: "gate" },
+      { job: "push-dispatch", status: 200, skipped: true, reason: "gate" },
+    ];
+  }
+  let sql: Sql | null | undefined;
+  const db = () => {
+    if (sql === undefined) {
+      try {
+        sql = openDb();
+      } catch {
+        sql = null;
+      }
+    }
+    return sql;
+  };
+  const report: GateReport = {};
+  const out: CronResult[] = [];
+
+  if (!plan || plan.calendar) {
+    try {
+      const s = db();
+      if (!s) {
+        out.push(blocked("calendar-dispatch"));
+      } else {
+        const pullMs = plan?.calendarPullMs ?? 0;
+        let enqueued: number;
+        if (env.CALENDAR_SYNC_QUEUE) {
+          enqueued = await enqueueDueCalendarAccounts(s, env, pullMs);
+        } else {
+          const result = await runCalendarDispatch(s, env, undefined, pullMs);
+          enqueued = result.ran;
+          // Synced in-process: those accounts' reminders may have moved.
+          if (result.users.length) await gatePoke(env, { users: result.users });
+        }
+        if (plan) report.calendar = { next: await nextCalendarSyncAt(s, ["google", ...otherCalendarProviders(env)]) };
+        out.push({ job: "calendar-dispatch", status: 200, stay_on_supabase: false, enqueued });
+      }
+    } catch (err) {
+      console.error("[cron] calendar-dispatch failed", err instanceof Error ? err.name : "error");
+      out.push({ job: "calendar-dispatch", status: 500, ok: false, reason: "error" });
+    }
+  } else {
+    out.push({ job: "calendar-dispatch", status: 200, skipped: true, reason: "gate" });
+  }
+
+  if (!plan || plan.push) {
+    try {
+      const s = db();
+      if (!s) {
+        out.push(blocked("push-dispatch"));
+      } else {
+        const scope = plan?.push ?? "all";
+        const result = await runPushDispatch(s, env, scope === "all" ? { nowMs } : { nowMs, userIds: scope });
+        if (plan) report.push = { scope, next: result.next };
+        out.push({ job: "push-dispatch", status: 200, stay_on_supabase: false });
+      }
+    } catch (err) {
+      console.error("[cron] push-dispatch failed", err instanceof Error ? err.name : "error");
+      out.push({ job: "push-dispatch", status: 500, ok: false, reason: "error" });
+    }
+  } else {
+    out.push({ job: "push-dispatch", status: 200, skipped: true, reason: "gate" });
+  }
+
+  // A failed job reports nothing: its lease makes the gate try it next minute.
+  if (plan && (report.push || report.calendar)) await gateReport(env, report, nowMs);
+  return out;
+}
+
 export async function handleScheduled(
   event: { cron: string },
   env: Env,
@@ -324,6 +421,8 @@ export async function consumeCalendarSyncBatch(
   let n = 0;
   let sql: Sql | null = opened ?? null;
   const closeOwned = opened == null;
+  const synced = new Set<string>();
+  let polled = false;
   if (gateCron(env, "queue-consume")) {
     for (const msg of batch.messages) {
       n += 1;
@@ -363,13 +462,18 @@ export async function consumeCalendarSyncBatch(
         } else {
           await runIcsSync(sql, env, { accountId, userId });
         }
+        synced.add(userId);
+        polled = true;
         msg.ack();
       } catch {
+        polled = true;
         msg.retry();
       }
     }
   } finally {
     if (closeOwned && sql) await closeSql(sql);
+    // Events moved (reminders) and next_sync_at moved (the next poll): tell the gate.
+    if (polled) await gatePoke(env, { users: [...synced], calendar: true });
   }
   return n;
 }

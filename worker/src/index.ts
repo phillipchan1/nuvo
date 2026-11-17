@@ -11,13 +11,17 @@ import {
   handleCron,
   handleScheduled,
   handleUserRollover,
+  MINUTE_CRON,
   runCronJob,
+  runMinuteTick,
   type CalendarSyncMessage,
   type QueueBatch,
 } from "./cronJobs.ts";
 import { closeSql, CONNECT_TIMEOUT_MS, openSql, raceTimeout, type Sql } from "./db.ts";
 import type { Env } from "./env.ts";
 import { cutoverFlipped } from "./cutoverFlip.ts";
+import { CronGate, gatePoke } from "./cronGate.ts";
+import { gatePokeFor } from "./gatePoke.ts";
 import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
 import type { RequestIo } from "./requestIo.ts";
 import type { AppEnv } from "./session.ts";
@@ -139,8 +143,29 @@ app.use("*", async (c, next) => {
  * itself have finished. Starting `sql.end()` from requireStore used to
  * kill queries still running in the route (CONNECTION_ENDED).
  */
+app.use("/api/*", pokeGate);
+app.use("/functions/v1/*", pokeGate);
 app.use("/api/*", closeIo);
 app.use("/functions/v1/*", closeIo);
+
+/**
+ * The cron gate's catch-all (D-239): a request that wrote through the Worker
+ * may have moved a reminder or a calendar's next sync, so the minute cron must
+ * look again. Which requests count is decided in gatePoke.ts. Runs after the
+ * response, never delays or fails it.
+ */
+async function pokeGate(c: Context<AppEnv>, next: () => Promise<void>) {
+  await next();
+  const poke = gatePokeFor({
+    method: c.req.method,
+    path: c.req.path,
+    status: c.res?.status ?? 500,
+    touchedDb: Boolean(c.get("io")),
+    user: c.get("gateUser") ?? null,
+  });
+  if (!poke) return;
+  scheduleClose(c, gatePoke(c.env, poke));
+}
 
 async function closeIo(c: Context<AppEnv>, next: () => Promise<void>) {
   try {
@@ -627,7 +652,10 @@ async function scheduled(
 ): Promise<void> {
   if (writeFrozen(env.MAINTENANCE_WRITE_FREEZE)) return;
   let sql: Sql | null = null;
-  try {
+  // Opened only when a job is about to use it: a gated quiet minute never
+  // creates a client, so nothing reaches Hyperdrive or Neon (D-239).
+  const open = (): Sql | null => {
+    if (sql) return sql;
     if (cutoverFlipped(env.CUTOVER_FLIPPED)) {
       try {
         sql = openSql(env);
@@ -635,9 +663,20 @@ async function scheduled(
         sql = null;
       }
     }
-    await handleScheduled(event, env, (job) => runCronJob(job, env, sql));
+    return sql;
+  };
+  try {
+    if (event.cron === MINUTE_CRON) {
+      await runMinuteTick(env, open);
+      return;
+    }
+    await handleScheduled(event, env, (job) => runCronJob(job, env, open()));
+    // Daily jobs (rollover moves do_dates, google-renew moves channels,
+    // github-poll files tasks): re-plan everyone on the next minute.
+    if (cutoverFlipped(env.CUTOVER_FLIPPED)) await gatePoke(env, { all: true, calendar: true });
   } finally {
-    if (sql) ctx.waitUntil(closeSql(sql));
+    const opened = sql as Sql | null;
+    if (opened) ctx.waitUntil(closeSql(opened));
   }
 }
 
@@ -660,8 +699,13 @@ async function email(
   ctx: { waitUntil(promise: Promise<unknown>): void },
 ): Promise<void> {
   await handleInboundMail(message, env, ctx);
+  // A mailed-in task can carry a date; the account isn't known here. Rare.
+  if (cutoverFlipped(env.CUTOVER_FLIPPED)) ctx.waitUntil(gatePoke(env, { all: true }));
 }
 
 Object.assign(app, { scheduled, queue, email });
+
+// The minute cron's gate — a Durable Object (wrangler.jsonc `CRON_GATE`).
+export { CronGate };
 
 export default app;

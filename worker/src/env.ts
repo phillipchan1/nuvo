@@ -6,6 +6,12 @@ export interface QueueBinding<T = unknown> {
   send(message: T): Promise<void>;
 }
 
+/** Minimal Durable Object namespace — what cronGate.ts calls. Fetch-style, so Node checks can type it. */
+export interface DurableObjectNamespaceLike {
+  idFromName(name: string): unknown;
+  get(id: unknown): { fetch(input: string, init?: RequestInit): Promise<Response> };
+}
+
 export interface Env {
   ASSETS?: Fetcher;
   HYPERDRIVE?: HyperdriveBinding;
@@ -67,6 +73,8 @@ export interface Env {
   CUTOVER_FLIPPED?: string;
   /** Calendar-dispatch fan-out. Optional on preview; required for the cron scaffold. */
   CALENDAR_SYNC_QUEUE?: QueueBinding;
+  /** The minute cron's gate (cronGate.ts, D-239). Unset → the cron runs every minute, ungated. */
+  CRON_GATE?: DurableObjectNamespaceLike;
   /** A new pair, not Supabase's (D-173 — its private key can't be read back). Clients re-subscribe on a key change. */
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_KEY?: string;

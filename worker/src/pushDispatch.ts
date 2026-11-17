@@ -15,6 +15,7 @@ import {
   type PushSubscriptionRow,
 } from "./lib/webpush.ts";
 import { buildReminderAnchors, REMINDER_WINDOW_MS } from "../../supabase/functions/_shared/reminderAnchors.ts";
+import { PUSH_HORIZON_MS } from "./cronGate.ts";
 import {
   dueNow,
   leadsFromRow,
@@ -46,6 +47,8 @@ export interface PushDispatchOpts {
   fetchImpl?: FetchLike;
   selfTest?: boolean;
   clientPublicKey?: string;
+  /** Only these accounts (the cron gate's list). Omitted = every account with a device. */
+  userIds?: string[];
 }
 
 export interface PushDispatchResult {
@@ -54,6 +57,12 @@ export interface PushDispatchResult {
   accounts: number;
   considered: number;
   notified: number;
+  /**
+   * Per account looked at: the next instant push-dispatch must look again
+   * (ms), or null when nothing can fire for it. The cron gate holds these so a
+   * quiet minute never asks Postgres (D-239).
+   */
+  next: Record<string, number | null>;
   selfTest?: Awaited<ReturnType<typeof webPushSelfTest>>;
 }
 
@@ -77,6 +86,7 @@ export async function runPushDispatch(
       accounts: 0,
       considered: 0,
       notified: 0,
+      next: {},
       selfTest: await webPushSelfTest(env, opts.clientPublicKey),
     };
   }
@@ -84,19 +94,33 @@ export async function runPushDispatch(
   // Only accounts with a device to notify. The rest can never receive a push,
   // so reading their tasks, slots and two days of events every minute was pure
   // Neon transfer (D-238).
-  const settingsRows = (await sql`
-    SELECT s.user_id, s.reminder_prefs, s.hidden_events, s.time_zone
-    FROM user_settings s
-    WHERE s.reminder_prefs IS NOT NULL
-      AND EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.user_id = s.user_id)
-  `) as SettingsRow[];
+  const only = opts.userIds;
+  if (only && !only.length) return { ok: true, configured, accounts: 0, considered: 0, notified: 0, next: {} };
+  const settingsRows = (only
+    ? await sql`
+      SELECT s.user_id, s.reminder_prefs, s.hidden_events, s.time_zone
+      FROM user_settings s
+      WHERE s.reminder_prefs IS NOT NULL
+        AND s.user_id = ANY(${only})
+        AND EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.user_id = s.user_id)
+    `
+    : await sql`
+      SELECT s.user_id, s.reminder_prefs, s.hidden_events, s.time_zone
+      FROM user_settings s
+      WHERE s.reminder_prefs IS NOT NULL
+        AND EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.user_id = s.user_id)
+    `) as SettingsRow[];
 
   const accounts = settingsRows
     .map((row) => ({ row, prefs: normalizeReminderPrefs(row.reminder_prefs) }))
     .filter(({ prefs }) => prefs.enabled);
 
+  // Asked about but nothing can fire for them: tell the gate to stop asking.
+  const next: Record<string, number | null> = {};
+  for (const user of only ?? []) next[user] = null;
+
   if (!accounts.length) {
-    return { ok: true, configured, accounts: 0, considered: 0, notified: 0 };
+    return { ok: true, configured, accounts: 0, considered: 0, notified: 0, next };
   }
 
   const nowMs = opts.nowMs ?? Date.now();
@@ -117,7 +141,10 @@ export async function runPushDispatch(
       });
       considered += out.considered;
       notified += out.notified;
+      next[row.user_id] = out.next;
     } catch (err) {
+      // Look again next minute, as the ungated cron would have.
+      next[row.user_id] = nowMs + RETRY_MS;
       console.error("[push-dispatch] one user failed", err instanceof Error ? err.name : "error");
     }
   }
@@ -135,7 +162,24 @@ export async function runPushDispatch(
     }
   }
 
-  return { ok: true, configured, accounts: accounts.length, considered, notified };
+  return { ok: true, configured, accounts: accounts.length, considered, notified, next };
+}
+
+const RETRY_MS = 60_000;
+
+/**
+ * When this account next needs a look: its earliest reminder not yet due on
+ * this run (due = fireAt + the dispatch lag, as `dueNow` reads it), never past
+ * the planning horizon, and next minute when a send must be retried.
+ */
+export function nextLookAt(plan: PlannedReminder[], nowMs: number, retry: boolean): number {
+  let best = nowMs + PUSH_HORIZON_MS;
+  if (retry) best = Math.min(best, nowMs + RETRY_MS);
+  for (const r of plan) {
+    const dueAt = r.fireAtMs + DISPATCH_LAG_MS;
+    if (dueAt > nowMs && dueAt < best) best = dueAt;
+  }
+  return best;
 }
 
 type DispatchWindow = {
@@ -154,7 +198,7 @@ async function dispatchForUser(
   row: SettingsRow,
   prefs: ReturnType<typeof normalizeReminderPrefs>,
   w: DispatchWindow,
-): Promise<{ considered: number; notified: number }> {
+): Promise<{ considered: number; notified: number; next: number | null }> {
   const { nowMs, windowStart, windowEnd, dateStart, dateEnd, eventLookback } = w;
   let considered = 0;
   let notified = 0;
@@ -206,7 +250,7 @@ async function dispatchForUser(
   ]);
 
   const subs = subscriptions as unknown as PushSubscriptionRow[];
-  if (!subs.length) return { considered, notified };
+  if (!subs.length) return { considered, notified, next: null };
 
   const hiddenKeys = new Set((row.hidden_events ?? []).map((h) => h.key));
   const anchors = buildReminderAnchors({
@@ -238,6 +282,7 @@ async function dispatchForUser(
   const plan = planReminders(anchors, prefs, overrideRows);
   const due = dueNow(plan, nowMs - DISPATCH_LAG_MS, new Set());
   considered += due.length;
+  let retry = false;
 
   for (const reminder of due) {
     const won = await claim(sql, userId, reminder);
@@ -254,11 +299,12 @@ async function dispatchForUser(
     // device keeps the claim — there is nothing left to retry to.
     if (sent.delivered === 0 && sent.transient > 0) {
       await release(sql, userId, reminder);
+      retry = true;
       continue;
     }
     notified += 1;
   }
-  return { considered, notified };
+  return { considered, notified, next: nextLookAt(plan, nowMs, retry) };
 }
 
 function fireAtIso(r: PlannedReminder): string {

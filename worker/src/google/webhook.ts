@@ -9,6 +9,8 @@ export async function handleGoogleWebhook(
   sql: Sql,
   env: Env,
   req: Request,
+  /** Which account the push was for — scopes the cron gate's poke. */
+  noteUser?: (userId: string) => void,
 ): Promise<Response> {
   const channelId = req.headers.get("X-Goog-Channel-ID");
   const resourceState = req.headers.get("X-Goog-Resource-State");
@@ -40,6 +42,7 @@ export async function handleGoogleWebhook(
     });
   }
 
+  noteUser?.(String(account.user_id));
   const res = await runGoogleSync(sql, env, {
     mode: "incremental",
     accountId,

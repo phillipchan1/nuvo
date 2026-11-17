@@ -792,7 +792,7 @@ row older than 30 days is eligible. The sequence is never reset.
 
 | Cron (UTC) | Job | This PR |
 |---|---|---|
-| `* * * * *` | `calendar-dispatch` + `push-dispatch` | skip until flip, then dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE`; consumer polls Google, iCloud and ICS (M365 removed; skipped without `MS_*`). Without a queue binding, HTTP dispatch claims Google in-process. push-dispatch is ported (per-user loop, new VAPID pair per D-173, no Queue) |
+| `* * * * *` | `calendar-dispatch` + `push-dispatch` | skip until flip, then dispatch enqueues due `calendar_accounts` onto `CALENDAR_SYNC_QUEUE`; consumer polls Google, iCloud and ICS (M365 removed; skipped without `MS_*`). Without a queue binding, HTTP dispatch claims Google in-process. push-dispatch is ported (per-user loop, new VAPID pair per D-173, no Queue). **Gated (D-239):** the tick asks the `CRON_GATE` Durable Object first and opens no SQL on a minute where no reminder, poked account or calendar poll is due; no binding or a DO error runs both jobs ungated |
 | `5 7 * * *` / `5 8 * * *` | `rollover` | skip until flip, then iterates `users`, scopes `UPDATE` by `user_id` |
 | `15 9 * * *` | `google-renew` | skip until flip, then re-watches Google channels expiring within 48h |
 | `20 9 * * *` | `github-poll` | skip until flip, then iterates `users`, scopes `activity_sources` by `user_id`; PAT via A's `openToken`. Same gate on github-activity `CRON_SECRET` sync |

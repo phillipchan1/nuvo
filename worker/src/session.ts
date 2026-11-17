@@ -6,7 +6,8 @@ import type { AuthOptions } from "./auth.ts";
 import { openRequestIo, type RequestIo } from "./requestIo.ts";
 import { bootstrapUser, makeStore, type Store } from "./store.ts";
 
-export type AppEnv = { Bindings: Env; Variables: { io?: RequestIo } };
+/** `gateUser`: the planner account a write request acted for — scopes its cron-gate poke (D-239). */
+export type AppEnv = { Bindings: Env; Variables: { io?: RequestIo; gateUser?: string } };
 
 export async function requestIo(c: Context<AppEnv>, opts?: AuthOptions): Promise<RequestIo> {
   const existing = c.get("io");
@@ -37,5 +38,6 @@ export async function requireStore(
   const store = await bootstrapUser(makeStore(io.sql, user.id), user.email ?? null, {
     emailVerified: user.emailVerified,
   });
+  c.set("gateUser", store.userId);
   return { store, email: user.email ?? null, user };
 }

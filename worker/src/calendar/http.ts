@@ -25,7 +25,7 @@ import {
   upsertAccount,
 } from "./store.ts";
 
-type AppEnv = { Bindings: Env; Variables: { io?: RequestIo } };
+type AppEnv = { Bindings: Env; Variables: { io?: RequestIo; gateUser?: string } };
 
 export type CalendarRouteDeps = {
   requireUser: (c: Context<AppEnv>, raw?: Request) => Promise<{ userId: string } | { error: Response }>;

@@ -287,23 +287,55 @@ export async function logSync(
   `;
 }
 
-export function calendarSyncInterval(provider: string, failures: number): number {
-  const base = provider === "google" || provider === "m365" ? 300 : 900;
+/**
+ * Background poll interval, seconds (D-239). Every poll wakes Neon, so these
+ * are as long as each provider allows:
+ *   google — 30 min while live watch channels push every change (the poll is
+ *            only a fallback for a missed push), 10 min when they don't
+ *   m365   — 10 min (no push wired)
+ *   icloud — 15 min (CalDAV has no push)
+ *   ics    — 30 min (subscribed feeds; their publishers update rarely)
+ * Failures back off exponentially from there, capped at a day. The in-app
+ * Refresh still syncs at once.
+ */
+export const GOOGLE_POLL_SECS = 600;
+export const GOOGLE_WATCHED_POLL_SECS = 1800;
+const BASE_POLL_SECS: Record<string, number> = { m365: 600, icloud: 900, ics: 1800 };
+
+export function calendarSyncInterval(provider: string, failures: number, watched = false): number {
+  const base =
+    provider === "google"
+      ? watched ? GOOGLE_WATCHED_POLL_SECS : GOOGLE_POLL_SECS
+      : (BASE_POLL_SECS[provider] ?? GOOGLE_POLL_SECS);
   const exp = Math.min(Math.max(failures, 0), 5);
   return Math.min(base * 2 ** exp, 86400);
 }
 
+/** Every visible calendar has a watch channel that has not expired — Google will push its changes. */
+export function googleChannelsLive(calendars: unknown, nowMs: number): boolean {
+  const list = asJsonArray(calendars) as CalendarEntry[];
+  const visible = list.filter((c) => c && c.visible);
+  if (!visible.length) return false;
+  return visible.every((c) => {
+    if (!c.channel_id || !c.channel_expires_at) return false;
+    const exp = Date.parse(c.channel_expires_at);
+    return Number.isFinite(exp) && exp > nowMs;
+  });
+}
+
 export async function markSyncResult(sql: Sql, accountId: string, userId: string, ok: boolean): Promise<void> {
   const rows = await sql`
-    SELECT provider, sync_failures FROM calendar_accounts
+    SELECT provider, sync_failures, calendars FROM calendar_accounts
     WHERE id = ${accountId}
       AND user_id = ${userId}
     LIMIT 1
   `;
-  const row = rows[0] as { provider?: string; sync_failures?: number } | undefined;
+  const row = rows[0] as { provider?: string; sync_failures?: number; calendars?: unknown } | undefined;
   if (!row) return;
   const nextFailures = ok ? 0 : Number(row.sync_failures ?? 0) + 1;
-  const secs = calendarSyncInterval(String(row.provider ?? "google"), nextFailures);
+  const provider = String(row.provider ?? "google");
+  const watched = provider === "google" && googleChannelsLive(row.calendars, Date.now());
+  const secs = calendarSyncInterval(provider, nextFailures, watched);
   await sql`
     UPDATE calendar_accounts
     SET sync_failures = ${nextFailures},
@@ -314,18 +346,28 @@ export async function markSyncResult(sql: Sql, accountId: string, userId: string
   `;
 }
 
-export async function claimDueGoogleAccounts(sql: Sql, max: number): Promise<{ id: string; user_id: string }[]> {
+/**
+ * Claim due Google accounts. The claim's `next_sync_at` is a lease at the
+ * unwatched interval; the sync's `markSyncResult` then sets the real one
+ * (longer when channels are live). `pullMs` also claims accounts due that
+ * soon, so polls share one wake (D-239).
+ */
+export async function claimDueGoogleAccounts(
+  sql: Sql,
+  max: number,
+  pullMs = 0,
+): Promise<{ id: string; user_id: string }[]> {
   const rows = await sql`
     UPDATE calendar_accounts AS a
     SET next_sync_at = now() + (
-          ${300} * interval '1 second' * (2 ^ least(greatest(coalesce(a.sync_failures, 0), 0), 5))
+          ${GOOGLE_POLL_SECS} * interval '1 second' * (2 ^ least(greatest(coalesce(a.sync_failures, 0), 0), 5))
         ),
         updated_at = now()
     WHERE a.id IN (
       SELECT id FROM calendar_accounts
       WHERE provider = 'google'
         AND NOT needs_reconnect
-        AND coalesce(next_sync_at, '-infinity'::timestamptz) <= now()
+        AND coalesce(next_sync_at, '-infinity'::timestamptz) <= now() + (${pullMs} * interval '1 millisecond')
       ORDER BY coalesce(next_sync_at, '-infinity'::timestamptz)
       LIMIT ${max}
       FOR UPDATE SKIP LOCKED

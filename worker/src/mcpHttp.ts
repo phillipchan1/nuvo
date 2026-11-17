@@ -77,6 +77,7 @@ export async function handleMcp(c: Context<AppEnv>): Promise<Response> {
   }
 
   const store = await bootstrapUser(makeStore(io.sql, conn.user_id), null);
+  c.set("gateUser", store.userId);
   const extra = sessionHeaders(c.req.raw);
   const raw = await c.req.json().catch(() => null);
 

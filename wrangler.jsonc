@@ -57,6 +57,14 @@
       "0 4 * * *"
     ]
   },
+  // The minute cron's gate (worker/src/cronGate.ts, D-239): holds when
+  // reminders and calendar polls are next due, so a quiet minute never touches
+  // Neon. SQLite-backed; `wrangler deploy` creates it from the migration, no
+  // manual namespace. Named envs do not inherit this — preview declares its own.
+  "durable_objects": {
+    "bindings": [{ "name": "CRON_GATE", "class_name": "CronGate" }]
+  },
+  "migrations": [{ "tag": "v1-cron-gate", "new_sqlite_classes": ["CronGate"] }],
   // Calendar-dispatch fan-out. Included Queue ops on Workers Paid; see
   // worker/src/cronJobs.ts for the per-account projection. The queue must
   // exist before `wrangler deploy` (it does not create it):
@@ -93,6 +101,10 @@
         "RESEND_FROM": "Nuvo <noreply@localhost>",
         "BETTER_AUTH_URL": "https://nuvo-preview.nq-morning-briefing.workers.dev",
         "ENVIRONMENT": "preview"
+      },
+      // Not inherited from the top level (D-239).
+      "durable_objects": {
+        "bindings": [{ "name": "CRON_GATE", "class_name": "CronGate" }]
       },
       // Its OWN queue. A queue has exactly one consumer Worker, so sharing
       // `nuvo-calendar-sync` would make the preview and prod deploys steal

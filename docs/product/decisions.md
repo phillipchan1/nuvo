@@ -9128,3 +9128,70 @@ local account: equal to or better than master on every interaction (the budgets 
 exceeded on master too there; they were set on the smaller dummy account). Left: postgres.js fetches
 array types on every connection (~8 KB per Worker request; now the largest fixed cost), and the cron
 gate above.*
+
+**D-239 · 2026-11-16 · The minute cron asks a gate, not Neon: a quiet minute touches no database.**
+*(Follow-up to D-238. Neon's compute autosuspends after five idle minutes, and the Worker's
+`* * * * *` tick queried it every minute — so it never slept, and Free caps compute hours. Asked:
+make a minute with nothing due perform zero Neon queries, without a reminder landing late.)*
+
+→ **One Durable Object, `CronGate`** (`worker/src/cronGate.ts`), holds what used to be asked of
+Postgres: per account, the next instant push-dispatch must look at it; the accounts a write has
+touched since; when everyone is next re-planned; and the earliest calendar `next_sync_at`. The
+minute tick asks it first (`runMinuteTick`, `cronJobs.ts`) and on a quiet minute returns without
+creating a SQL client. Chosen over KV (decided with Phil): strongly consistent — a poke is seen by
+the very next minute — and no namespace to create by hand; `wrangler deploy` makes it from the
+`v1-cron-gate` migration. **Fail-open:** no binding or a DO error runs both jobs every minute, as
+before.
+
+→ **push-dispatch says when to come back.** It already plans every reminder in a 15-day window; it
+now returns, per account, the earliest fire not yet due (plus the 30s dispatch lag), capped at one
+day (the window minus the longest lead, so nothing can be planned past what was loaded), or next
+minute when a send must be retried. A due minute re-plans only the accounts that are due or poked.
+Reminders fire on the same minute they did.
+
+→ **Writers poke.** One catch-all (`pokeGate` in `index.ts`, rules in `gatePoke.ts`): any non-GET
+request that opened the database and wasn't refused (4xx) pokes the account it acted for — REST
+writes and `apply_patch` from the app, the capture door, the agent and MCP, calendar connects and
+the Google webhook. The change feed, client reminder claims, auth and cron routes are excluded.
+Background writers poke explicitly: the calendar queue consumer (its accounts' reminders and the
+next poll), inbound mail, and every daily cron (rollover moves `do_date`s). The rule leans to
+over-poking: an extra poke costs one account's re-plan on a minute Neon is already awake for the
+write. **Backstop:** everyone is re-planned at least hourly (Phil's pick over 15 min / 6 h), so a
+writer that is missed costs at most an hour, not a silent reminder.
+
+→ **Calendar polling is the other half, and it was the bigger one.** A poll every 5 min per Google
+account would keep Neon awake by itself. Intervals (Phil chose "moderate"): **Google 30 min while
+live watch channels cover every visible calendar** (the poll only catches a missed push), 10 min
+when they don't; **iCloud 15 min; ICS 30 min**; failures back off as before. A wake also claims
+accounts due within 5 minutes, so polls cluster on one wake instead of each account's own offset.
+The in-app Refresh still syncs at once. Strains **P7** a little: an iCloud or unwatched-Google
+change made outside Nuvo can now take up to 15 / 10 minutes to appear on a closed app (and an event
+reminder for an event added in the last 15 minutes can be that late).
+
+Anchor: no ledger row; this is cost, not product. No new user-facing name.
+
+Not done: a reminder's own minute still wakes Neon (the claim and the device list live there), and
+an account with iCloud still wakes it every 15 minutes. Neither was asked; both are the next lever if
+compute hours stay high.
+
+Measured locally (`wrangler dev` → byte-counting TCP proxy → a copy of the dev database; the cron
+fired by hand through `/cdn-cgi/handler/scheduled`, one push device pointed at a local sink):
+
+| | Postgres connections | bytes |
+|---|---|---|
+| a quiet tick | **0** | **0** |
+| 17 ticks across the 5 minutes after three writes | 4 (the poke, then one per reminder) | ~3.5 KB up / ~11 KB down each |
+| app edit (REST PATCH) → its reminder | fired 06:08:44, due 06:08:30 | |
+| capture-door create (REST POST) → its reminder | fired 06:09:44, due 06:09:30 | |
+| agent (MCP `create_slot`) → its reminder | fired 06:10:44, due 06:10:30 | |
+
+(Ticks were every 20s, so "first tick after due" — the same rule the ungated minute used.) The
+calendar half is proven on PGlite (`cronGate.check.ts`: one wake claims every account due in the
+window, the next minute is quiet); the local copy had no calendar accounts.
+
+*Status: built 2026-11-16 on `claude/quirky-bell-36b09c`, stacked on D-238's branch. No Neon schema
+change. Deploy creates the Durable Object (migration `v1-cron-gate`); in Workers logs a quiet minute
+leaves no `[cron]` line. Pinned in `worker/src/cronGate.check.ts` (65 checks: the state machine, the
+poke rules, the intervals, the wiring, and 14 simulated quiet minutes running 0 SQL statements).
+Found on the way, not fixed: the Worker's agent tools `create_task` / `schedule_task` drop
+`start_time` (`agentExec.ts`), so the agent cannot put a task at a time through MCP today.*

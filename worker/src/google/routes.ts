@@ -21,7 +21,7 @@ import {
   publicGoogleAccount,
 } from "./owned.ts";
 
-type AppEnv = { Bindings: Env; Variables: { io?: RequestIo } };
+type AppEnv = { Bindings: Env; Variables: { io?: RequestIo; gateUser?: string } };
 
 export type GoogleRouteDeps = {
   /** Bootstrapped planner user id (not the raw Better Auth id). */
@@ -186,7 +186,7 @@ export function registerGoogleRoutes(app: Hono<AppEnv>, deps: GoogleRouteDeps): 
       if (blocked) return blocked;
       const io = await deps.requestIo(c);
       try {
-        return await handleGoogleWebhook(io.sql, c.env, c.req.raw);
+        return await handleGoogleWebhook(io.sql, c.env, c.req.raw, (id) => c.set("gateUser", id));
       } catch (e) {
         logServerError("google-webhook", e);
         return clientError("request_failed");

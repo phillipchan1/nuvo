@@ -105,12 +105,13 @@ export async function claimDueAccounts(
   sql: Sql,
   providers: string[],
   max = 50,
+  pullMs = 0,
 ): Promise<CalendarAccount[]> {
   const due = await sql`
     SELECT * FROM calendar_accounts
     WHERE provider = ANY(${providers})
       AND NOT needs_reconnect
-      AND coalesce(next_sync_at, '-infinity'::timestamptz) <= now()
+      AND coalesce(next_sync_at, '-infinity'::timestamptz) <= now() + (${pullMs} * interval '1 millisecond')
     ORDER BY coalesce(next_sync_at, '-infinity'::timestamptz)
     LIMIT ${max}
   `;
@@ -128,6 +129,26 @@ export async function claimDueAccounts(
 
 export async function markSyncResult(sql: Sql, accountId: string, userId: string, ok: boolean): Promise<void> {
   await markOwnedSyncResult(sql, accountId, userId, ok);
+}
+
+/**
+ * Earliest `next_sync_at` among accounts calendar-dispatch could claim (ms),
+ * `now` when one has never synced, null when there are none. The cron gate
+ * sleeps until then (D-239).
+ */
+export async function nextCalendarSyncAt(sql: Sql, providers: string[]): Promise<number | null> {
+  const rows = (await sql`
+    SELECT min(coalesce(next_sync_at, '-infinity'::timestamptz)) AS next, count(*)::int AS n
+    FROM calendar_accounts
+    WHERE provider = ANY(${providers})
+      AND NOT needs_reconnect
+  `) as { next: unknown; n: number }[];
+  const row = rows[0];
+  if (!row || !Number(row.n)) return null;
+  const v = row.next;
+  if (v == null) return Date.now();
+  const ms = v instanceof Date ? v.getTime() : Date.parse(String(v));
+  return Number.isFinite(ms) ? ms : Date.now();
 }
 
 export async function openAccountSecret(
