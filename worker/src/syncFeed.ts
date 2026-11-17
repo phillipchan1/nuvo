@@ -126,6 +126,9 @@ function ownedFrom(table: FeedTable): string {
 function keySql(table: FeedTable): string {
   if (table === "task_labels") return `(x.task_id::text || ':' || x.label_id::text)`;
   if (table === "user_settings") return `x.user_id::text`;
+  // Keyed (user_id, event_key) in production, with no `id` column — must match
+  // the trigger in worker/schema/neon.sql.
+  if (table === "event_domain_routing") return `x.event_key`;
   return `x.id::text`;
 }
 

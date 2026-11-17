@@ -674,6 +674,13 @@ BEGIN
   ELSIF TG_TABLE_NAME = 'user_settings' THEN
     uid := r.user_id;
     k := r.user_id::text;
+  ELSIF TG_TABLE_NAME = 'event_domain_routing' THEN
+    -- Production's routing table is keyed (user_id, event_key) and has no `id`
+    -- (the cutover copied Supabase's shape, not the one above). event_key is
+    -- unique per user in both shapes, so key by it — `r.id` would raise on
+    -- every routing write.
+    uid := r.user_id;
+    k := r.event_key;
   ELSE
     uid := r.user_id;
     k := r.id::text;

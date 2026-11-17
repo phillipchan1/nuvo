@@ -101,6 +101,21 @@ const settings = next.changes.find((c) => c.table === "user_settings");
 ok(settings?.new?.theme === "dark", "a settings change arrives");
 ok(settings && !("inbound_token" in (settings.new ?? {})), "…without the inbound token");
 
+// --- routing in production's shape: keyed (user_id, event_key), no `id` ------
+// neon.sql gives the table an `id`; production's (copied from Supabase) has
+// none. Keying the trigger or the feed by `id` raised on every routing write.
+await db.exec(`ALTER TABLE event_domain_routing DROP COLUMN id`);
+await db.query(`INSERT INTO event_domain_routing (user_id, event_key) VALUES ($1, 'gcal:standup')`, [A]);
+next = delta(await syncChanges(sql, A, cursor));
+const routed = next.changes.find((c) => c.table === "event_domain_routing");
+ok(routed?.eventType !== "DELETE" && routed?.new?.event_key === "gcal:standup", "a routing write in production's shape arrives");
+await db.query(`DELETE FROM event_domain_routing WHERE user_id = $1 AND event_key = 'gcal:standup'`, [A]);
+next = delta(await syncChanges(sql, A, cursor));
+ok(
+  next.changes.some((c) => c.table === "event_domain_routing" && c.eventType === "DELETE"),
+  "…and its delete arrives as a DELETE",
+);
+
 // --- a cursor the log no longer covers, or from another database -----------
 await db.exec(`UPDATE sync_changes SET at = at - interval '30 days'`);
 const pruned = await pruneSyncChanges(sql, 14);
