@@ -9021,3 +9021,59 @@ Anchor: no ledger row; consistency (P11). No new name.
 *Status: built 2026-11-16 on `claude/readiness-dials`. Driven at `?rail=offers`: folded, the strip
 sits under Projects; open, the list flows below it in the one scroll; at 520px tall the column
 scrolls with the ring pinned.*
+
+---
+
+**D-237 · 2026-11-16 · Above the day, a finish also gets a statement: Week landed · Shipped ·
+Shipped (the stage). Amends D-230 / D-231.** *(Asked by the operator: "I finished all the tasks for
+today and was a little underwhelmed… finishing all the tasks for today is kind of a big deal, but
+we need to be commensurate with day, week, projects, and initiatives" — then, of a first build that
+drew its own marks: "should we involve the rings since that's already in the UI".)*
+
+→ **What was still flat.** D-230/D-231 made every finish land where it happens, sized by tier: the
+day's ring closes on the rail, the week's ring on the project deck, the Seal stamps a shipped
+project's crown row, an initiative's card. Each is right, and each is the size of the row it lands
+on. A week's slate, a project carried for six weeks and an initiative carried for a quarter all
+finished at the same physical size as a tick, and two of them land on a surface you may not have
+open (the week's ring lives on the project deck).
+
+→ **The upper three rungs also get a statement** (`lib/moments.ts` the rule,
+`components/moment/MomentLayer.tsx` the drawing, `styles/moment.css`). An ink plate over the app,
+on both shells: the thing finished set at 800 weight ending on the ember stop, louder by rung.
+- **Week** — "Week landed." beside the week's `FinishRing` closing at 112px (its own `closeRing`,
+  week tier), the week's projects under it, each one's crown `ProgressRing` closing. Fires when
+  every project on `useWeekCrown` has a verdict.
+- **Project** — a wider plate: its `FinishRing` closes from how much was done, then **the Seal**
+  lands on it (`stampOn`); its name at 64px, "Shipped · started Oct 3 · 6 weeks". Fires on the
+  *ship* — the stored status — not on the last task, which makes it ready to ship, not shipped.
+- **Initiative** — the whole stage: its ring closes at the quarter's tier with the Seal, its name
+  up to 104px, each of its projects' rings in turn; one it shipped without stays at its true fill
+  (P7).
+**The day keeps its own close** — the rail's `DayCrown` and the phone's "Done at 3pm" — and gets
+no plate: it is the one finish that happens where you are already looking.
+
+→ **Nothing new is drawn or moved.** The rings are `FinishRing` and `ProgressRing` (lifted out of
+`WeekPanel` into `components/progress/` so the crown and the plates share one drawing), the full
+stop is the kit's `Stop`, the stamp is the Seal, the motion is `lib/celebrate`. While a stage is
+mounted, `seal` / `sealInitiative` leave the stamp to the plate — one Seal, not one under the scrim
+and one on it. The plate sits under the celebration layer (z 85 < `.k-ring` 89 / `.k-spark` 90 /
+`.k-seal` 91) so the sparks and the stamp land on it. One act that reaches several rungs plays only
+the highest. Any key, tap or time lets it go; the key still reaches the app.
+
+**Held to P3/P9 the D-093 way.** A plate plays only within a few seconds of the user's own write
+(`noteOwnAct` in `useTasks.complete`, `toggleTask`, and `updateProject` / `updateInitiative` to
+complete). An echo, the assistant, a reload: still. **Strains P9** — knowingly; it is the request.
+**D-203's refusals stand:** no sound, streak, level or running tally. Four no's: no pool; one new
+name (**Week landed**, glossary); it degrades on an empty account (no slate, no week rung); nothing
+in it is about one account.
+
+**Anchor.** **W6** ("Did anything move this week?") answered where the act happens; **D7** ("Did
+I actually finish?") at the ship. No re-score: both were ✅ through the Review and Sundown.
+
+*Status: built 2026-11-16 on `claude/finish-statements`, off master `c4b402b2`. Verified at
+`?moments`: each plate's ring closes through `closeRing` (24 sparks and its outlines on a project,
+the Seal stamped on the plate, the stop dropped), at 1735px and at 375px with no horizontal scroll.
+Not driven on a live account (the dev server had no backend) and not run on a device. A first
+build of this on a stale branch (`bf8c5312`, its own D-225) drew its own day statement and stamp;
+it is superseded by this and was not merged.*
+

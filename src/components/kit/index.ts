@@ -30,3 +30,4 @@ export { usePageTabKeys, withPageTabKeys, pageTabChord } from "./pageTabKeys";
 export { useListTabKeys, listTabTitle, stepTab, LIST_TAB_KEYS } from "./listTabKeys";
 export { NuvoMark } from "./Mark";
 export { PaceTrack } from "../progress/PaceTrack";
+export { ProgressRing } from "../progress/ProgressRing";

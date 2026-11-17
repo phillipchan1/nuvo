@@ -28,6 +28,8 @@ import "./styles/nuvo.css";
 import "./styles/phone.css";
 import "./styles/native.css";
 import "./styles/momentum.css";
+// The top of the finish ladder — Week landed · Shipped (D-237).
+import "./styles/moment.css";
 import { installNativeFeel } from "./lib/nativeFeel";
 import { PostHogProvider } from "@posthog/react";
 import { isTauri as isTauriShell, isMac, isMobileTauri } from "./lib/platform";
@@ -106,6 +108,7 @@ const showKitHarness = import.meta.env.DEV && params.has("kit");
 const showSearchHarness = import.meta.env.DEV && params.has("search");
 const showMemoryHarness = import.meta.env.DEV && params.has("memory");
 const showStatementHarness = import.meta.env.DEV && params.has("statement");
+const showMomentHarness = import.meta.env.DEV && params.has("moments");
 const showOrientationHarness = import.meta.env.DEV && params.has("orientation");
 const showLoginHarness = import.meta.env.DEV && params.has("login");
 // `?docs` — the record, create, Settings, Shortcuts, ship and the chat (D-190).
@@ -166,6 +169,14 @@ if (showDeckHarness) {
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>
         <StatementHarness />
+      </React.StrictMode>,
+    );
+  });
+} else if (showMomentHarness) {
+  void import("./components/moment/MomentHarness").then(({ default: MomentHarness }) => {
+    ReactDOM.createRoot(document.getElementById("root")!).render(
+      <React.StrictMode>
+        <MomentHarness />
       </React.StrictMode>,
     );
   });

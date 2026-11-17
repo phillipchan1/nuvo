@@ -1,4 +1,5 @@
 import { lazy, memo, startTransition, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import MomentLayer from "./moment/MomentLayer";
 import { MemoryGradeProvider } from "./memory/GradeContext";
 import { createPortal } from "react-dom";
 import {
@@ -91,6 +92,8 @@ const AppShell = memo(function AppShell() {
       <OrientationProvider>
         <MemoryGradeProvider>
           <ResponsiveShell />
+          {/* the top of the finish ladder, on both shells (D-237) */}
+          <MomentLayer />
         </MemoryGradeProvider>
       </OrientationProvider>
     </VerticalProvider>

@@ -50,6 +50,7 @@ import { deckWeight } from "../lib/pace";
 import { ProjectShipAssess } from "./record/ShipAssess";
 import type { EmblemSpec } from "../lib/weekEmblem";
 import { Button, Chip, CrownLine, DayCrown, IconButton, MarkLabel, MarkSet, OfferChip, SectionHeader, Stop } from "./kit";
+import { ProgressRing } from "./progress/ProgressRing";
 import { WEEK_REACH_KEY, reachArrivalDelay } from "../lib/motion";
 import { mondayOf } from "../../supabase/functions/_shared/planningRules.ts";
 import { bump } from "../lib/celebrate";
@@ -544,38 +545,6 @@ function NoTime({ count, title }: { count: number; title?: string }) {
     <span className="no-time" title={title}>
       {count > 0 ? count : null}
     </span>
-  );
-}
-
-/** The project's mark: an ARC, never a checkbox (law 3). Fills with the work
- *  that's done; goes solid with a ✓ only when the row is finished or earned. */
-function ProgressRing({ pct, color, filled }: { pct: number; color: string; filled: boolean }) {
-  const r = 5.25;
-  const C = 2 * Math.PI * r;
-  if (filled) {
-    return (
-      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden>
-        <circle cx="7" cy="7" r="7" fill={color} />
-        <path d="M4.3 7.2l1.8 1.8 3.6-3.9" fill="none" stroke="var(--on-accent)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    );
-  }
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden>
-      <circle cx="7" cy="7" r={r} fill="none" stroke={color} strokeOpacity={0.28} strokeWidth="2.5" />
-      {pct > 0 && (
-        <circle
-          cx="7"
-          cy="7"
-          r={r}
-          fill="none"
-          stroke={color}
-          strokeWidth="2.5"
-          strokeDasharray={`${(pct / 100) * C} ${C}`}
-          transform="rotate(-90 7 7)"
-        />
-      )}
-    </svg>
   );
 }
 

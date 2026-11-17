@@ -1,0 +1,200 @@
+/* ════════════════════════════════════════════════════════════════════════
+   MOMENTS — the top of the finish ladder (D-237). Rule: src/lib/moments.ts.
+   Drawing: components/moment/MomentLayer.tsx.
+
+   The lower rungs finish in place (D-209, D-231). The week, a project and an
+   initiative also get a STATEMENT: an ink plate whose ring is the kit's
+   FinishRing playing its own close (kit.css .k-finish, lib/celebrate), whose
+   full stop is the kit's Stop, whose stamp is the Seal. This file draws only
+   the plate and the order things arrive in.
+
+     WEEK        a plate        · 56px  · the week's ring · its projects' rings
+     PROJECT     a wider plate  · 64px  · its ring and the Seal
+     INITIATIVE  the stage      · ≤112px· its ring, the Seal, its projects' rings
+
+   It sits UNDER the celebration layer (.k-ring 89 · .k-spark 90 · .k-seal 91)
+   so the sparks and the stamp land on the plate, and over everything else.
+   Transform and opacity only (plus one SVG dash offset, below); reduced motion
+   shows the final frame. Nothing blurs.
+   ════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* the beat between pieces — mirrored as STAGGER_MS in MomentLayer.tsx */
+  --mo-stagger: 90ms;
+}
+
+@keyframes mo-rise {
+  from { transform: translateY(14px) scale(0.97); }
+  to { transform: none; }
+}
+@keyframes mo-land {
+  from { opacity: 0; transform: translateY(-8px) scale(0.6); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes mo-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes mo-leave {
+  to { opacity: 0; }
+}
+@keyframes mo-plate-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes mo-plate-leave {
+  to { transform: translateY(10px) scale(0.985); }
+}
+
+.mo-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 85;
+  display: grid;
+  place-items: center;
+  padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px));
+  /* a dim, not a blur — the app stays legible behind the act */
+  background: color-mix(in srgb, var(--ground) 62%, transparent);
+  animation: mo-fade var(--d-base) var(--ease-out) both;
+}
+.mo-scrim.is-leaving { animation: mo-leave var(--d-slow) var(--ease-out) both; }
+.mo-scrim.is-leaving .mo-plate { animation: mo-plate-leave var(--d-slow) var(--ease-out) both; }
+
+.mo-plate {
+  --mo-at: 120ms;
+  --mo-pieces-at: calc(var(--mo-at) + var(--d-slow));
+  position: relative;
+  display: grid;
+  gap: 18px;
+  width: min(560px, 100%);
+  max-height: 100%;
+  overflow: hidden;
+  padding: 36px 40px 34px;
+  border-radius: var(--r-dialog);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--sh-modal);
+  animation: mo-plate-in var(--d-moment) var(--ease-land) both;
+}
+.mo-head { display: flex; align-items: center; gap: 24px; min-width: 0; }
+.mo-say { display: grid; gap: 14px; min-width: 0; }
+.mo-ring { display: inline-flex; flex: none; justify-self: start; }
+/* the count inside a ring this size reads at the ring's scale */
+.mo-ring .k-finish-mid { font-size: 22px; }
+.mo-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font: 600 13px/1.3 var(--font-sans);
+}
+.mo-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.mo-hero {
+  margin: 0;
+  font: 800 56px/0.92 var(--font-sans);
+  letter-spacing: -0.055em;
+  color: var(--ink);
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+  animation: mo-rise var(--d-moment) var(--ease-land) var(--mo-at) both;
+}
+.mo-fact {
+  margin: 0;
+  color: var(--muted);
+  font: 500 13px/1.4 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  animation: mo-land var(--d-slow) var(--ease-out) 1.4s both;
+}
+
+.mo-pieces {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mo-piece {
+  --mo-ring-at: calc(var(--mo-pieces-at) + var(--i, 0) * var(--mo-stagger));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--ink-2, var(--ink));
+  font: 550 14px/1.3 var(--font-sans);
+  animation: mo-land var(--d-land) var(--ease-land) var(--mo-ring-at) both;
+}
+.mo-piece > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.mo-piece:not([data-done]) { color: var(--muted); }
+.mo-piece > svg { flex: none; display: block; }
+
+/* ── a project's ring closes (ProgressRing `closing`) ──────────────────────
+   The crown's own arc runs from where the work stood to whole, then its disc
+   lands with the check. The one non-transform property is the arc's dash
+   offset, on one SVG stroke: it is how a ring is drawn, and triggers no layout. */
+.mo-ring-arc {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: mo-close var(--d-advance) var(--ease-momentum) var(--mo-ring-at, 0ms) both;
+}
+@keyframes mo-close {
+  from { stroke-dashoffset: var(--off, 1); }
+  to { stroke-dashoffset: 0; }
+}
+.mo-ring-seal {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mo-seal-land var(--d-land) var(--ease-land) calc(var(--mo-ring-at, 0ms) + var(--d-advance) * 0.7) both;
+}
+@keyframes mo-seal-land {
+  from { opacity: 0; transform: scale(0.55); }
+  to { opacity: 1; transform: none; }
+}
+
+/* WEEK — the plate as above. PROJECT — wider, the ring first. */
+.mo-project .mo-plate { width: min(600px, 100%); }
+.mo-project .mo-hero { font-size: 64px; }
+
+/* INITIATIVE — the whole stage */
+.mo-initiative { padding: 0; background: transparent; }
+.mo-initiative .mo-plate {
+  --mo-at: 160ms;
+  /* it fills the window, so it arrives as light does — it doesn't fly */
+  animation: mo-fade var(--d-moment) var(--ease-out) both;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+  box-shadow: none;
+  align-content: center;
+  gap: 32px;
+  padding: max(40px, calc(env(safe-area-inset-top, 0px) + 32px)) clamp(24px, 7vw, 120px)
+    max(40px, calc(env(safe-area-inset-bottom, 0px) + 32px));
+  background: var(--ground);
+}
+.mo-initiative .mo-head { gap: 36px; }
+.mo-initiative .mo-hero {
+  font-size: clamp(48px, 7vw, 104px);
+  line-height: 0.88;
+  letter-spacing: -0.06em;
+  max-width: 14ch;
+}
+.mo-initiative .mo-pieces {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px 28px;
+  max-width: 980px;
+}
+.mo-initiative .mo-piece { font-size: 15px; }
+
+@media (max-width: 767px) {
+  .mo-plate { padding: 28px 24px 26px; gap: 16px; }
+  .mo-hero { font-size: 44px; }
+  .mo-project .mo-hero { font-size: 48px; }
+  .mo-head, .mo-initiative .mo-head { flex-direction: column; align-items: flex-start; gap: 18px; }
+  .mo-initiative .mo-hero { font-size: clamp(44px, 13vw, 64px); }
+  .mo-initiative .mo-pieces { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mo-scrim, .mo-scrim * { animation: none !important; }
+}

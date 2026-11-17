@@ -32,6 +32,7 @@ import { sameDirectory } from "../lib/verticalDirectory";
 import { DEFAULT_DOMAIN_SYMBOL, normalizeDomainSymbol } from "../lib/domainSymbolKeys";
 import { upsertPushVerdict } from "../lib/priorities";
 import { titleCase } from "../lib/text";
+import { noteOwnAct } from "../lib/moments";
 import {
   DEFAULT_DURATION_MINUTES,
   restingStatus,
@@ -1029,6 +1030,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         if ("startDate" in patch) rowPatch.start_date = patch.startDate;
         if ("targetDate" in patch) rowPatch.target_date = patch.targetDate;
         if (patch.status != null) rowPatch.status = patch.status;
+        if (patch.status === "complete") noteOwnAct(); // D-237
         if (patch.momentum != null) rowPatch.momentum = patch.momentum;
         if (patch.progress != null) rowPatch.progress = patch.progress;
         if (patch.domainId != null) rowPatch.domain_id = patch.domainId;
@@ -1153,6 +1155,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         // a project you shipped mid-week on its week instead of erasing it.
         if (patch.status != null) {
           rowPatch.status = patch.status;
+          if (patch.status === "complete") noteOwnAct(); // D-237
           if ("shippedAt" in patch) rowPatch.shipped_at = patch.shippedAt;
           else rowPatch.shipped_at = patch.status === "complete" ? new Date().toISOString() : null;
         } else if ("shippedAt" in patch) rowPatch.shipped_at = patch.shippedAt;
@@ -1270,6 +1273,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           });
         } else {
           const before = { status: row.status, completed_at: row.completed_at };
+          noteOwnAct(); // D-237 — a finish this tick reaches may play
           void patchTaskRow(id, { status: "done", completed_at: new Date().toISOString() });
           recordUndo({
             label: `Marked done — ${row.title}`,

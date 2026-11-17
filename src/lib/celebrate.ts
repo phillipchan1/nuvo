@@ -9,6 +9,10 @@
 //   Shipped   the Seal  — stamp, jolt, ring (only toward a moving
 //                         bet; otherwise the stamp alone)        haptic success
 //
+// Above the day, the finish also gets a statement (D-237, lib/moments): a
+// plate over the app where these same motions play at the size the finish
+// earned — the week's ring closing, a project's or a bet's ring and its Seal.
+//
 // Laws it keeps (Momentum, design-language.md): only on the user's own act —
 // every caller fires from a transition it watched happen, never on mount;
 // transform and opacity only; off under reduced motion or a still material.
@@ -17,6 +21,7 @@
 
 import { motionOff, play } from "./motion";
 import { haptic } from "./haptics";
+import { stageMounted } from "./moments";
 
 /** A piece that just filled pops up and settles — the smallest reward. */
 export function pop(el: Element | null | undefined, delayMs = 0): void {
@@ -152,6 +157,9 @@ export function closeMark(bar: HTMLElement | null | undefined, tier: "small" | "
  *  crown row, or the deck's Shipped mark); toward a bet that's moving the
  *  target also jolts and an ember ring opens. Toward none: the stamp alone. */
 export function seal(projectId: string, significant: boolean): void {
+  // A ship is the top of the ladder (D-237): the plate plays it, the ring
+  // closing on it carries the haptic, and the stamp lands there — not under it.
+  if (stageMounted()) return;
   haptic("success");
   if (typeof document === "undefined" || motionOff()) return;
   stamp(
@@ -167,6 +175,7 @@ export function seal(projectId: string, significant: boolean): void {
  *  control you pressed, when the deck isn't on screen) and always carries the
  *  jolt, the ring and the sparks: a bet only ships once. */
 export function sealInitiative(initiativeId: string, from?: Element | null): void {
+  if (stageMounted()) return; // the stage plays it (D-237) — see `seal`
   haptic("success");
   if (typeof document === "undefined" || motionOff()) return;
   const target =
@@ -175,6 +184,12 @@ export function sealInitiative(initiativeId: string, from?: Element | null): voi
     document.querySelector<HTMLElement>('[data-mark="moving"] .k-dial-ring');
   stamp(target, true);
   burst(target, 240);
+}
+
+/** The Seal's stamp on any element — the plates (D-237) land it on their ring. */
+export function stampOn(target: HTMLElement | null, significant = true): void {
+  if (typeof document === "undefined" || motionOff()) return;
+  stamp(target, significant);
 }
 
 function stamp(target: HTMLElement | null, significant: boolean): void {

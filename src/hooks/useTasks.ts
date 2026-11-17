@@ -1,4 +1,5 @@
 import { CALENDAR_RANGE_STALE_MS } from "../lib/scheduleRange";
+import { noteOwnAct } from "../lib/moments";
 import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { mirrorTask, supabase } from "../lib/supabase";
@@ -920,9 +921,12 @@ export function useTaskMutations() {
       track("removeFromSlot", t, placeSnap(t), { slot_id: null },
       opts),
 
-    complete: (t: Task, opts?: UndoOpts) =>
-      track("complete", t, completeSnap(t), { status: "done", completed_at: new Date().toISOString() },
-      opts),
+    complete: (t: Task, opts?: UndoOpts) => {
+      // the user's own hand — a finish this tick reaches may play (D-237)
+      noteOwnAct();
+      return track("complete", t, completeSnap(t), { status: "done", completed_at: new Date().toISOString() },
+      opts);
+    },
 
     uncomplete: (t: Task, opts?: UndoOpts) =>
       track("uncomplete", t, completeSnap(t), { status: restingStatus(t), completed_at: null },
