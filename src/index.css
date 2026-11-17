@@ -2355,6 +2355,28 @@ html:root .nuvo-cal-host .fc .fc-timegrid-event-harness {
 [data-plan-pick] .fc-event:not(.evt-plan):not(.evt-plan-ghost):not(.evt-plan-clear) {
   pointer-events: none;
 }
+/* "Fade past days" (Settings → Schedule, per device). Every day before today
+   recedes so the eye lands on today; what's still OWED on a past day — a late
+   task (evt-overdue), an anytime task, a slot with unticked children
+   (evt-open) — keeps full ink, so the fade quiets the settled and surfaces the
+   debt. FullCalendar stamps `fc-day-past` on columns/cells and `fc-event-past`
+   on events that ended before now; an all-day bar that runs into today isn't
+   past, so it stays lit. Week and Month only: the Day view is one column, so
+   there's nothing to find today among. Opacity only — repeats per event. */
+[data-fade-past] .fc-timeGridWeek-view .fc-timegrid-col.fc-day-past .fc-event:not(.evt-overdue):not(.evt-open):not(.evt-selected):not(.evt-focused),
+[data-fade-past] :is(.fc-timeGridWeek-view, .fc-dayGridMonth-view) .fc-daygrid-day.fc-day-past .fc-event.fc-event-past:not(.evt-overdue):not(.evt-open):not(.evt-selected):not(.evt-focused) {
+  opacity: 0.38;
+  transition: opacity var(--d-base) var(--ease-out);
+}
+[data-fade-past] .fc-timeGridWeek-view .fc-col-header-cell.fc-day-past,
+[data-fade-past] .fc-dayGridMonth-view .fc-daygrid-day.fc-day-past .fc-daygrid-day-number {
+  opacity: 0.45;
+}
+@media (hover: hover) {
+  [data-fade-past] .fc-timeGridWeek-view .fc-timegrid-col.fc-day-past .fc-event:hover,
+  [data-fade-past] :is(.fc-timeGridWeek-view, .fc-dayGridMonth-view) .fc-daygrid-day.fc-day-past .fc-event:hover { opacity: 0.9; transition-duration: 0ms; }
+}
+
 /* the walk: the group under review is full strength, the rest wait quieter */
 .fc-event.evt-plan.evt-plan-quiet { opacity: 0.55; }
 

@@ -42,6 +42,7 @@ import SyncPanel from "./SyncPanel";
 import { ShortcutGroups } from "./ShortcutsModal";
 import type { SettingsSection } from "../lib/appNav";
 import { useMaxPerWeek, useMaxPerQuarter } from "../hooks/usePlannerPrefs";
+import { useFadePastDays } from "../hooks/useCalendarPrefs";
 import { DIAL_NOTE, useDial } from "../lib/planDial";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useOrientation } from "../hooks/useOrientation";
@@ -250,6 +251,10 @@ function SchedulePane({
 }) {
   const [maxPerWeek, setMaxPerWeekPref] = useMaxPerWeek();
   const [maxPerQuarter, setMaxPerQuarterPref] = useMaxPerQuarter();
+  const [fadePast, setFadePast] = useFadePastDays();
+  // The fade is drawn by the desktop Schedule; the phone's Calendar has its own
+  // bodies and doesn't read it yet, so the switch stays off a phone (no dead control).
+  const phone = useIsMobile();
   // How much Nuvo moves when the week breaks (docs/plan-the-week-v2.md §7).
   // Its one home (D-204): not in the walk, not in the repair rail. Q-14 is
   // open, so this only moves the control — what each setting does is unchanged.
@@ -367,6 +372,12 @@ function SchedulePane({
           ]}
         />
       </Row>
+
+      {!phone && (
+        <Row title="Fade past days" desc="Open work keeps its ink.">
+          <Toggle checked={fadePast} onChange={setFadePast} label="Fade past days" />
+        </Row>
+      )}
 
       <Row title="Projects per week" desc="Past this, On Deck flags the week.">
         <Stepper value={maxPerWeek} min={1} max={6} onChange={setMaxPerWeekPref} decHint="Fewer per week" incHint="More per week" />

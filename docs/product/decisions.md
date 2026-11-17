@@ -9195,3 +9195,35 @@ leaves no `[cron]` line. Pinned in `worker/src/cronGate.check.ts` (65 checks: th
 poke rules, the intervals, the wiring, and 14 simulated quiet minutes running 0 SQL statements).
 Found on the way, not fixed: the Worker's agent tools `create_task` / `schedule_task` drop
 `start_time` (`agentExec.ts`), so the agent cannot put a task at a time through MCP today.*
+
+**D-240 · 2026-11-17 · Fade past days: the week recedes behind today, except what's still owed.**
+*(Asked by the operator, from a screenshot of a full week: "fade out days where it's been
+completed … to increase locating immediately the user where they are", as an option in
+Settings.)* A lived-in Schedule week is seven equally loud columns; finding today means finding
+the orange date, then reading down a column that looks like the others.
+
+→ **Settings → Schedule → *Fade past days*** (per device, off by default —
+`hooks/useCalendarPrefs.ts`). When on, the desktop Schedule's **Week** and **Month** drop every
+block on a day before today to 38% and dim those days' headers; hover lifts a block back. Faded
+by **date**, not by completion — a past day is mostly meetings, which are never "done", so a
+completion rule would fade almost nothing. The rule's other half is the point: **what's still
+owed keeps full ink** — a late task (`evt-overdue`), an anytime task (`evt-open`), a slot whose
+children aren't all ticked (`evt-open`), an all-day bar that runs into today. So the faded days
+carry exactly one kind of bright thing: what slipped. The Day view is untouched (one column —
+nothing to find today among). CSS over FullCalendar's own `fc-day-past` / `fc-event-past` plus a
+`data-fade-past` attribute on the pane: no re-render, no element-memo dependency, opacity only.
+Earlier today's blocks don't fade — the now-line already marks that edge, and an hourly fade would
+mean re-rendering on the clock.
+
+**Anchor.** Serves **D1** ("What's the one thing today that actually matters?") by making today
+findable in one glance, and **W7** ("What's carrying over?") by leaving only the carried work lit
+on the days behind you. Strains **P13** — the phone Calendar doesn't read it yet, so the switch is
+hidden on the phone shell rather than shown dead; and **P16** — off by default means only people
+who go looking get it; if it holds up, it should become the default and the switch go. Four no's:
+no pool, no overlapping name, works on messy data (it reads only dates and done/open), not
+operator-specific beyond being asked for by one.
+
+*Status: built 2026-11-17 — `hooks/useCalendarPrefs.ts`, `CalendarPane.tsx` (the attribute, `evt-open`
+on open anytime tasks and unfinished slots), `SettingsModal.tsx`, `index.css`. Verified in the dev app
+on a staged week in light and dark: past blocks at 0.38, a late task and an 0/5 slot at full ink,
+today and later unchanged, the switch toggling the grid live. Not yet on the phone Calendar.*
