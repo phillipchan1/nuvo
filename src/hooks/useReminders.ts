@@ -61,6 +61,7 @@ import { useSettings } from "./useSettings";
 import { useAllTasks } from "./useTasks";
 import { useSlots } from "./useSlots";
 import { useExternalEvents, useHiddenEvents } from "./useCalendar";
+import { feedStaleTime } from "../lib/sync/feed";
 
 const KEY = ["reminders"];
 
@@ -75,7 +76,7 @@ export function useReminderOverrides() {
       if (error) throw error;
       return (data ?? []) as Reminder[];
     },
-    staleTime: 60_000,
+    staleTime: feedStaleTime(60_000),
   });
 }
 

@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import { closeSql, openSql, type Sql } from "./db.ts";
-import { openAuth, type AuthInstance } from "./auth.ts";
+import { openAuth, type AuthInstance, type AuthOptions } from "./auth.ts";
 import type { Env } from "./env.ts";
 
 export interface RequestIo {
@@ -9,9 +9,9 @@ export interface RequestIo {
   close: () => Promise<void>;
 }
 
-function openRequestIoDefault(env: Env): RequestIo {
+function openRequestIoDefault(env: Env, opts: AuthOptions = {}): RequestIo {
   const sql = openSql(env);
-  const opened = openAuth(env);
+  const opened = openAuth(env, opts);
   return {
     sql,
     auth: opened.auth,
@@ -21,10 +21,10 @@ function openRequestIoDefault(env: Env): RequestIo {
   };
 }
 
-let factory: (env: Env) => RequestIo = openRequestIoDefault;
+let factory: (env: Env, opts?: AuthOptions) => RequestIo = openRequestIoDefault;
 
-export function openRequestIo(env: Env): RequestIo {
-  return factory(env);
+export function openRequestIo(env: Env, opts?: AuthOptions): RequestIo {
+  return factory(env, opts);
 }
 
 /** Test-only: swap the opener. Not an I/O cache — the factory itself holds no sockets. */

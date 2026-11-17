@@ -43,6 +43,7 @@ import {
   scheduledTasksKey,
 } from "./useTasks";
 import { fetchSlotsRange, fetchSlotTasks, slotsKey, slotTasksKey } from "./useSlots";
+import { feedStaleTime } from "../lib/sync/feed";
 
 /**
  * How long a fetched calendar window counts as fresh.
@@ -160,7 +161,7 @@ export function useExternalEvents(rangeStartISO: string, rangeEndISO: string) {
     // See useSlots: an empty bound means "not yet", not "everything". Sending
     // it produced `start_at=lt.` with no value, which PostgREST 400s.
     enabled: Boolean(rangeStartISO && rangeEndISO),
-    staleTime: CALENDAR_RANGE_STALE_MS,
+    staleTime: feedStaleTime(CALENDAR_RANGE_STALE_MS),
     // Keep the previous range on screen while a new one fetches. `useSlots` has
     // done this since it was written; events never did, so paging the phone's
     // calendar dropped every block to [] for a whole round trip while the
@@ -249,7 +250,8 @@ export function useTravelDirection(range: { start: string; end: string }): -1 | 
  * as lag just as surely as a blank grid.
  */
 export async function prefetchCalendarRange(qc: QueryClient, start: string, end: string) {
-  const staleTime = CALENDAR_RANGE_STALE_MS;
+  // Never stale while the change feed keeps the warmed range current (D-238).
+  const staleTime = feedStaleTime(CALENDAR_RANGE_STALE_MS);
   void qc.prefetchQuery({
     queryKey: externalEventsKey(start, end),
     staleTime,

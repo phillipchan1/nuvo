@@ -2,6 +2,7 @@ import { CALENDAR_RANGE_STALE_MS } from "../lib/scheduleRange";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { invokeQuiet, supabase } from "../lib/supabase";
 import { holdFetchesBehindWrite, invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve, settleWrite } from "../lib/sync";
+import { feedStaleTime } from "../lib/sync/feed";
 import { DEFAULT_DURATION_MINUTES, type Slot, type Task } from "../lib/types";
 import { toDateISO } from "../lib/dates";
 import { patchCaches, seedSlotChildrenQuery, useTaskMutations } from "./useTasks";
@@ -92,7 +93,7 @@ export function useSlots(rangeStartISO: string, rangeEndISO: string) {
     queryFn: () => fetchSlotsRange(rangeStartISO, rangeEndISO),
     // Keep the previous range's slots on screen while a new range fetches —
     // without this the calendar goes empty for the whole round-trip.
-    staleTime: CALENDAR_RANGE_STALE_MS,
+    staleTime: feedStaleTime(CALENDAR_RANGE_STALE_MS),
     placeholderData: (prev) => prev,
   });
 }
@@ -125,7 +126,7 @@ export function useSlotTasks(slotIds: string[]) {
     // A newly created slot changes `ids` (a new key). Keep the previous
     // children painted while the seeded list / fetch takes over — without
     // this the block reads "empty" for the whole round-trip.
-    staleTime: CALENDAR_RANGE_STALE_MS,
+    staleTime: feedStaleTime(CALENDAR_RANGE_STALE_MS),
     placeholderData: (prev) => prev,
   });
 }

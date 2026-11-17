@@ -213,7 +213,7 @@ app.all("/api/auth/*", async (c) => {
   try {
     // Apple's callback exchanges a code with a minted client_secret.
     await primeAppleClientSecret(c.env);
-    io = await requestIo(c);
+    io = await requestIo(c, { validateSchema: true });
     const res = await exposeSignedAuthToken(
       await io.auth.handler(c.req.raw),
       c.env.BETTER_AUTH_SECRET ?? "",

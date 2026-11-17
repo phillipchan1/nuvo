@@ -81,10 +81,14 @@ export async function runPushDispatch(
     };
   }
 
+  // Only accounts with a device to notify. The rest can never receive a push,
+  // so reading their tasks, slots and two days of events every minute was pure
+  // Neon transfer (D-238).
   const settingsRows = (await sql`
-    SELECT user_id, reminder_prefs, hidden_events, time_zone
-    FROM user_settings
-    WHERE reminder_prefs IS NOT NULL
+    SELECT s.user_id, s.reminder_prefs, s.hidden_events, s.time_zone
+    FROM user_settings s
+    WHERE s.reminder_prefs IS NOT NULL
+      AND EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.user_id = s.user_id)
   `) as SettingsRow[];
 
   const accounts = settingsRows
@@ -118,13 +122,17 @@ export async function runPushDispatch(
     }
   }
 
-  try {
-    await sql`
-      INSERT INTO sync_log (provider, operation, status, user_id)
-      VALUES ('push', 'dispatch', 'ok', NULL)
-    `;
-  } catch {
-    /* ignore */
+  // A row only when something was sent. This used to write a heartbeat every
+  // minute, which nothing reads and which made every quiet minute a write.
+  if (notified > 0) {
+    try {
+      await sql`
+        INSERT INTO sync_log (provider, operation, status, user_id)
+        VALUES ('push', 'dispatch', 'ok', NULL)
+      `;
+    } catch {
+      /* ignore */
+    }
   }
 
   return { ok: true, configured, accounts: accounts.length, considered, notified };

@@ -33,6 +33,30 @@ import { outboxSnapshot, refreshOutboxStatus, retryParked, setOutboxStatus } fro
 import { SYNC_TABLES, type OpKind, type SyncTable } from "./ops";
 import { isTableLive } from "./liveHealth";
 
+/**
+ * The Worker's change feed (`feed.ts`, D-238), when one is installed. While it
+ * is active it owns the freshness of the queries it covers: the launch / focus
+ * catch-up and the minute's pull ask it what moved instead of refetching every
+ * stale list, and a delivered write is settled by asking it again rather than
+ * by refetching every list of that table. Injected rather than imported so this
+ * file stays free of the transport.
+ */
+export interface ChangeFeed {
+  active(): boolean;
+  covers(queryKey: readonly unknown[]): boolean;
+  poll(qc: QueryClient, opts?: { force?: boolean }): Promise<void>;
+}
+
+let changeFeed: ChangeFeed | null = null;
+
+export function installChangeFeed(feed: ChangeFeed | null): void {
+  changeFeed = feed;
+}
+
+function activeFeed(): ChangeFeed | null {
+  return changeFeed?.active() ? changeFeed : null;
+}
+
 /** Tables whose queries are waiting for a drain before they may refetch. */
 const deferred = new Map<SyncTable, readonly string[][]>();
 
@@ -503,12 +527,18 @@ function takeDeferred(tables: Iterable<SyncTable>): (readonly string[])[] {
  */
 export function catchUpAfterOwingKnown(qc: QueryClient) {
   if (!owingReady) return;
+  // With the change feed answering, the lists it covers are not refetched on a
+  // clock: one small question says which of them moved (D-238). Everything else
+  // catches up exactly as before.
+  const feed = activeFeed();
   qc.invalidateQueries({
     predicate: (query) => {
+      if (feed?.covers(query.queryKey)) return false;
       if (queryKeyOwesServer(query.queryKey)) return false;
       return query.isStale();
     },
   });
+  if (feed) void feed.poll(qc);
 }
 
 /**
@@ -533,6 +563,10 @@ export function catchUpAfterOwingKnown(qc: QueryClient) {
  * carelessly, and it has its own sync job. Owed tables are skipped, as always;
  * `isStale` means an idle app costs one round of queries a minute, not a
  * refetch per tick.
+ *
+ * On the Worker path that round was ~1.4 MB of Neon transfer a minute, so with
+ * the change feed installed the timer asks the feed instead (D-238) and this
+ * invalidation only runs when the feed can't answer.
  */
 const PULL_ROOTS = ["tasks", "slots", "labels", "recurrences", "sprint"] as const;
 
@@ -551,6 +585,13 @@ export function pullSyncTables(qc: QueryClient) {
   // webviews) `navigator` exists with no `onLine` at all, and the loose test
   // reads that absence as "offline" and skips the pull entirely.
   if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+  // The Worker path asks the change feed what moved instead (D-238): an idle
+  // minute is one small answer, not every task, slot and label list again.
+  const feed = activeFeed();
+  if (feed) {
+    void feed.poll(qc);
+    return;
+  }
   qc.invalidateQueries({
     predicate: (query) => {
       const root = String(query.queryKey[0] ?? "");
@@ -623,6 +664,14 @@ export async function syncNow({ qc, transport }: SyncRunOptions): Promise<void> 
     if (touchesVertical && ![...VERTICAL_SOURCES].some((t) => owing.has(t))) {
       want(["vertical"]);
     }
+
+    // On the Worker path a table is "live" while the change feed answers in
+    // deltas, and the feed is how a delivered write settles: it hands back the
+    // rows exactly as they landed (field-LWW merge and all). Forced, so a poll
+    // already in flight — read before this write committed — is followed by one
+    // that sees it.
+    const feed = activeFeed();
+    if (feed && [...report.sentTables].some((t) => isTableLive(t))) void feed.poll(qc, { force: true });
   }
 
   // A broader key covers every narrower one under it.

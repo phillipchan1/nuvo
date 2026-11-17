@@ -6,6 +6,7 @@ import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
 import { invalidateWhenSafe, makeOp, queueWrite } from "../lib/sync";
+import { feedStaleTime } from "../lib/sync/feed";
 import type { WeekReport } from "../lib/composeWeek";
 
 export type FindResponse = "confirmed" | "corrected" | "dismissed" | "kept";
@@ -51,7 +52,7 @@ export function useWeekReviewRow(weekStartISO: string) {
       if (error) throw error;
       return (data as WeekReviewRow | null) ?? null;
     },
-    staleTime: 30_000,
+    staleTime: feedStaleTime(30_000),
     retry: false,
     meta: { silent: true },
   });
@@ -74,7 +75,7 @@ export function useWeekReviewList() {
         (row) => row.report && typeof row.report === "object" && "emblem" in row.report,
       );
     },
-    staleTime: 60_000,
+    staleTime: feedStaleTime(60_000),
     meta: { silent: true },
   });
 }

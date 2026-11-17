@@ -35,6 +35,7 @@ import { SessionLookupError } from "./auth.ts";
 import { API_SECURITY } from "./cors.ts";
 import { requireStore, type AppEnv } from "./session.ts";
 import { rotateInboundToken, type Store } from "./store.ts";
+import { syncChanges } from "./syncFeed.ts";
 
 export const REST_PREFIX = "/api/rest/v1";
 
@@ -1257,7 +1258,7 @@ async function handleRpc(store: Store, cat: Catalog, fn: string, args: Record<st
 }
 
 /** Read-only RPCs stay open during a write freeze, as on the Supabase path. */
-const READ_RPCS = new Set(["contacts"]);
+const READ_RPCS = new Set(["contacts", "sync_changes"]);
 
 // ---------------------------------------------------------------------------
 // Entry
@@ -1334,6 +1335,14 @@ export async function handleRest(c: Context<AppEnv>): Promise<Response> {
     }
     if (writes && writeFrozen(c.env.MAINTENANCE_WRITE_FREEZE)) {
       return errorResponse(new RestError(503, "PGRST000", WRITE_FROZEN_MESSAGE));
+    }
+    // The change feed is asked once a minute by every open window; it needs no
+    // catalog, and the catalog read (every REST table's columns) is the bulk of
+    // what a quiet minute would otherwise cost whenever its cache has expired.
+    if (rpc?.[1] === "sync_changes") {
+      const args = method === "POST" ? await readBody(c) : Object.fromEntries(url.searchParams);
+      const since = args && typeof args === "object" && !Array.isArray(args) ? (args as Record<string, unknown>).p_since : null;
+      return rpcJson(await syncChanges(got.store.sql, got.store.userId, since ?? null));
     }
     const cat = await catalog(got.store.sql);
 

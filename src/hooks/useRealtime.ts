@@ -6,28 +6,12 @@ import { supabase } from "../lib/supabase";
 import { applyLiveChange, type LiveChange } from "../lib/sync/liveApply";
 import { liveTopic } from "../lib/sync/liveTopic";
 import { invalidateWhenSafe, pendingOps, pullSyncTables, recentlyAcked, setTableLive, SYNC_TABLES, tablesOwing, type SyncTable } from "../lib/sync";
+import { TABLE_TO_KEYS } from "../lib/sync/liveKeys";
 
 const isSyncTable = (t: string): t is SyncTable =>
   (SYNC_TABLES as readonly string[]).includes(t);
 
-export const TABLE_TO_KEYS: Record<string, string[][]> = {
-  tasks: [["tasks"]],
-  task_labels: [["tasks"]],
-  slots: [["slots"]],
-  recurrences: [["recurrences"], ["tasks"], ["slots"]],
-  labels: [["labels"]],
-  external_events: [["external_events"]],
-  calendar_accounts: [["calendar_accounts"]],
-  user_settings: [["settings"]],
-  domains: [["vertical"]],
-  initiatives: [["vertical"]],
-  projects: [["vertical"]],
-  record_comments: [["record_comments"]],
-  key_results: [["vertical"]],
-  sprints: [["sprint"]],
-  week_reviews: [["week_reviews"]],
-  event_domain_routing: [["event_domain_routing"], ["vertical"]],
-};
+export { TABLE_TO_KEYS };
 
 // Invalidations are coalesced over one animation-length window rather than
 // fired per row. A sync writes events in batches of up to 500 and Realtime

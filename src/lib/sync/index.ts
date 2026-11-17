@@ -11,6 +11,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { enqueue, outboxOwner, refreshOutboxStatus, setOutboxOwner, whenDelivered } from "./outbox";
 import { clearPersistedCache } from "./persist";
 import { installOwingGuards, invalidateWhenSafe, markOwing, refreshOwing, startSync, syncNow } from "./coordinator";
+import { installFeed } from "./feed";
 import { announceQueuedWrite } from "./handoff";
 import type { NewOp, Op, SyncTable } from "./ops";
 import type { Transport } from "./engine";
@@ -36,6 +37,8 @@ export { createSupabaseTransport, conflictResolutionAvailable } from "./transpor
 export { isDurable } from "./idb";
 export { isTableLive, setTableLive, resetLiveHealthForTests } from "./liveHealth";
 export { listenForQueuedWrites } from "./handoff";
+export { feedCoversKey, TABLE_TO_KEYS, FEED_TABLES } from "./liveKeys";
+export { feedOwnsFreshness, feedStaleTime, holdFeedUntilRestored, pollFeed, resetFeedForTests } from "./feed";
 
 let client: { qc: QueryClient; transport: Transport } | null = null;
 let running: ReturnType<typeof startSync> | null = null;
@@ -45,6 +48,7 @@ export function configureSync(qc: QueryClient, transport: Transport) {
   if (client) running?.stop();
   client = { qc, transport };
   installOwingGuards(qc);
+  installFeed(qc);
   running = startSync({ qc, transport });
 }
 

@@ -13,6 +13,7 @@ import { useCalendarAccounts, useExternalEvents } from "./useCalendar";
 import { useSettings } from "./useSettings";
 import { calendarKey, eventCountsAsActual, eventKey } from "../lib/eventActuals";
 import { planningWeekStartISO } from "../lib/dates";
+import { feedStaleTime } from "../lib/sync/feed";
 
 const BATCH = 40;
 
@@ -54,7 +55,7 @@ export function useEventRouter() {
       }
       return keys;
     },
-    staleTime: 60_000,
+    staleTime: feedStaleTime(60_000),
   });
 
   const inFlight = useRef(false);

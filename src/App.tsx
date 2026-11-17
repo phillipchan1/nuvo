@@ -9,7 +9,8 @@ import { isSpotlightWindow } from "./lib/platform";
 import { identifyUser, resetUser } from "./lib/posthog";
 import { reportAppError } from "./lib/appError";
 import { adoptForeignWrites, configureSync, createSupabaseTransport, installOwingGuards, listenForQueuedWrites, queryKeyOwesServer, teardownSync } from "./lib/sync";
-import { TABLE_TO_KEYS } from "./hooks/useRealtime";
+import { TABLE_TO_KEYS, feedCoversKey } from "./lib/sync/liveKeys";
+import { feedOwnsFreshness, holdFeedUntilRestored } from "./lib/sync/feed";
 import { createIdbPersister, MAX_CACHE_AGE_MS, shouldDehydrateQuery } from "./lib/sync/persist";
 import { useAuth } from "./hooks/useAuth";
 import { useWatchSession } from "./hooks/useWatchSession";
@@ -213,7 +214,10 @@ const queryClient = new QueryClient({
   }),
   defaultOptions: {
     queries: {
-      staleTime: 15_000,
+      // A list the Worker's change feed covers never goes stale on a clock —
+      // the feed says when it moved (D-238). Everything else, and every list
+      // when the feed can't answer, is fresh for 15s as before.
+      staleTime: (query) => (feedOwnsFreshness() && feedCoversKey(query.queryKey) ? Infinity : 15_000),
       retry: 1,
       // A table this device still owes must not be replaced by a server
       // snapshot that predates the create. That's how a project appeared in
@@ -398,6 +402,8 @@ function BackendGate({ children }: { children: React.ReactNode }) {
 }
 
 const persister = createIdbPersister();
+// The change feed must not advance its cursor until the cache it describes is back.
+const releaseFeed = holdFeedUntilRestored();
 
 export default function App() {
   return (
@@ -414,6 +420,8 @@ export default function App() {
         // never refetch, so only a reset clears what's already on disk.
         buster: "sync-v2",
       }}
+      onSuccess={releaseFeed}
+      onError={releaseFeed}
     >
       <BackendGate>
         <SyncHost>

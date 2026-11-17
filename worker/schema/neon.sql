@@ -628,3 +628,80 @@ CREATE TABLE IF NOT EXISTS public.apple_webhook_events (
 
 -- End of billing (the Worker port). Nothing below this line is applied by the
 -- cutover billing copy (scripts/cutover_copy.py billing_schema_sql).
+
+-- ---------------------------------------------------------------------------
+-- The change feed (D-238). MANUAL MIGRATION: apply to Neon by hand.
+--
+-- One row per changed row of a synced table, written by a row trigger so every
+-- writer is covered — the SPA's REST writes, apply_patch, the agent, MCP,
+-- capture, calendar sync, rollover and the purge cron. The `sync_changes` RPC
+-- (worker/src/syncFeed.ts) reads it to send a device only the rows another
+-- device changed. A delete needs no tombstone column: the key is logged and the
+-- row is gone, which the feed sends as a DELETE.
+--
+-- Safe to re-apply. Until this runs, the RPC answers with per-table
+-- fingerprints instead and the client refetches only tables that moved.
+-- Pruned to 14 days by the weekly trim-sync-log job; a device whose cursor is
+-- older than that refetches everything once.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.sync_changes (
+  seq BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id UUID NOT NULL,
+  tbl TEXT NOT NULL,
+  row_key TEXT NOT NULL,
+  -- Insert time, not transaction start: the feed's cursor only passes rows
+  -- inserted long enough ago that nothing older can still be uncommitted.
+  at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+);
+
+CREATE INDEX IF NOT EXISTS sync_changes_user_seq_idx ON public.sync_changes (user_id, seq);
+
+CREATE OR REPLACE FUNCTION public.log_sync_change()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  r record;
+  uid uuid;
+  k text;
+BEGIN
+  IF TG_OP = 'DELETE' THEN r := OLD; ELSE r := NEW; END IF;
+  IF TG_TABLE_NAME = 'task_labels' THEN
+    -- A label row has no owner column. When the task itself is being deleted
+    -- the lookup finds nothing, and the task's own DELETE is what is logged.
+    SELECT t.user_id INTO uid FROM public.tasks t WHERE t.id = r.task_id;
+    k := r.task_id::text || ':' || r.label_id::text;
+  ELSIF TG_TABLE_NAME = 'user_settings' THEN
+    uid := r.user_id;
+    k := r.user_id::text;
+  ELSE
+    uid := r.user_id;
+    k := r.id::text;
+  END IF;
+  IF uid IS NULL THEN RETURN NULL; END IF;
+  INSERT INTO public.sync_changes (user_id, tbl, row_key) VALUES (uid, TG_TABLE_NAME, k);
+  RETURN NULL;
+END;
+$$;
+
+DO $$
+DECLARE
+  t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'tasks', 'task_labels', 'projects', 'initiatives', 'domains', 'key_results', 'slots',
+    'labels', 'user_settings', 'record_comments', 'week_reviews', 'sprints', 'recurrences',
+    'reminders', 'external_events', 'event_domain_routing'
+  ]
+  LOOP
+    IF to_regclass('public.' || t) IS NULL THEN CONTINUE; END IF;
+    EXECUTE format(
+      'CREATE OR REPLACE TRIGGER sync_changes_log AFTER INSERT OR DELETE ON public.%I
+         FOR EACH ROW EXECUTE FUNCTION public.log_sync_change()', t);
+    -- An UPDATE that changed nothing is not a change.
+    EXECUTE format(
+      'CREATE OR REPLACE TRIGGER sync_changes_log_update AFTER UPDATE ON public.%I
+         FOR EACH ROW WHEN (OLD.* IS DISTINCT FROM NEW.*) EXECUTE FUNCTION public.log_sync_change()', t);
+  END LOOP;
+END;
+$$;

@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { mirrorTask, supabase } from "../lib/supabase";
 import { holdFetchesBehindWrite, invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve, settleWrite } from "../lib/sync";
+import { feedStaleTime } from "../lib/sync/feed";
 import { DEFAULT_DURATION_MINUTES, restoreFromTrashPatch, restingStatus, type Recurrence, type Slot, type Task, type TaskPriority, type TaskStatus } from "../lib/types";
 import { todayISO } from "../lib/dates";
 import { needsGrooming } from "../lib/grooming";
@@ -116,7 +117,7 @@ export function useScheduledTasks(rangeStartISO: string, rangeEndISO: string) {
     queryKey: scheduledTasksKey(rangeStartISO, rangeEndISO),
     // A scheduled task IS a time block, so this blanking on a range change was
     // half of the calendar emptying itself mid-swipe. See useExternalEvents.
-    staleTime: CALENDAR_RANGE_STALE_MS,
+    staleTime: feedStaleTime(CALENDAR_RANGE_STALE_MS),
     placeholderData: (prev) => prev,
     queryFn: () => fetchScheduledTasksRange(rangeStartISO, rangeEndISO),
   });
@@ -153,7 +154,7 @@ export async function fetchPlannedAnytimeRange(
 export function usePlannedAnytimeTasks(rangeStartISO: string, rangeEndISO: string) {
   return useQuery({
     queryKey: plannedAnytimeKey(rangeStartISO, rangeEndISO),
-    staleTime: CALENDAR_RANGE_STALE_MS,
+    staleTime: feedStaleTime(CALENDAR_RANGE_STALE_MS),
     placeholderData: (prev) => prev,
     queryFn: () => fetchPlannedAnytimeRange(rangeStartISO, rangeEndISO),
   });

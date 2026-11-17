@@ -21,6 +21,7 @@ import {
 } from "./secrets.ts";
 import { requestIo, requireStore, type AppEnv } from "./session.ts";
 import type { Store } from "./store.ts";
+import { pruneSyncChanges } from "./syncFeed.ts";
 
 const GH = "https://api.github.com";
 
@@ -342,6 +343,7 @@ export async function runTrimSyncLog(sql: Sql): Promise<{
   deleted: number;
   users: number;
   parked_floor: number | null;
+  sync_changes_deleted: number;
 }> {
   const parkedFloor = await parkedSyncLogFloor(sql);
   const users = (await sql`SELECT id FROM users`) as { id: string }[];
@@ -378,7 +380,9 @@ export async function runTrimSyncLog(sql: Sql): Promise<{
         RETURNING id
       `) as { id: number }[]);
   deleted += orphans.length;
-  return { ok: true, deleted, users: users.length, parked_floor: parkedFloor };
+  // The change feed's log rides the same weekly trim (D-238).
+  const syncChangesDeleted = await pruneSyncChanges(sql);
+  return { ok: true, deleted, users: users.length, parked_floor: parkedFloor, sync_changes_deleted: syncChangesDeleted };
 }
 
 async function connectSource(store: Store, env: Env, token: string): Promise<Response> {

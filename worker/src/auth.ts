@@ -129,7 +129,20 @@ export function googleSocialProvider(env: Env) {
   };
 }
 
-export function createAuth(env: Env, database: AuthDatabase) {
+export interface AuthOptions {
+  /**
+   * Better Auth's runtime schema check: it introspects every table and column
+   * before the first query. Off by default — every data request builds a fresh
+   * auth instance for its session lookup, and the check cost ~38 KB of Neon
+   * transfer on each (D-238). On for Better Auth's own routes (`/api/auth/*`:
+   * sign-in, OTP, get-session — rare), where its first failed query is also
+   * what makes a dead database answer 503 quickly instead of after several
+   * connect timeouts (requestReuse.check.ts, "OTP send hanging DB").
+   */
+  validateSchema?: boolean;
+}
+
+export function createAuth(env: Env, database: AuthDatabase, opts: AuthOptions = {}) {
   const secret = env.BETTER_AUTH_SECRET;
   if (!secret) throw new Error("BETTER_AUTH_SECRET is not set");
   const secrets = parseBetterAuthSecrets(env.BETTER_AUTH_SECRETS);
@@ -192,6 +205,8 @@ export function createAuth(env: Env, database: AuthDatabase) {
     advanced: {
       database: {
         generateId: () => crypto.randomUUID(),
+        // See AuthOptions: off for the session lookup behind every data call.
+        validateSchema: opts.validateSchema ?? false,
       },
       defaultCookieAttributes: {
         sameSite: "lax",
@@ -223,7 +238,7 @@ export function createAuth(env: Env, database: AuthDatabase) {
  * (see openSql). Production uses Hyperdrive so 150–200 parallel requests
  * do not exhaust Postgres `max_connections` (100).
  */
-export function openAuth(env: Env): { auth: AuthInstance; close: () => Promise<void> } {
+export function openAuth(env: Env, opts: AuthOptions = {}): { auth: AuthInstance; close: () => Promise<void> } {
   const url = databaseUrl(env);
   if (!url) throw new Error("database is not configured");
   const { connectionString, ssl } = clientConnection(env, url);
@@ -233,7 +248,7 @@ export function openAuth(env: Env): { auth: AuthInstance; close: () => Promise<v
     connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
     ssl: ssl === "require",
   });
-  const auth = createAuth(env, pool);
+  const auth = createAuth(env, pool, opts);
   return {
     auth,
     close: async () => {

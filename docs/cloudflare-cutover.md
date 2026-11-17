@@ -325,7 +325,10 @@ functions/triggers/policies, `auth` stub); 3 and 4 changed in code; 5, 7 and 10 
    Supabase — and both of its callers (`useRealtime`, `useSubscription`) skip on the flag.
    That socket would hear nothing (Supabase broadcasts only Supabase writes) and its private
    topics reject a Better Auth bearer. Other devices converge on window focus (15s stale,
-   `App.tsx`). **Smallest honest design (not built):**
+   `App.tsx`). **Since D-238** they converge through a polled change feed instead
+   (`sync_changes`, `worker/src/syncFeed.ts` + `src/lib/sync/feed.ts`): once a minute, on focus,
+   and after each write, the client asks what moved and paints only that. A socket would cut the
+   latency from ≤60s to instant; it is no longer needed for cost. **Smallest honest design (not built):**
    - One Durable Object per account (`idFromName(userId)`) holding hibernatable WebSockets —
      an idle socket costs nothing, a message costs one request.
    - `GET /api/live` upgrades after the Worker verifies the Better Auth bearer, sent as

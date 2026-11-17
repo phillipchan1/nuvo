@@ -2,15 +2,16 @@ import type { Context } from "hono";
 import { SessionLookupError, sessionUser } from "./auth.ts";
 import { OPEN_CORS, json } from "./cors.ts";
 import type { Env } from "./env.ts";
+import type { AuthOptions } from "./auth.ts";
 import { openRequestIo, type RequestIo } from "./requestIo.ts";
 import { bootstrapUser, makeStore, type Store } from "./store.ts";
 
 export type AppEnv = { Bindings: Env; Variables: { io?: RequestIo } };
 
-export async function requestIo(c: Context<AppEnv>): Promise<RequestIo> {
+export async function requestIo(c: Context<AppEnv>, opts?: AuthOptions): Promise<RequestIo> {
   const existing = c.get("io");
   if (existing) return existing;
-  const io = openRequestIo(c.env);
+  const io = openRequestIo(c.env, opts);
   c.set("io", io);
   return io;
 }

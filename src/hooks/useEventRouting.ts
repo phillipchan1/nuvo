@@ -10,6 +10,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
 import type { EventDomainRoutingMap } from "../lib/eventActuals";
+import { feedStaleTime } from "../lib/sync/feed";
 
 const EMPTY: EventDomainRoutingMap = {};
 
@@ -65,7 +66,7 @@ export function useEventRouting(): EventDomainRoutingMap {
       }
       return map;
     },
-    staleTime: 60_000,
+    staleTime: feedStaleTime(60_000),
   });
   return data ?? EMPTY;
 }

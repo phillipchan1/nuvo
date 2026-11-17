@@ -9076,4 +9076,55 @@ the Seal stamped on the plate, the stop dropped), at 1735px and at 375px with no
 Not driven on a live account (the dev server had no backend) and not run on a device. A first
 build of this on a stale branch (`bf8c5312`, its own D-225) drew its own day statement and stamp;
 it is superseded by this and was not merged.*
+**D-238 · 2026-11-16 · The Worker path keeps up by asking what changed, not by re-downloading.**
+*(Neon moved the account to Launch: one open Mac was ~1.5 GB/day of Neon data transfer against
+Free's 5 GB/month. Asked: get well under Free without slowing the UI or weakening offline-first.)*
 
+→ **A change feed, `sync_changes`** (`worker/src/syncFeed.ts`, client `src/lib/sync/feed.ts`). A
+row trigger on every synced table logs `(user, table, key)` to `sync_changes`, so every writer is
+covered (SPA, agent, MCP, capture, calendar sync, crons). The client asks "what moved since my
+cursor?" on launch, on focus, once a minute while visible, and right after its own writes land, and
+paints each row through `applyLiveChange`, the same field-LWW path Realtime echoes took. A hard
+delete needs no tombstone column: the key moved and the row is gone, so it arrives as a DELETE. The
+cursor lives in the query cache, so it is persisted in the same snapshot as the rows it describes.
+
+→ **The lists it covers stop going stale on a clock** (`staleTime` Infinity while the feed answers).
+Focus no longer refetches every list; a write no longer refetches every task list. A change that
+can't be painted refetches only its table's keys, behind the outbox.
+
+→ **Three fallbacks, all automatic.** No log on this Neon yet → per-table fingerprints, and only
+moved tables refetch. Cursor unknown or older than the 14-day log → one full refetch. A Worker
+without the RPC → the old clock (60s pull, refetch-on-focus) for the session.
+
+→ **The biggest single cost wasn't rows at all.** Better Auth's runtime schema check introspected
+every table and column on **every** authenticated request (a fresh auth instance per Worker
+request): ~38 KB per call. Off for the session lookup behind every data call; kept on Better
+Auth's own `/api/auth/*` routes (rare), where its first failed query is what makes a dead database
+answer 503 fast instead of after several connect timeouts (`requestReuse.check.ts`).
+
+→ **Cron, part one:** push-dispatch reads only accounts with a push device, and stops writing a
+heartbeat row every minute. **Not done:** the minute tick still touches Neon, so compute never
+sleeps. Holding a "next due" outside Postgres is the follow-up.
+
+Measured locally (Worker + Postgres behind a byte-counting proxy; 1,509 tasks, 700 events), bytes
+Postgres sent:
+
+| | before | after |
+|---|---|---|
+| idle minute (one pull / one poll) | ~1.4 MB | 10.6 KB |
+| idle hour | ~84 MB | ~0.64 MB |
+| one focus after a minute away | 3.74 MB | 128 KB (feed + the uncovered queries) |
+| one checkbox | apply_patch + every task list | apply_patch + one feed answer (~2 KB of rows) |
+| phone edit → this window | ≤60s (by refetch) | 22s observed; ≤60s by the minute poll, at once on focus |
+
+Anchor: no ledger row; this is cost, not product. Strains **P7** a little: an account on a Neon
+without the log gets the fingerprint fallback, slower to settle a write. No new name.
+
+*Status: built 2026-11-16 on `claude/epic-kalam-4e92f5`. **Manual migration pending:** the
+`sync_changes` table, `log_sync_change()` and its triggers at the end of `worker/schema/neon.sql`
+must be applied to Neon by hand; until then the feed answers with fingerprints. Pinned in
+`tests/sync/change-feed.test.ts` and `worker/src/syncFeed.check.ts`. `npm run perf` on the same
+local account: equal to or better than master on every interaction (the budgets themselves are
+exceeded on master too there; they were set on the smaller dummy account). Left: postgres.js fetches
+array types on every connection (~8 KB per Worker request; now the largest fixed cost), and the cron
+gate above.*
