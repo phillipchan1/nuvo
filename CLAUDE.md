@@ -374,6 +374,26 @@ and the same rule as the kernel — **the battery drives the deployed code, neve
 - **A new chat capability ships with its scenario and its row in the map**, in the same
   commit. `npm test` fails when the map and the suite disagree.
 
+## The live app has a QA script — [`qa/`](qa/README.md)
+
+A QA bot regression-tests the **deployed** app end to end from `qa/scenarios/`, signed
+in to a dedicated QA account that `npm run qa:seed` resets to `qa/WORLD.md` (the world
+is `scripts/qa/fixture.mjs`). It follows the steps literally, so the catalog is only
+worth anything while its labels and flows match the app.
+
+- **A change that alters what a user sees or does updates the scenarios that touch it,
+  in the same commit** — a renamed button or tab, an act that moved, a new or removed
+  flow, a changed empty state a scenario quotes. Find them: `grep -rn "<old label>" qa/`.
+  A new user-facing feature gets a scenario (Steps + Expect, exact labels, `QA ` on
+  anything it creates). Styling, unquoted copy, refactors and perf work leave it alone.
+- **`npm test` enforces the major half** (`tests/qa-catalog.test.ts`): a new page, phone
+  tab, calendar view, build face or Settings section with no scenario fails, read from
+  the code's own registries (`RUNGS`, `NAV`, `CAL_VIEWS`, `FACES`, `SECTIONS`). So does a
+  scenario naming a «seeded record» the fixture no longer creates. Rename fixture data →
+  fix the scenarios and `WORLD.md` with it.
+- **The seed writes only through the session-scoped REST API, as the QA user** — never
+  give it DB credentials or a way to target another account.
+
 ## Reuse the logic layer — don't duplicate
 
 - Day shape & availability: `readDay`, `toBusyBlocks`, `fmtMins`, `Gap`, `BusyBlock` in
