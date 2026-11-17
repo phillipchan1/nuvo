@@ -284,18 +284,26 @@ const stepId = crypto.randomUUID();
   const remind = await B.from("reminders").insert({ target_kind: "task", target_id: taskId });
   ok(remind.error?.code === "42501", `B reminder on A's task: 42501 (${remind.error?.code})`);
 
-  await db.query(
-    `INSERT INTO contacts_directory (user_id, email, display_name) VALUES ($1, 'secret-a@example.test', 'Secret A')`,
+  // Production's shape: a contact and an event belong to the calendar account they came from.
+  const acct = await db.query<{ id: string }>(
+    `INSERT INTO calendar_accounts (user_id, provider, email, sync_direction)
+     VALUES ($1, 'google', 'a-cal@example.test', 'read_only') RETURNING id`,
     [a.id],
+  );
+  const accountId = acct.rows[0].id;
+  await db.query(
+    `INSERT INTO contacts_directory (user_id, account_id, source, email, display_name)
+     VALUES ($1, $2, 'google', 'secret-a@example.test', 'Secret A')`,
+    [a.id, accountId],
   );
   const mine = await A.rpc("contacts", { search: "secret" });
   ok((mine.data as { email: string }[] | null)?.some((c) => c.email === "secret-a@example.test"), `A contacts: own address book ${JSON.stringify(mine.data ?? mine.error)}`);
   const theirs = await B.rpc("contacts", { search: "secret" });
   ok(!(theirs.data as { email: string }[] | null)?.some((c) => c.email === "secret-a@example.test"), "B contacts: not A's");
   await db.query(
-    `INSERT INTO external_events (user_id, title, start_at, end_at, raw)
-     VALUES ($1, 'A secret meeting', now(), now(), '{"attendees":[{"email":"met-a@example.test","displayName":"Met A"}]}')`,
-    [a.id],
+    `INSERT INTO external_events (user_id, account_id, calendar_id, provider_event_id, title, start_at, end_at, raw)
+     VALUES ($1, $2, 'primary', 'evt-secret', 'A secret meeting', now(), now(), '{"attendees":[{"email":"met-a@example.test","displayName":"Met A"}]}')`,
+    [a.id, accountId],
   );
   const met = await A.rpc("contacts", { search: "met-a" });
   ok((met.data as { email: string; sources: string[] }[] | null)?.some((c) => c.email === "met-a@example.test" && c.sources.includes("meeting")), `A contacts: people met on events ${JSON.stringify(met.data ?? met.error)}`);
@@ -437,8 +445,8 @@ const stepId = crypto.randomUUID();
 {
   const acct = crypto.randomUUID();
   await db.query(
-    `INSERT INTO calendar_accounts (id, user_id, provider, email, calendars)
-     VALUES ($1, $2, 'icloud', 'jsonb-heal@example.test', to_jsonb('[{"id":"a"}]'::text))`,
+    `INSERT INTO calendar_accounts (id, user_id, provider, email, sync_direction, calendars)
+     VALUES ($1, $2, 'icloud', 'jsonb-heal@example.test', 'two_way', to_jsonb('[{"id":"a"}]'::text))`,
     [acct, a.id],
   );
   const typeBefore = await db.query<{ t: string }>(`SELECT jsonb_typeof(calendars) AS t FROM calendar_accounts WHERE id = $1`, [acct]);
@@ -449,9 +457,9 @@ const stepId = crypto.randomUUID();
 
   const evt = crypto.randomUUID();
   await db.query(
-    `INSERT INTO external_events (id, user_id, title, start_at, end_at, raw)
-     VALUES ($1, $2, 'heal raw', now(), now(), to_jsonb('{"caldav_href":"/x.ics"}'::text))`,
-    [evt, a.id],
+    `INSERT INTO external_events (id, user_id, account_id, calendar_id, provider_event_id, title, start_at, end_at, raw)
+     VALUES ($1, $2, $3, 'a', 'heal-raw', 'heal raw', now(), now(), to_jsonb('{"caldav_href":"/x.ics"}'::text))`,
+    [evt, a.id, acct],
   );
   const rawRead = await A.from("external_events").select("id, raw").eq("id", evt).single();
   ok((rawRead.data?.raw as { caldav_href?: string } | null)?.caldav_href === "/x.ics", `REST heals string-scalar raw: ${JSON.stringify(rawRead.data ?? rawRead.error)}`);

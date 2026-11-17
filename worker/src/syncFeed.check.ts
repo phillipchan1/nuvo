@@ -86,7 +86,8 @@ ok(taskGone?.eventType === "DELETE" && taskGone.old?.id === A_TASK, "a hard-dele
 
 // --- provider events leave their payload behind -----------------------------
 await db.query(
-  `INSERT INTO external_events (user_id, title, start_at, end_at, raw) VALUES ($1, 'Standup', now(), now() + interval '30 minutes', '{"description":"long"}')`,
+  `INSERT INTO external_events (user_id, account_id, calendar_id, provider_event_id, title, start_at, end_at, raw)
+   VALUES ($1, 'aaaaaaaa-eeee-4000-8000-000000000001', 'primary', 'standup', 'Standup', now(), now() + interval '30 minutes', '{"description":"long"}')`,
   [A],
 );
 next = delta(await syncChanges(sql, A, cursor));
@@ -102,9 +103,8 @@ ok(settings?.new?.theme === "dark", "a settings change arrives");
 ok(settings && !("inbound_token" in (settings.new ?? {})), "…without the inbound token");
 
 // --- routing in production's shape: keyed (user_id, event_key), no `id` ------
-// neon.sql gives the table an `id`; production's (copied from Supabase) has
-// none. Keying the trigger or the feed by `id` raised on every routing write.
-await db.exec(`ALTER TABLE event_domain_routing DROP COLUMN id`);
+// neon.sql is production's shape (D-241), so the table has no `id` here either.
+// Keying the trigger or the feed by `id` raised on every routing write.
 await db.query(`INSERT INTO event_domain_routing (user_id, event_key) VALUES ($1, 'gcal:standup')`, [A]);
 next = delta(await syncChanges(sql, A, cursor));
 const routed = next.changes.find((c) => c.table === "event_domain_routing");

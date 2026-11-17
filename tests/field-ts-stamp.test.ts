@@ -22,16 +22,19 @@ function fnBody(sql: string): string {
   return sql.slice(start, end).toLowerCase().replace(/--[^\n]*/g, "").replace(/\s+/g, " ").trim();
 }
 
-/** neon.sql + the columns a Supabase copy carries (field_ts on the synced tables). */
+/** Production's shape: neon.sql is generated from prod (D-241) and carries field_ts on every synced table. */
 async function copiedShape(): Promise<PGlite> {
   const db = new PGlite();
   await applyIsolationSchema(db);
-  for (const t of ["tasks", "projects", "user_settings"]) {
-    await db.exec(`ALTER TABLE public.${t} ADD COLUMN IF NOT EXISTS field_ts jsonb NOT NULL DEFAULT '{}'::jsonb`);
-  }
   await db.exec(FIELD_TS);
   return db;
 }
+
+/** The tables production stamps — read from prod's pg_trigger on 2026-11-17 (14, one per field_ts table). */
+const PROD_STAMPED = [
+  "domains", "initiatives", "key_results", "labels", "projects", "record_comments", "recurrences",
+  "reminders", "slots", "sprints", "task_labels", "tasks", "user_settings", "week_reviews",
+];
 
 async function stamps(db: PGlite, table: string, where: string): Promise<Record<string, string>> {
   const r = await db.query<{ field_ts: Record<string, string> }>(`SELECT field_ts FROM public.${table} WHERE ${where}`);
@@ -50,11 +53,17 @@ describe("field_ts stamping for server writers (blocker 7)", () => {
     const trig = await db.query<{ tgname: string }>(
       `SELECT tgname FROM pg_trigger WHERE tgname LIKE '%_stamp_field_ts' ORDER BY tgname`,
     );
-    expect(trig.rows.map((r) => r.tgname)).toEqual([
-      "projects_stamp_field_ts",
-      "tasks_stamp_field_ts",
-      "user_settings_stamp_field_ts",
-    ]);
+    // Exactly the tables that have field_ts — no more, no fewer — and that is prod's set.
+    const withFieldTs = await db.query<{ t: string }>(
+      `SELECT table_name AS t FROM information_schema.columns
+       WHERE table_schema = 'public' AND column_name = 'field_ts' ORDER BY 1`,
+    );
+    const expected = withFieldTs.rows.map((r) => `${r.t}_stamp_field_ts`);
+    expect(trig.rows.map((r) => r.tgname)).toEqual(expected);
+    expect(expected).toEqual(PROD_STAMPED.map((t) => `${t}_stamp_field_ts`));
+    // A table without field_ts gets none.
+    const onEvents = await db.query(`SELECT 1 FROM pg_trigger WHERE tgrelid = 'public.external_events'::regclass AND tgname LIKE '%_stamp_field_ts'`);
+    expect(onEvents.rows).toHaveLength(0);
     const missing = await db.query<{ count: number }>(
       readFileSync(join(ROOT, "scripts/cutover_copy.py"), "utf8").match(/FIELD_TS_TRIGGERS_MISSING_SQL = """([\s\S]*?)"""/)![1]!,
     );

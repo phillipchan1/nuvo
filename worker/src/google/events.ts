@@ -179,11 +179,11 @@ async function upsertMapped(
   const inserted = await sql`
     INSERT INTO external_events (
       user_id, account_id, provider_event_id, calendar_id, title, start_at, end_at,
-      all_day, location, busy, raw, last_synced_at, recurring_event_id
+      all_day, location, busy, raw, last_synced_at
     ) VALUES (
       ${userId}, ${row.account_id}, ${row.provider_event_id}, ${row.calendar_id},
       ${row.title}, ${row.start_at}, ${row.end_at}, ${row.all_day}, ${row.location},
-      ${row.busy}, ${jsonParam(sql, row.raw)}, ${row.last_synced_at}, ${row.recurring_event_id ?? null}
+      ${row.busy}, ${jsonParam(sql, row.raw)}, ${row.last_synced_at}
     )
     ON CONFLICT (account_id, calendar_id, provider_event_id) DO UPDATE SET
       title = EXCLUDED.title,
@@ -193,8 +193,7 @@ async function upsertMapped(
       location = EXCLUDED.location,
       busy = EXCLUDED.busy,
       raw = EXCLUDED.raw,
-      last_synced_at = EXCLUDED.last_synced_at,
-      recurring_event_id = EXCLUDED.recurring_event_id
+      last_synced_at = EXCLUDED.last_synced_at
     WHERE external_events.user_id = ${userId}
     RETURNING id, account_id, provider_event_id, calendar_id, title, start_at, end_at, all_day, location, busy
   `;

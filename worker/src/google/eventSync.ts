@@ -127,12 +127,11 @@ export async function reconcileEvents(
     await sql`
       INSERT INTO external_events (
         user_id, account_id, provider_event_id, calendar_id, title, start_at, end_at,
-        all_day, location, busy, raw, last_synced_at, content_hash, recurring_event_id
+        all_day, location, busy, raw, last_synced_at, content_hash
       ) VALUES (
         ${row.user_id}, ${row.account_id}, ${row.provider_event_id}, ${row.calendar_id},
         ${row.title}, ${row.start_at}, ${row.end_at}, ${row.all_day}, ${row.location},
-        ${row.busy}, ${jsonParam(sql, row.raw)}, ${row.last_synced_at}, ${row.content_hash ?? null},
-        ${row.recurring_event_id ?? null}
+        ${row.busy}, ${jsonParam(sql, row.raw)}, ${row.last_synced_at}, ${row.content_hash ?? null}
       )
       ON CONFLICT (account_id, calendar_id, provider_event_id) DO UPDATE SET
         title = EXCLUDED.title,
@@ -143,8 +142,7 @@ export async function reconcileEvents(
         busy = EXCLUDED.busy,
         raw = EXCLUDED.raw,
         last_synced_at = EXCLUDED.last_synced_at,
-        content_hash = EXCLUDED.content_hash,
-        recurring_event_id = EXCLUDED.recurring_event_id
+        content_hash = EXCLUDED.content_hash
       WHERE external_events.user_id = ${scope.userId}
     `;
   }

@@ -62,7 +62,14 @@ const OWNED_FKS: Partial<Record<PlannerTable, { field: string; table: PlannerTab
     { field: "project_id", table: "projects" },
     { field: "initiative_id", table: "initiatives" },
   ],
-  event_domain_routing: [{ field: "domain_id", table: "domains" }],
+  event_domain_routing: [
+    { field: "domain_id", table: "domains" },
+    { field: "manual_domain_id", table: "domains" },
+  ],
+  recurrences: [
+    { field: "project_id", table: "projects" },
+    { field: "domain_id", table: "domains" },
+  ],
 };
 
 function reminderTargetTable(kind: unknown): PlannerTable | null {
@@ -213,7 +220,8 @@ export async function getOwned(
       case "reminders":
         return sql`SELECT * FROM reminders WHERE id = ${id} AND user_id = ${store.userId} LIMIT 1`;
       case "event_domain_routing":
-        return sql`SELECT * FROM event_domain_routing WHERE id = ${id} AND user_id = ${store.userId} LIMIT 1`;
+        // Keyed (user_id, event_key) in production — there is no `id` column.
+        return sql`SELECT * FROM event_domain_routing WHERE event_key = ${id} AND user_id = ${store.userId} LIMIT 1`;
       case "user_settings":
         // PK is user_id. Path id must be this session's owner — a foreign
         // id used to return the caller's own row (and DELETE would wipe it).
@@ -356,18 +364,33 @@ export async function insertRecordComment(
   return rows[0] ?? null;
 }
 
+/**
+ * One event's domain, keyed (user_id, event_key) — production's table has no
+ * `id`. `domain_id` is the model's answer (routeEventsHttp), `manual_domain_id`
+ * the person's (the SPA's useEventRoutingMutations). Only the fields given are
+ * written, so setting one never clears the other.
+ */
 export async function upsertEventDomainRouting(
   store: Store,
-  row: { id?: string; event_key: string; domain_id?: string | null },
+  row: { event_key: string; domain_id?: string | null; manual_domain_id?: string | null },
 ): Promise<Record<string, unknown> | null> {
   if (!(await assertOwnedFks(store, "event_domain_routing", row))) return null;
   const sql = store.sql;
-  const id = row.id ?? crypto.randomUUID();
+  // No owner WHERE on the update: the conflict target is (user_id, event_key)
+  // and the inserted user_id is always this owner's, so the only row that can
+  // conflict is the caller's own. access.check pins it (A upserting B's key).
+  const setDomain = "domain_id" in row ? 1 : 0;
+  const setManual = "manual_domain_id" in row ? 1 : 0;
+  const domainId = row.domain_id ?? null;
+  const manualId = row.manual_domain_id ?? null;
   const rows = await sql`
-    INSERT INTO event_domain_routing (id, user_id, event_key, domain_id)
-    VALUES (${id}, ${store.userId}, ${row.event_key}, ${row.domain_id ?? null})
+    INSERT INTO event_domain_routing (user_id, event_key, domain_id, manual_domain_id, routed_at)
+    VALUES (${store.userId}, ${row.event_key}, ${domainId}, ${manualId}, now())
     ON CONFLICT (user_id, event_key) DO UPDATE
-    SET domain_id = EXCLUDED.domain_id
+    SET
+      domain_id = CASE WHEN ${setDomain} = 1 THEN EXCLUDED.domain_id ELSE event_domain_routing.domain_id END,
+      manual_domain_id = CASE WHEN ${setManual} = 1 THEN EXCLUDED.manual_domain_id ELSE event_domain_routing.manual_domain_id END,
+      routed_at = now()
     RETURNING *
   `;
   return rows.length ? rows[0] ?? null : null;
@@ -392,18 +415,115 @@ export async function insertLabel(
   }
 }
 
+/**
+ * A series, in production's shape — the rule is columns (freq · interval ·
+ * byweekday · bymonthday · bysetpos · bymonth · anchor_date · until_date ·
+ * max_count), never an `rrule` string. Same fields the SPA's
+ * `useRecurrence.insertRecurrence` writes through /api/data.
+ */
+export type RecurrenceInsert = {
+  id?: string;
+  kind: "task" | "slot";
+  freq: string;
+  anchor_date: string;
+  interval?: number;
+  byweekday?: number[];
+  bymonthday?: number | null;
+  bysetpos?: number | null;
+  bymonth?: number | null;
+  until_date?: string | null;
+  max_count?: number | null;
+  title?: string;
+  duration_minutes?: number;
+  time_of_day_minutes?: number | null;
+  project_id?: string | null;
+  domain_id?: string | null;
+  priority?: string;
+  color?: string | null;
+};
+
 export async function insertRecurrence(
   store: Store,
-  row: { id?: string; kind: string; rrule: string },
+  row: RecurrenceInsert,
 ): Promise<Record<string, unknown> | null> {
+  if (!(await assertOwnedFks(store, "recurrences", row))) return null;
   const sql = store.sql;
   const id = row.id ?? crypto.randomUUID();
+  // Arrays travel as jsonb so postgres.js and the PGlite checks bind them the same way.
+  const byweekday = jsonParam(sql, row.byweekday ?? []);
   const rows = await sql`
-    INSERT INTO recurrences (id, user_id, kind, rrule)
-    VALUES (${id}, ${store.userId}, ${row.kind}, ${row.rrule})
+    INSERT INTO recurrences (
+      id, user_id, kind, freq, "interval", byweekday, bymonthday, bysetpos, bymonth,
+      anchor_date, until_date, max_count, title, duration_minutes, time_of_day_minutes,
+      project_id, domain_id, priority, color
+    ) VALUES (
+      ${id}, ${store.userId}, ${row.kind}, ${row.freq}, ${row.interval ?? 1},
+      ARRAY(SELECT jsonb_array_elements_text(${byweekday})::int),
+      ${row.bymonthday ?? null}, ${row.bysetpos ?? null}, ${row.bymonth ?? null},
+      ${row.anchor_date}, ${row.until_date ?? null}, ${row.max_count ?? null},
+      ${row.title ?? ""}, ${row.duration_minutes ?? 30}, ${row.time_of_day_minutes ?? null},
+      ${row.project_id ?? null}, ${row.domain_id ?? null}, ${row.priority ?? "none"}, ${row.color ?? null}
+    )
     RETURNING *
   `;
   return rows[0] ?? null;
+}
+
+const RECURRENCE_FREQS = new Set(["daily", "weekly", "monthly", "yearly"]);
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function optInt(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isInteger(n) ? n : null;
+}
+
+function optDate(value: unknown): string | null {
+  return typeof value === "string" && ISO_DATE.test(value) ? value : null;
+}
+
+function intList(value: unknown): number[] | null {
+  if (!Array.isArray(value)) return null;
+  const out = value.map(Number);
+  return out.every(Number.isInteger) ? out : null;
+}
+
+function dateList(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  return value.every((d) => typeof d === "string" && ISO_DATE.test(d)) ? (value as string[]) : null;
+}
+
+/** A body from the agent / MCP → a series production accepts, or null. */
+export function recurrenceFromRow(row: Record<string, unknown>): RecurrenceInsert | null {
+  const kind = row.kind ?? "task";
+  if (kind !== "task" && kind !== "slot") return null;
+  if (typeof row.freq !== "string" || !RECURRENCE_FREQS.has(row.freq)) return null;
+  const anchor = optDate(row.anchor_date);
+  if (!anchor) return null;
+  const byweekday = row.byweekday == null ? [] : intList(row.byweekday);
+  if (!byweekday) return null;
+  // recurrences_one_day_rule: a positional day and a day-of-month are exclusive.
+  if (optInt(row.bysetpos) != null && optInt(row.bymonthday) != null) return null;
+  return {
+    id: typeof row.id === "string" ? row.id : undefined,
+    kind,
+    freq: row.freq,
+    anchor_date: anchor,
+    interval: optInt(row.interval) ?? 1,
+    byweekday,
+    bymonthday: optInt(row.bymonthday),
+    bysetpos: optInt(row.bysetpos),
+    bymonth: optInt(row.bymonth),
+    until_date: optDate(row.until_date),
+    max_count: optInt(row.max_count),
+    title: typeof row.title === "string" ? row.title : "",
+    duration_minutes: optInt(row.duration_minutes) ?? 30,
+    time_of_day_minutes: optInt(row.time_of_day_minutes),
+    project_id: optId(row.project_id),
+    domain_id: optId(row.domain_id),
+    priority: typeof row.priority === "string" ? row.priority : "none",
+    color: typeof row.color === "string" ? row.color : null,
+  };
 }
 
 export async function insertWeekReview(
@@ -533,9 +653,9 @@ export async function insertOwned(
   if (table === "event_domain_routing") {
     if (typeof row.event_key !== "string" || !row.event_key) return null;
     return upsertEventDomainRouting(store, {
-      id: typeof row.id === "string" ? row.id : undefined,
       event_key: row.event_key,
-      domain_id: optId(row.domain_id),
+      ...("domain_id" in row ? { domain_id: optId(row.domain_id) } : {}),
+      ...("manual_domain_id" in row ? { manual_domain_id: optId(row.manual_domain_id) } : {}),
     });
   }
   if (table === "user_settings") {
@@ -548,11 +668,8 @@ export async function insertOwned(
     });
   }
   if (table === "recurrences") {
-    return insertRecurrence(store, {
-      id: typeof row.id === "string" ? row.id : undefined,
-      kind: typeof row.kind === "string" ? row.kind : "task",
-      rrule: typeof row.rrule === "string" ? row.rrule : "",
-    });
+    const series = recurrenceFromRow(row);
+    return series ? insertRecurrence(store, series) : null;
   }
   if (table === "week_reviews") {
     if (typeof row.week_start !== "string") return null;
@@ -584,6 +701,11 @@ export async function upsertOwned(
   row: Record<string, unknown>,
 ): Promise<Record<string, unknown> | null> {
   if (!(await assertOwnedFks(store, table, row))) return null;
+  if (table === "event_domain_routing") {
+    // No `id` in production: (user_id, event_key) is the key, and the insert upserts on it.
+    const { id: _ignored, ...rest } = row;
+    return insertOwned(store, table, rest);
+  }
   if (typeof row.id === "string") {
     const existing = await getOwned(store, table, row.id);
     if (existing) return updateOwned(store, table, row.id, row);
@@ -732,13 +854,15 @@ export async function updateOwned(
     if (typeof patch.theme !== "string") return null;
     return updateSettingsTheme(store, patch.theme);
   }
-  if (table === "event_domain_routing" && "domain_id" in patch) {
+  if (table === "event_domain_routing") {
+    // `id` is the event_key: production's routing rows have no other key.
+    if (!("domain_id" in patch) && !("manual_domain_id" in patch)) return null;
     const current = await getOwned(store, table, id);
     if (!current || typeof current.event_key !== "string") return null;
     return upsertEventDomainRouting(store, {
-      id,
       event_key: current.event_key,
-      domain_id: optId(patch.domain_id),
+      ...("domain_id" in patch ? { domain_id: optId(patch.domain_id) } : {}),
+      ...("manual_domain_id" in patch ? { manual_domain_id: optId(patch.manual_domain_id) } : {}),
     });
   }
   if (table === "initiatives") {
@@ -761,8 +885,7 @@ export async function updateOwned(
     return updateLabelName(store, id, patch.name);
   }
   if (table === "recurrences") {
-    if (typeof patch.rrule !== "string") return null;
-    return updateRecurrenceRule(store, id, patch.rrule);
+    return updateRecurrence(store, id, patch);
   }
   if (table === "week_reviews" && patch.report != null) {
     return updateWeekReviewReport(store, id, patch.report);
@@ -934,15 +1057,60 @@ export async function updateLabelName(
   return rows.length ? rows[0] ?? null : null;
 }
 
-export async function updateRecurrenceRule(
+/**
+ * Edit a series in production's shape (there is no `rrule`). Only the fields
+ * present in the patch are written; a field given with a value production
+ * would reject makes the whole patch a no-op (null) rather than a 500.
+ */
+export async function updateRecurrence(
   store: Store,
   id: string,
-  rrule: string,
+  patch: Record<string, unknown>,
 ): Promise<Record<string, unknown> | null> {
+  if (!(await assertOwnedFks(store, "recurrences", patch))) return null;
+  const has = (k: string) => k in patch && patch[k] !== undefined;
+  if ("freq" in patch && (typeof patch.freq !== "string" || !RECURRENCE_FREQS.has(patch.freq))) return null;
+  if ("anchor_date" in patch && !optDate(patch.anchor_date)) return null;
+  if ("byweekday" in patch && !intList(patch.byweekday)) return null;
+  if ("exdates" in patch && !dateList(patch.exdates)) return null;
+  if ("interval" in patch && !optInt(patch.interval)) return null;
+  if ("duration_minutes" in patch && !optInt(patch.duration_minutes)) return null;
+  if ("active" in patch && typeof patch.active !== "boolean") return null;
+  if (optInt(patch.bysetpos) != null && optInt(patch.bymonthday) != null) return null;
+  const fields = [
+    "title", "freq", "interval", "byweekday", "bymonthday", "bysetpos", "bymonth", "anchor_date",
+    "until_date", "max_count", "exdates", "duration_minutes", "time_of_day_minutes", "project_id",
+    "domain_id", "priority", "color", "active",
+  ];
+  if (!fields.some(has)) return null;
+  const on = (k: string) => (has(k) ? 1 : 0);
   const sql = store.sql;
   const rows = await sql`
     UPDATE recurrences
-    SET rrule = ${rrule}
+    SET
+      title = CASE WHEN ${on("title")} = 1 THEN ${String(patch.title ?? "")} ELSE title END,
+      freq = CASE WHEN ${on("freq")} = 1 THEN ${String(patch.freq ?? "")} ELSE freq END,
+      "interval" = CASE WHEN ${on("interval")} = 1 THEN ${optInt(patch.interval) ?? 1} ELSE "interval" END,
+      byweekday = CASE WHEN ${on("byweekday")} = 1
+        THEN ARRAY(SELECT jsonb_array_elements_text(${jsonParam(sql, intList(patch.byweekday) ?? [])})::int)
+        ELSE byweekday END,
+      bymonthday = CASE WHEN ${on("bymonthday")} = 1 THEN ${optInt(patch.bymonthday)} ELSE bymonthday END,
+      bysetpos = CASE WHEN ${on("bysetpos")} = 1 THEN ${optInt(patch.bysetpos)} ELSE bysetpos END,
+      bymonth = CASE WHEN ${on("bymonth")} = 1 THEN ${optInt(patch.bymonth)} ELSE bymonth END,
+      anchor_date = CASE WHEN ${on("anchor_date")} = 1 THEN ${optDate(patch.anchor_date)} ELSE anchor_date END,
+      until_date = CASE WHEN ${on("until_date")} = 1 THEN ${optDate(patch.until_date)} ELSE until_date END,
+      max_count = CASE WHEN ${on("max_count")} = 1 THEN ${optInt(patch.max_count)} ELSE max_count END,
+      exdates = CASE WHEN ${on("exdates")} = 1
+        THEN ARRAY(SELECT jsonb_array_elements_text(${jsonParam(sql, dateList(patch.exdates) ?? [])})::date)
+        ELSE exdates END,
+      duration_minutes = CASE WHEN ${on("duration_minutes")} = 1 THEN ${optInt(patch.duration_minutes) ?? 30} ELSE duration_minutes END,
+      time_of_day_minutes = CASE WHEN ${on("time_of_day_minutes")} = 1 THEN ${optInt(patch.time_of_day_minutes)} ELSE time_of_day_minutes END,
+      project_id = CASE WHEN ${on("project_id")} = 1 THEN ${optId(patch.project_id)} ELSE project_id END,
+      domain_id = CASE WHEN ${on("domain_id")} = 1 THEN ${optId(patch.domain_id)} ELSE domain_id END,
+      priority = CASE WHEN ${on("priority")} = 1 THEN ${String(patch.priority ?? "none")} ELSE priority END,
+      color = CASE WHEN ${on("color")} = 1 THEN ${typeof patch.color === "string" ? patch.color : null} ELSE color END,
+      active = CASE WHEN ${on("active")} = 1 THEN ${patch.active === true} ELSE active END,
+      updated_at = now()
     WHERE id = ${id}
       AND user_id = ${store.userId}
     RETURNING *
@@ -1045,7 +1213,7 @@ export async function deleteOwned(
       case "reminders":
         return sql`DELETE FROM reminders WHERE id = ${id} AND user_id = ${store.userId} RETURNING id`;
       case "event_domain_routing":
-        return sql`DELETE FROM event_domain_routing WHERE id = ${id} AND user_id = ${store.userId} RETURNING id`;
+        return sql`DELETE FROM event_domain_routing WHERE event_key = ${id} AND user_id = ${store.userId} RETURNING event_key AS id`;
       case "user_settings":
         return sql`
           DELETE FROM user_settings

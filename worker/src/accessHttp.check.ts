@@ -295,7 +295,8 @@ const A_ROW: Record<PlannerTable, string> = {
   week_reviews: "c0a11e00-cccc-4000-8000-000000000001",
   sprints: "c0a11e00-6666-4000-8000-000000000001",
   reminders: "c0a11e00-4444-4000-8000-000000000001",
-  event_domain_routing: "c0a11e00-dddd-4000-8000-000000000001",
+  // Keyed (user_id, event_key) in production — no `id`; the key is the event_key.
+  event_domain_routing: "evt-secret-a",
   user_settings: "", // filled after sign-in
 };
 
@@ -307,7 +308,7 @@ const PATCH: Record<PlannerTable, Record<string, unknown>> = {
   key_results: { name: "hijacked" },
   slots: { title: "hijacked" },
   labels: { name: "hijacked" },
-  recurrences: { rrule: "FREQ=YEARLY" },
+  recurrences: { title: "hijacked", freq: "yearly" },
   record_comments: { body: "hijacked" },
   week_reviews: { report: { stolen: true } },
   sprints: { week_start: "1999-01-01" },
@@ -358,7 +359,7 @@ await db.query(
   [A_ROW.slots, a.id, A_ROW.projects],
 );
 await db.query(
-  `INSERT INTO recurrences (id, user_id, kind, rrule) VALUES ($1, $2, 'task', 'FREQ=WEEKLY')`,
+  `INSERT INTO recurrences (id, user_id, kind, freq, anchor_date, title) VALUES ($1, $2, 'task', 'weekly', '2026-10-26', 'A secret series')`,
   [A_ROW.recurrences, a.id],
 );
 await db.query(
@@ -378,18 +379,20 @@ await db.query(
   [A_ROW.reminders, a.id, A_ROW.tasks],
 );
 await db.query(
-  `INSERT INTO event_domain_routing (id, user_id, event_key, domain_id) VALUES ($1, $2, 'evt-secret-a', $3)`,
-  [A_ROW.event_domain_routing, a.id, A_ROW.domains],
-);
-await db.query(
-  `INSERT INTO contacts_directory (id, user_id, email, display_name) VALUES ($1, $2, 'secret-a@example.test', 'Secret A')`,
-  ["c0a11e00-5555-4000-8000-000000000001", a.id],
+  `INSERT INTO event_domain_routing (user_id, event_key, domain_id) VALUES ($1, $2, $3)`,
+  [a.id, A_ROW.event_domain_routing, A_ROW.domains],
 );
 await db.query(`UPDATE user_settings SET theme = 'light', inbound_token = 'token-a-secret' WHERE user_id = $1`, [a.id]);
 await db.query(
   `INSERT INTO calendar_accounts (id, user_id, provider, email, access_token, access_token_expires_at, sync_direction, mirror_calendar_id)
    VALUES ($1, $2, 'google', 'a@example.test', 'ya29.a-token', $3, 'two_way', 'nuvo-cal-a')`,
   ["c0a11e00-acca-4000-8000-000000000001", a.id, new Date(Date.now() + 3600_000).toISOString()],
+);
+
+// A contact belongs to the calendar account it came from (account_id, source NOT NULL in prod).
+await db.query(
+  `INSERT INTO contacts_directory (id, user_id, account_id, source, email, display_name) VALUES ($1, $2, $3, 'google', 'secret-a@example.test', 'Secret A')`,
+  ["c0a11e00-5555-4000-8000-000000000001", a.id, "c0a11e00-acca-4000-8000-000000000001"],
 );
 
 const googleCalls: { method: string; url: string }[] = [];
@@ -402,6 +405,11 @@ const restoreWorkerFetch = installWorkerFetchForTests(async (input, init) => {
   }
   return new Response("", { status: 200 });
 });
+
+/** Routing rows have no `id` in production: (user_id, event_key) is the key. */
+function keyColumn(table: string): string {
+  return table === "event_domain_routing" ? "event_key" : "id";
+}
 
 async function count(table: string, where: string, params: unknown[]): Promise<number> {
   const result = await db.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM ${table} WHERE ${where}`, params);
@@ -491,7 +499,8 @@ for (const table of PLANNER_TABLES) {
     ok(rows.every((row) => row.user_id === b.id), `B list ${table}: only own settings`);
     ok(!rows.some((row) => row.user_id === a.id), `B list ${table}: omits A`);
   } else {
-    ok(!rows.some((row) => row.id === id), `B list ${table}: omits A's row`);
+    const key = (row: Record<string, unknown>) => (table === "event_domain_routing" ? row.event_key : row.id);
+    ok(!rows.some((row) => key(row) === id), `B list ${table}: omits A's row`);
   }
 
   const read = await withTimeout(
@@ -533,7 +542,7 @@ for (const table of PLANNER_TABLES) {
 
   const still = table === "user_settings"
     ? await count("user_settings", "user_id = $1", [a.id])
-    : await count(table, "id = $1 AND user_id = $2", [id, a.id]);
+    : await count(table, `${keyColumn(table)} = $1 AND user_id = $2`, [id, a.id]);
   ok(still === 1, `B mutate ${table}: A's row still present`);
 }
 
@@ -832,7 +841,7 @@ for (const table of PLANNER_TABLES) {
   ok(foreignBody.data?.id !== A_ROW[table], `B POST ${table}: did not take A's id`);
   const stillA = table === "user_settings"
     ? await count("user_settings", "user_id = $1", [a.id])
-    : await count(table, "id = $1 AND user_id = $2", [A_ROW[table], a.id]);
+    : await count(table, `${keyColumn(table)} = $1 AND user_id = $2`, [A_ROW[table], a.id]);
   ok(stillA === 1, `B POST ${table} with A's id: A's row unchanged`);
 }
 

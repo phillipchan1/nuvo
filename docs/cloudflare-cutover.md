@@ -63,6 +63,11 @@ Local-drive caveat: `miniflare.seq.check.ts` re-applies `neon.sql` to the Hyperd
 string (`127.0.0.1:5432/nuvo`). If a scratch restore is sitting in that database, the check
 overwrites it, so drive copies in a differently named database.
 
+**`neon.sql` vs production (D-241).** Production was made by the copy, not by `neon.sql`, and
+the two drifted. Its tables are now generated from a `pg_dump` of prod. **Before any migration,
+run `npm run check:schema-drift`**, and test the migration on the dump copy with `--migration`.
+See [`schema-drift.md`](./schema-drift.md).
+
 ### What is actually live
 
 | Thing | What it is | Evidence |

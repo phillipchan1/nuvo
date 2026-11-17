@@ -33,10 +33,6 @@ INSERT INTO public.reminders (id, user_id, target_kind, target_id) VALUES
   ('aaaaaaaa-4444-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'task', 'aaaaaaaa-2222-4000-8000-000000000001'),
   ('bbbbbbbb-4444-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'task', 'bbbbbbbb-2222-4000-8000-000000000001');
 
-INSERT INTO public.contacts_directory (id, user_id, email, display_name) VALUES
-  ('aaaaaaaa-5555-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'friend-a@example.test', 'Friend A'),
-  ('bbbbbbbb-5555-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'friend-b@example.test', 'Friend B');
-
 INSERT INTO public.sprints (id, user_id, week_start) VALUES
   ('aaaaaaaa-6666-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', '2026-10-26'),
   ('bbbbbbbb-6666-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', '2026-10-26');
@@ -53,9 +49,10 @@ INSERT INTO public.slots (id, user_id, title, do_date, start_time, duration_minu
   ('aaaaaaaa-9999-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'A slot', '2026-10-26', '2026-10-26T09:00:00Z', 60),
   ('bbbbbbbb-9999-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'B slot', '2026-10-26', '2026-10-26T09:00:00Z', 60);
 
-INSERT INTO public.recurrences (id, user_id, kind, rrule) VALUES
-  ('aaaaaaaa-aaaa-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'task', 'FREQ=WEEKLY'),
-  ('bbbbbbbb-aaaa-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'task', 'FREQ=DAILY');
+-- Production's shape: the rule is columns, there is no `rrule` (neon.sql, D-241).
+INSERT INTO public.recurrences (id, user_id, kind, freq, anchor_date, title) VALUES
+  ('aaaaaaaa-aaaa-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'task', 'weekly', '2026-10-26', 'A series'),
+  ('bbbbbbbb-aaaa-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'task', 'daily', '2026-10-26', 'B series');
 
 INSERT INTO public.record_comments (id, user_id, project_id, body) VALUES
   ('aaaaaaaa-bbbb-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-1111-4000-8000-000000000001', 'A note'),
@@ -65,9 +62,10 @@ INSERT INTO public.week_reviews (id, user_id, week_start) VALUES
   ('aaaaaaaa-cccc-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', '2026-10-26'),
   ('bbbbbbbb-cccc-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', '2026-10-26');
 
-INSERT INTO public.event_domain_routing (id, user_id, event_key, domain_id) VALUES
-  ('aaaaaaaa-dddd-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'evt-a', 'aaaaaaaa-0000-4000-8000-000000000001'),
-  ('bbbbbbbb-dddd-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'evt-b', 'bbbbbbbb-0000-4000-8000-000000000001');
+-- Keyed (user_id, event_key): production's routing table has no `id`.
+INSERT INTO public.event_domain_routing (user_id, event_key, domain_id) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'evt-a', 'aaaaaaaa-0000-4000-8000-000000000001'),
+  ('22222222-2222-2222-2222-222222222222', 'evt-b', 'bbbbbbbb-0000-4000-8000-000000000001');
 
 INSERT INTO public.calendar_accounts (
   id, user_id, provider, email, access_token, access_token_expires_at,
@@ -161,6 +159,11 @@ INSERT INTO public.calendar_accounts (
     '[{"id":"primary","summary":"B ICS","color":null,"visible":true}]'::jsonb,
     false
   );
+
+-- A contact belongs to the calendar account it came from (account_id, source NOT NULL in prod).
+INSERT INTO public.contacts_directory (id, user_id, account_id, source, email, display_name) VALUES
+  ('aaaaaaaa-5555-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-eeee-4000-8000-000000000001', 'google', 'friend-a@example.test', 'Friend A'),
+  ('bbbbbbbb-5555-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'bbbbbbbb-eeee-4000-8000-000000000001', 'google', 'friend-b@example.test', 'Friend B');
 
 INSERT INTO public.external_events (
   id, user_id, account_id, provider_event_id, calendar_id, title, start_at, end_at, all_day, busy
