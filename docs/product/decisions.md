@@ -9387,5 +9387,55 @@ lived-in account with stale tokens). No new user-facing name. Nothing yet *shows
 pages and a stale access token, a recovery run, an all-fail run and a dead grant. 24 of its checks
 fail on the old code. **No schema change. Needs a Worker deploy.** Read-only in prod: nothing written.
 Once deployed, the next poll should re-list both import calendars in their window (sweeping events
-deleted upstream since August) and save fresh tokens. **Not done:** the client doesn't show a
-calendar's `sync_error` yet.*
+deleted upstream since August) and save fresh tokens. The client shows a calendar's `sync_error`
+since D-244.*
+
+**D-244 · 2026-11-17 · A calendar Nuvo can't read says so in Settings, with how long, a Retry and
+the switch to hide it.** *(Asked: D-243 records a failing calendar's `sync_error` on the calendar,
+but nothing in the app read it, so a calendar that kept failing went stale without a word.)*
+
+→ **Settings → Calendars, on the calendar's own row, both shells.** Under the calendar's row, in
+`--danger`: **Not syncing for 3 days** (or *since Aug 17* past 60 days, or just *Not syncing* when
+it never synced), then **Retry**. The other way out is the switch already on that row: hide it.
+The phone mounts the same pane in its Settings sheet, so it's one component. The line wraps to its
+own full-width line under the row so the words never truncate at 375px (the domain picker left
+the name column about 90px). Retry is 44px under a finger.
+
+→ **"For how long" counts from the last good sync (`last_synced_at`), not `sync_error_at`.** The
+Worker rewrites `sync_error_at` on every failed attempt, so it would always read "a few minutes"
+while the events were three months old. The rule is `calendarSyncFailure` (`lib/calendarSync.ts`).
+The Worker's own message (`events list <id>: 500`) is only the line's tooltip, never its words.
+
+→ **Retry runs the ordinary refresh** (`calendar-refresh`, every calendar), then reads the row the
+Worker wrote back and says **Syncing again** or **Still not syncing**. It never guesses from the
+HTTP answer, because a refresh that "succeeds" can still leave this calendar failing.
+
+→ **Said once.** A hidden calendar doesn't show the line (you've taken it off the board), and
+neither does any calendar of an account that **needs reconnecting**. Its Reconnect already says
+it, and Retry can't help there (the refresh skips that account). Found in the dev app: the first
+build showed "Not syncing · Retry" on every row under a red Reconnect.
+
+→ **Not built: a mark anywhere outside Settings.** No banner, no badge, no dot on the Schedule. P9
+(quiet by default) is the reason. A calendar failing is a fact about plumbing, and
+`ReconnectBanner` already covers the account-wide case, where nothing syncs. Revisit if someone
+misses a stale calendar because Settings was the only place it was said.
+
+→ **Hiding doesn't stop the Worker trying.** Nuvo's hide is `user_settings.hidden_calendar_ids`.
+The Worker syncs by Google's own `visible`, so a hidden failing calendar keeps failing quietly and
+logging to `sync_log`. That costs little, and the moment it recovers, its events are already there
+when you show it again.
+
+Anchor: no ledger row names it. It protects **D3** ("I have 40 minutes — what fits?") and **W1**
+("Can I actually carry this week?"), which both read busy time off the calendar and answer wrongly,
+without saying so, when one calendar is frozen. **P7**: it must hold on a lived-in account with
+stale tokens (the account that prompted D-243 was frozen since August). **P16**: any account can
+lose access to a shared or imported calendar. Strains **P9** (a red line), mitigated by living only
+in Settings. Four no's: no pool, no place. One new name, **Not syncing**, which is not
+**Reconnect** (the account's act). Works on dirty data by definition. Not the builder's account
+only.
+
+*Status: built 2026-11-17 on `claude/intelligent-brahmagupta-66a235`, stacked on D-243 (PR #173).
+Driven in the dev app against the local Worker with a seeded account (one calendar failing since
+Aug 17, one for 3 days): desktop and 375px, Retry ("Still not syncing"), hide into the drawer and
+back. `tests/calendar-sync-failure.test.ts`. Not driven against a real failing Google calendar. Its
+words only appear once D-243's Worker is deployed and writes `sync_error`.*

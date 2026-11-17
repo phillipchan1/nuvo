@@ -27,7 +27,8 @@ import {
   type CreateTarget,
 } from "../lib/calendarWrite";
 import { firstDayOfWeek } from "../hooks/useSettings";
-import { useLabels } from "../hooks/useCalendar";
+import { useCalendarRefresh, useLabels } from "../hooks/useCalendar";
+import { calendarSyncFailure } from "../lib/calendarSync";
 import { useVertical } from "../hooks/useVertical";
 import { Modal } from "./ui";
 import Sheet from "./mobile/Sheet";
@@ -634,44 +635,83 @@ function ConnectionsPane({
     });
   };
 
+  // Retry a calendar that isn't syncing (D-244). The refresh runs every
+  // calendar; what it says afterwards is read off the row the Worker wrote, so
+  // "still not syncing" is never a guess.
+  const { refreshAsync, refreshing } = useCalendarRefresh();
+  const retryCalendar = async (accountId: string, calId: string) => {
+    try {
+      await refreshAsync();
+    } catch {
+      /* the row below is the answer either way */
+    }
+    await qc.refetchQueries({ queryKey: ["calendar_accounts"] });
+    const fresh = qc
+      .getQueryData<CalendarAccount[]>(["calendar_accounts"])
+      ?.find((x) => x.id === accountId)
+      ?.calendars?.find((x) => x.id === calId);
+    if (fresh && !fresh.sync_error) toast.success("Syncing again");
+    else toast.error("Still not syncing");
+  };
+
   // One calendar's row — colour + name, its domain attribution, and the on/off
   // switch. Hidden calendars render the same row, dimmed and without the
   // domain picker (nothing to attribute while it's off the board).
-  const calRow = (a: CalendarAccount, c: NonNullable<CalendarAccount["calendars"]>[number], on: boolean) => (
-    <div key={c.id} className="set-list-row" data-off={on ? undefined : ""}>
-      <span
-        className="set-cal-dot"
-        data-off={on ? undefined : ""}
-        style={on ? { ["--c" as string]: c.color ?? "var(--muted)" } : undefined}
-        aria-hidden
-      />
-      <button type="button" onClick={() => toggleCalendar(c.id)} className="tap-h set-list-main flex min-w-0 items-center gap-2 text-left">
-        <span className="set-list-title">{c.summary}</span>
-        {on && isDefaultCal(a.id, c.id) && (
-          <Chip tone="accent" title="New events go here unless you pick another calendar">
-            Default
-          </Chip>
+  //
+  // A calendar Google still lists but Nuvo can't read says so under its name,
+  // with how long its events have been frozen and a Retry (D-244). The switch
+  // beside it is the other way out: hide it. A hidden calendar doesn't say it —
+  // you've already taken it off the board. Nor does any calendar of an account
+  // that needs reconnecting: its Reconnect already says it, and a Retry can't
+  // help (the refresh skips that account).
+  const calRow = (a: CalendarAccount, c: NonNullable<CalendarAccount["calendars"]>[number], on: boolean) => {
+    const failure = on && !a.needs_reconnect ? calendarSyncFailure(c) : null;
+    return (
+      <div key={c.id} className="set-list-row" data-off={on ? undefined : ""} data-failing={failure ? "" : undefined}>
+        <span
+          className="set-cal-dot"
+          data-off={on ? undefined : ""}
+          style={on ? { ["--c" as string]: c.color ?? "var(--muted)" } : undefined}
+          aria-hidden
+        />
+        <button type="button" onClick={() => toggleCalendar(c.id)} className="tap-h set-list-main flex min-w-0 items-center gap-2 text-left">
+          <span className="set-list-title">{c.summary}</span>
+          {on && isDefaultCal(a.id, c.id) && (
+            <Chip tone="accent" title="New events go here unless you pick another calendar">
+              Default
+            </Chip>
+          )}
+        </button>
+        {on && (
+          <Select
+            value={calMap[calKey(a.id, c.id)] ?? ""}
+            onChange={(e) => setCalDomain(calKey(a.id, c.id), e.target.value)}
+            title="Attribute this calendar's meetings to a domain"
+            aria-label={`Domain for ${c.summary}`}
+            className="w-36 shrink-0"
+          >
+            <option value="">Auto domain</option>
+            {domains.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </Select>
         )}
-      </button>
-      {on && (
-        <Select
-          value={calMap[calKey(a.id, c.id)] ?? ""}
-          onChange={(e) => setCalDomain(calKey(a.id, c.id), e.target.value)}
-          title="Attribute this calendar's meetings to a domain"
-          aria-label={`Domain for ${c.summary}`}
-          className="w-36 shrink-0"
-        >
-          <option value="">Auto domain</option>
-          {domains.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </Select>
-      )}
-      <Toggle checked={on} onChange={() => toggleCalendar(c.id)} label={`Show ${c.summary}`} />
-    </div>
-  );
+        <Toggle checked={on} onChange={() => toggleCalendar(c.id)} label={`Show ${c.summary}`} />
+        {failure && (
+          <span className="set-cal-failure">
+            <span className="set-list-meta" data-tone="danger" title={failure.detail}>
+              {failure.label}
+            </span>
+            <Button size="sm" kind="ghost" className="tap" disabled={refreshing} onClick={() => retryCalendar(a.id, c.id)}>
+              {refreshing ? "Retrying…" : "Retry"}
+            </Button>
+          </span>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div>
