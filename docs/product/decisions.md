@@ -9467,3 +9467,97 @@ Driven in the dev app against the local Worker with a seeded account (one calend
 Aug 17, one for 3 days): desktop and 375px, Retry ("Still not syncing"), hide into the drawer and
 back. `tests/calendar-sync-failure.test.ts`. Not driven against a real failing Google calendar. Its
 words only appear once D-243's Worker is deployed and writes `sync_error`.*
+
+**D-245 · 2026-11-17 · A quiet feed poll is answered at the edge: an open app no longer keeps Neon awake.**
+*(Follow-up to D-238/D-239. Neon bills compute for every hour it is awake and suspends only after
+five minutes without a query. After D-239 the cron was quiet, but every open window still asked
+`sync_changes` once a minute, and each answer cost a session lookup, a planner-user lookup, a
+postgres.js type fetch and two `sync_changes` reads. Asked: make a quiet poll cost zero Neon
+queries, without making a phone edit take longer than about a minute to reach the Mac.)*
+
+→ **One Durable Object, `SyncMarker`** (`worker/src/syncMarker.ts`, binding `SYNC_MARKER`). It holds
+a clock that every write "poke" advances; per account, the clock of its last poke and a **proof**
+("as of clock C, Postgres said nothing of this account's moved above cursor F"); and a hash of
+each session credential Postgres has verified, mapped to its account. `rpc/sync_changes` asks it
+first (`handleSyncChanges` in `rest.ts`): a known credential, a standing proof and a cursor inside
+it → "nothing moved", answered **before any session lookup or SQL**. Anything else gets a ticket
+(the clock now), the normal Postgres answer, and, if that answer is empty, a proof filed with the
+ticket. A poke after the ticket voids it, so a write that commits while the feed query runs can
+never be proven away.
+
+→ **The rule it rests on: every write to a synced table pokes its account after it commits.** The
+catch-all (`pokeGate`, rules in `feedPokeFor`) pokes, and awaits the poke, for every request that
+opened the database except pure reads (REST GETs, the feed, contacts) and Better Auth's routes.
+It runs after `closeIo` has closed the client, so the write has committed, and before the response,
+so the writer's own next poll sees it. GETs count too, because an `app.all` route writes on any
+method. Unlike the cron gate's rule, a refused request with a known account still pokes. Writers
+off the request path poke for themselves: daily crons and inbound mail (everyone), the calendar
+queue consumer and in-process calendar dispatch (every account they started on, success or not),
+the first sync after connecting iCloud, ICS or M365 (it runs in `waitUntil`, after the response),
+and the agent's streamed turn (its tool writes land after the response began). Sign-out forgets
+its credential. `syncMarker.check.ts` scans `worker/src` for every place that opens a database
+client, works past a response, or streams, and fails on one nobody classified.
+
+→ **Persisted, not memory.** The first build kept the marker in memory. Locally it never once
+answered at the edge: a Durable Object is evicted after a few idle seconds, and polls are a minute
+apart. Every key is written before the object replies (output gate), proofs and pokes together,
+so a restart changes nothing. Each record carries the incarnation that wrote it, and a record from
+another incarnation is ignored.
+
+→ **Where it can still be late, and what bounds it.** A poke that never reaches the object (a DO
+outage after the write committed), or a writer outside the Worker (psql, a migration). Three
+bounds: no proof or cached credential outlives **3 hours** (`PROOF_TTL_MS`); the poll after this
+device's own write sends `p_fresh` and always asks Postgres; and **every app launch's first poll
+asks Postgres**, so reopening the app always gets the truth. Fail-open everywhere else: no binding,
+a DO error or timeout, lost storage → the feed asks Postgres as before. A signed-out session can
+get an edge answer only until its credential is dropped or expires, and that answer is "nothing
+moved", with no data in it.
+
+→ **postgres.js `fetch_types` stays on** (the guard in `db.check.ts` stays). Measured: 8,137 bytes
+down and 256 up per connection (a 331-row `pg_type` scan), against 529 bytes for the rest of a
+`select 1` connection. Hyperdrive caching is off in production, so this does reach Neon. It can't
+be turned off safely. Production's `calendar_accounts.provider` is the `calendar_provider` enum
+(Supabase's core migration), and `calendar/store.ts` passes a JS array to `provider =
+ANY(${providers})` on the calendar cron. postgres.js can serialize that enum array only through
+the type list it fetches. PGlite runs `neon.sql`, which differs, so no check would catch the break.
+With the marker an idle app opens no connection at all, so this cost now falls only on real work.
+
+Measured locally: `wrangler dev` → a byte- and statement-counting TCP proxy → a copy of the D-238
+account (1,517 tasks, 700 events). The real SPA was open in headless Chromium (visible), with master
+and this branch side by side on twin database copies. (`wrangler dev` fires no cron by itself, so
+this measures the app, not D-239's tick.) Idle numbers are the 11 minutes after launch, from a run
+with nothing else touching either stack. Edit latency is from a 20-minute run where a second session
+edited a task through the API at minute 10.
+
+| | master | D-245 |
+|---|---|---|
+| statements, 11 idle minutes | 101 (9–10 every minute) | **9** (the first minute's poll, which files the proof) |
+| Postgres connections | 22 | 2 |
+| bytes Postgres sent / received | 117 KB / 24 KB | 10.6 KB / 2.1 KB |
+| longest stretch with no query | 1 min | **10+ min** (to the end of the window) |
+| idle hour, extrapolated | ~550 statements, ~120 connections | one poll's worth, then one per `PROOF_TTL_MS` |
+| phone edit → Mac's feed | 30 s | 35 s (both bounded by the 60 s poll) |
+
+In production (`wrangler tail`, 10 minutes, 2026-11-17 15:06 UTC) the D-239 cron was quiet 8 of 10
+minutes, and the only thing reaching Neon every minute was the open Mac's `sync_changes` poll —
+the one this change answers at the edge. Neon's endpoint never suspended during this session.
+
+Seen once, not reproduced: in one 20-minute run the branch's page got a `reset` answer at minute 4
+and refetched every list. That run overlapped six `wrangler dev` reloads, a build and the test suites.
+A clean 12-minute rerun of both stacks held the same cursor throughout. A reset is the feed's safe
+fallback, but it is the expensive one. If it shows up in production logs, look there first.
+
+Anchor: no ledger row; this is cost, not product. Strains **P7** a little: a change written outside
+the Worker can take up to 3 hours to appear on a device that stays open and never writes (a launch
+or any write of its own catches it at once). No new user-facing name.
+
+*Status: built 2026-11-17 on `claude/interesting-einstein-351ac2` (as D-240; renumbered D-245 on rebase). Not deployed. No Neon schema
+change. `wrangler deploy` creates the Durable Object from migration `v2-sync-marker`. In Workers
+logs, `[sync-marker] … failed` lines are the thing to watch. Pinned in `worker/src/syncMarker.check.ts`
+(the state machine, storage round trip, poke rules, end to end on PGlite: an idle hour of polls is
+0 SQL statements, a phone edit arrives on the next poll, every fail-open path; plus the writer scan)
+and `tests/sync/change-feed.test.ts` (`p_fresh` on launch and after a write). `npm run perf` on the
+same local account: identical to master, render for render (the same 17 budgets are exceeded on
+both; they were set on the smaller dummy account). Scale note: one
+object answers every account's polls; past a few hundred polls a second, shard it by account (the
+credential map would move to KV or the Cache API).*

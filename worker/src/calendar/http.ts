@@ -12,6 +12,7 @@ import { withoutMirrorCalendar } from "../lib/mirror.ts";
 import { logServerError } from "../lib/redact.ts";
 import type { RequestIo } from "../requestIo.ts";
 import { bootstrapUser, makeStore, type Store } from "../store.ts";
+import { markerPoke } from "../syncMarker.ts";
 import { handleIcloudEvents } from "./icloudEvents.ts";
 import { runIcloudContacts, runIcloudSync, syncIcloudAccount } from "./icloud.ts";
 import { assertPublicFeedUrl, fetchIcsFeed, runIcsSync, syncIcsAccount } from "./icsFeed.ts";
@@ -269,7 +270,12 @@ async function handleM365Oauth(c: Context<AppEnv>, deps: CalendarRouteDeps): Pro
     }
     await logSync(io.sql, "m365", "oauth-connect", "ok", undefined, state.u);
     try {
-      c.executionCtx.waitUntil(runM365Sync(io.sql, c.env, { accountId: account.id, userId: state.u }).then(() => undefined));
+      // Runs past the response, so past the catch-all poke: poke when it lands (D-245).
+      c.executionCtx.waitUntil(
+        runM365Sync(io.sql, c.env, { accountId: account.id, userId: state.u })
+          .then(() => undefined)
+          .finally(() => markerPoke(c.env, { users: [state.u] })),
+      );
     } catch {
       await runM365Sync(io.sql, c.env, { accountId: account.id, userId: state.u });
     }
@@ -336,7 +342,10 @@ async function handleIcloudConnect(c: Context<AppEnv>, deps: CalendarRouteDeps):
         Promise.all([
           runIcloudSync(io.sql, c.env, { accountId: account.id, userId: got.userId }),
           runIcloudContacts(io.sql, c.env, { accountId: account.id, userId: got.userId }),
-        ]).then(() => undefined),
+        ])
+          .then(() => undefined)
+          // Past the response, so past the catch-all poke (D-245).
+          .finally(() => markerPoke(c.env, { users: [got.userId] })),
       );
     } catch {
       await Promise.all([
@@ -386,7 +395,12 @@ async function handleIcsSubscribe(c: Context<AppEnv>, deps: CalendarRouteDeps): 
     await sealAccountSecret(io.sql, account.id, got.userId, c.env, checked.url);
     await logSync(io.sql, "ics", "subscribe", "ok", undefined, got.userId);
     try {
-      c.executionCtx.waitUntil(runIcsSync(io.sql, c.env, { accountId: account.id, userId: got.userId }).then(() => undefined));
+      // Past the response, so past the catch-all poke (D-245).
+      c.executionCtx.waitUntil(
+        runIcsSync(io.sql, c.env, { accountId: account.id, userId: got.userId })
+          .then(() => undefined)
+          .finally(() => markerPoke(c.env, { users: [got.userId] })),
+      );
     } catch {
       await runIcsSync(io.sql, c.env, { accountId: account.id, userId: got.userId });
     }

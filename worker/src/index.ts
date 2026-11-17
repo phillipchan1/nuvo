@@ -22,6 +22,7 @@ import type { Env } from "./env.ts";
 import { cutoverFlipped } from "./cutoverFlip.ts";
 import { CronGate, gatePoke } from "./cronGate.ts";
 import { gatePokeFor } from "./gatePoke.ts";
+import { SyncMarker, credentialKey, endsSession, feedPokeFor, markerPoke } from "./syncMarker.ts";
 import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
 import type { RequestIo } from "./requestIo.ts";
 import type { AppEnv } from "./session.ts";
@@ -156,14 +157,23 @@ app.use("/functions/v1/*", closeIo);
  * response, never delays or fails it.
  */
 async function pokeGate(c: Context<AppEnv>, next: () => Promise<void>) {
+  // Read before the handler: a sign-out ends the session it carried.
+  const ending = c.env?.SYNC_MARKER && endsSession(c.req.method, c.req.path) ? await credentialKey(c.req.raw.headers) : null;
   await next();
-  const poke = gatePokeFor({
+  const facts = {
     method: c.req.method,
     path: c.req.path,
     status: c.res?.status ?? 500,
     touchedDb: Boolean(c.get("io")),
     user: c.get("gateUser") ?? null,
-  });
+  };
+  // The feed's change marker (D-245), awaited: closeIo (inside this
+  // middleware) has already closed the request's client, so every write it
+  // made has committed, and the writer's own next feed poll — sent after it
+  // reads this response — must already see the poke.
+  const feedPoke = feedPokeFor(facts);
+  if (feedPoke || ending) await markerPoke(c.env, { ...feedPoke, ...(ending ? { dropCreds: [ending] } : {}) });
+  const poke = gatePokeFor(facts);
   if (!poke) return;
   scheduleClose(c, gatePoke(c.env, poke));
 }
@@ -673,8 +683,12 @@ async function scheduled(
     }
     await handleScheduled(event, env, (job) => runCronJob(job, env, open()));
     // Daily jobs (rollover moves do_dates, google-renew moves channels,
-    // github-poll files tasks): re-plan everyone on the next minute.
-    if (cutoverFlipped(env.CUTOVER_FLIPPED)) await gatePoke(env, { all: true, calendar: true });
+    // github-poll files tasks): re-plan everyone on the next minute, and every
+    // feed asks Neon once (D-245).
+    if (cutoverFlipped(env.CUTOVER_FLIPPED)) {
+      await markerPoke(env, { all: true });
+      await gatePoke(env, { all: true, calendar: true });
+    }
   } finally {
     const opened = sql as Sql | null;
     if (opened) ctx.waitUntil(closeSql(opened));
@@ -701,12 +715,15 @@ async function email(
 ): Promise<void> {
   await handleInboundMail(message, env, ctx);
   // A mailed-in task can carry a date; the account isn't known here. Rare.
-  if (cutoverFlipped(env.CUTOVER_FLIPPED)) ctx.waitUntil(gatePoke(env, { all: true }));
+  if (cutoverFlipped(env.CUTOVER_FLIPPED)) {
+    ctx.waitUntil(Promise.all([markerPoke(env, { all: true }), gatePoke(env, { all: true })]));
+  }
 }
 
 Object.assign(app, { scheduled, queue, email });
 
-// The minute cron's gate — a Durable Object (wrangler.jsonc `CRON_GATE`).
-export { CronGate };
+// The minute cron's gate — a Durable Object (wrangler.jsonc `CRON_GATE`) —
+// and the feed's change marker (`SYNC_MARKER`, D-245).
+export { CronGate, SyncMarker };
 
 export default app;

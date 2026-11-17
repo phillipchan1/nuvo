@@ -75,6 +75,8 @@ export interface Env {
   CALENDAR_SYNC_QUEUE?: QueueBinding;
   /** The minute cron's gate (cronGate.ts, D-239). Unset → the cron runs every minute, ungated. */
   CRON_GATE?: DurableObjectNamespaceLike;
+  /** The feed's change marker (syncMarker.ts, D-245). Unset → every feed poll asks Neon, as before. */
+  SYNC_MARKER?: DurableObjectNamespaceLike;
   /** A new pair, not Supabase's (D-173 — its private key can't be read back). Clients re-subscribe on a key change. */
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_KEY?: string;

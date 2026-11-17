@@ -35,7 +35,9 @@ import { SessionLookupError } from "./auth.ts";
 import { API_SECURITY } from "./cors.ts";
 import { requireStore, type AppEnv } from "./session.ts";
 import { rotateInboundToken, type Store } from "./store.ts";
-import { syncChanges } from "./syncFeed.ts";
+import { syncChanges, type FeedAnswer } from "./syncFeed.ts";
+import { credentialKey, markerCheck, markerProve, parseCursor } from "./syncMarker.ts";
+import { scheduleClose } from "./requestIo.ts";
 
 export const REST_PREFIX = "/api/rest/v1";
 
@@ -1306,6 +1308,54 @@ export async function restForStore(
   }
 }
 
+/**
+ * `rpc/sync_changes`. Asks the change marker first: a known session, a proof
+ * still standing and a cursor inside it → "nothing moved", with no session
+ * lookup and no SQL. Otherwise the Postgres answer (it needs no catalog — the
+ * catalog read is the bulk of what a quiet minute would cost when its cache
+ * has expired), and an empty answer is reported back as a proof. `p_fresh`
+ * (a poll right after this device's own write) always asks Postgres.
+ */
+async function handleSyncChanges(c: Context<AppEnv>, url: URL, method: string): Promise<Response> {
+  const args = method === "POST" ? await readBody(c) : Object.fromEntries(url.searchParams);
+  const obj = args && typeof args === "object" && !Array.isArray(args) ? (args as Record<string, unknown>) : {};
+  const since = obj.p_since ?? null;
+  const fresh = obj.p_fresh === true || obj.p_fresh === "true";
+  const cred = c.env.SYNC_MARKER ? await credentialKey(c.req.raw.headers) : null;
+  const sinceCursor = parseCursor(since);
+  const marked = cred && sinceCursor != null ? await markerCheck(c.env, { cred, cursor: since, fresh }) : null;
+  if (marked?.quiet) {
+    const quiet: FeedAnswer = { mode: "delta", cursor: sinceCursor!.toString(), reset: false, changes: [] };
+    return rpcJson(quiet);
+  }
+
+  const got = await requireStore(c);
+  if ("error" in got) {
+    const status = got.error.status;
+    return errorResponse(
+      status === 401
+        ? new RestError(401, "PGRST301", "not signed in")
+        : new RestError(status >= 500 ? 503 : status, "PGRST000", "service unavailable"),
+    );
+  }
+  const answer = await syncChanges(got.store.sql, got.store.userId, since);
+  if (marked && !marked.quiet && cred && sinceCursor != null) {
+    scheduleClose(
+      c,
+      markerProve(c.env, {
+        cred,
+        user: got.store.userId,
+        ticket: marked.ticket,
+        since: sinceCursor.toString(),
+        cursor: answer.mode === "delta" ? answer.cursor : sinceCursor.toString(),
+        sessionUntil: got.user.sessionExpiresAt ?? null,
+        quiet: answer.mode === "delta" && !answer.reset && answer.changes.length === 0,
+      }),
+    );
+  }
+  return rpcJson(answer);
+}
+
 export async function handleRest(c: Context<AppEnv>): Promise<Response> {
   try {
     const url = new URL(c.req.url);
@@ -1324,6 +1374,10 @@ export async function handleRest(c: Context<AppEnv>): Promise<Response> {
     if (!rpc && !table) throw new RestError(404, "PGRST125", "invalid path");
 
     const writes = rpc ? !READ_RPCS.has(rpc[1]) : method !== "GET" && method !== "HEAD";
+    // The change feed is asked once a minute by every open window. A quiet
+    // answer comes from the change marker without opening the database at all
+    // (D-245) — the only way Neon's compute can suspend while an app is open.
+    if (rpc?.[1] === "sync_changes") return await handleSyncChanges(c, url, method);
     const got = await requireStore(c);
     if ("error" in got) {
       const status = got.error.status;
@@ -1335,14 +1389,6 @@ export async function handleRest(c: Context<AppEnv>): Promise<Response> {
     }
     if (writes && writeFrozen(c.env.MAINTENANCE_WRITE_FREEZE)) {
       return errorResponse(new RestError(503, "PGRST000", WRITE_FROZEN_MESSAGE));
-    }
-    // The change feed is asked once a minute by every open window; it needs no
-    // catalog, and the catalog read (every REST table's columns) is the bulk of
-    // what a quiet minute would otherwise cost whenever its cache has expired.
-    if (rpc?.[1] === "sync_changes") {
-      const args = method === "POST" ? await readBody(c) : Object.fromEntries(url.searchParams);
-      const since = args && typeof args === "object" && !Array.isArray(args) ? (args as Record<string, unknown>).p_since : null;
-      return rpcJson(await syncChanges(got.store.sql, got.store.userId, since ?? null));
     }
     const cat = await catalog(got.store.sql);
 

@@ -119,7 +119,7 @@ const T = Date.UTC(2026, 10, 16, 12, 0, 0);
     const close = index.indexOf(`app.use("${prefix}", closeIo)`);
     ok(poke >= 0 && poke < close, `pokeGate wraps ${prefix} outside closeIo`);
   }
-  ok(/export \{ CronGate \}/.test(index), "index.ts exports the Durable Object class");
+  ok(/export \{ CronGate, SyncMarker \}/.test(index), "index.ts exports the Durable Object classes");
   const wrangler = readFileSync(join(here, "..", "..", "wrangler.jsonc"), "utf8");
   ok((wrangler.match(/"name": "CRON_GATE", "class_name": "CronGate"/g) ?? []).length === 2, "CRON_GATE bound in production and preview");
   ok(/"new_sqlite_classes": \["CronGate"\]/.test(wrangler), "CronGate has a SQLite migration");

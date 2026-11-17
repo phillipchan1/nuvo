@@ -36,6 +36,7 @@ import { runM365Sync } from "./calendar/m365.ts";
 import { m365Enabled } from "./lib/ms.ts";
 import { claimDueAccounts, nextCalendarSyncAt } from "./calendar/store.ts";
 import { gatePlan, gatePoke, gateReport, isQuiet, type GateReport, type TickPlan } from "./cronGate.ts";
+import { markerPoke } from "./syncMarker.ts";
 import { runCalendarDispatch, runGoogleCronJob } from "./google/cron.ts";
 import { claimDueGoogleAccounts } from "./google/owned.ts";
 import { runGoogleSync } from "./google/sync.ts";
@@ -346,13 +347,18 @@ export async function runMinuteTick(
         } else {
           const result = await runCalendarDispatch(s, env, undefined, pullMs);
           enqueued = result.ran;
-          // Synced in-process: those accounts' reminders may have moved.
-          if (result.users.length) await gatePoke(env, { users: result.users });
+          // Synced in-process: those accounts' reminders and events may have moved.
+          if (result.users.length) {
+            await markerPoke(env, { users: result.users });
+            await gatePoke(env, { users: result.users });
+          }
         }
         if (plan) report.calendar = { next: await nextCalendarSyncAt(s, ["google", ...otherCalendarProviders(env)]) };
         out.push({ job: "calendar-dispatch", status: 200, stay_on_supabase: false, enqueued });
       }
     } catch (err) {
+      // An in-process sync may have written events before it threw.
+      if (!env.CALENDAR_SYNC_QUEUE) await markerPoke(env, { all: true });
       console.error("[cron] calendar-dispatch failed", err instanceof Error ? err.name : "error");
       out.push({ job: "calendar-dispatch", status: 500, ok: false, reason: "error" });
     }
@@ -422,6 +428,8 @@ export async function consumeCalendarSyncBatch(
   let sql: Sql | null = opened ?? null;
   const closeOwned = opened == null;
   const synced = new Set<string>();
+  /** Every account a runner started on — a throw may follow a write (D-245). */
+  const attempted = new Set<string>();
   let polled = false;
   if (gateCron(env, "queue-consume")) {
     for (const msg of batch.messages) {
@@ -452,6 +460,7 @@ export async function consumeCalendarSyncBatch(
       try {
         const accountId = msg.body.account_id;
         const userId = msg.body.user_id;
+        if (typeof userId === "string" && userId) attempted.add(userId);
         if (provider === "google") {
           await runGoogleSync(sql, env, { mode: "poll", accountId, userId });
         } else if (provider === "m365") {
@@ -472,6 +481,8 @@ export async function consumeCalendarSyncBatch(
     }
   } finally {
     if (closeOwned && sql) await closeSql(sql);
+    // Events moved: every feed of those accounts asks Neon again (D-245).
+    if (attempted.size) await markerPoke(env, { users: [...attempted] });
     // Events moved (reminders) and next_sync_at moved (the next poll): tell the gate.
     if (polled) await gatePoke(env, { users: [...synced], calendar: true });
   }
