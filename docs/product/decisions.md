@@ -9287,7 +9287,8 @@ little reward if we finish all tasks in focus mode … how to know what to focus
 just want to work on a few things. That focus mode previously is not good, we should get rid of
 it.")*
 
-→ **What it is.** ⌘. (or the Focus door beside the Today ring, or **Focus** in the bulk bar) narrows
+→ **What it is.** ⌘. (or the Focus door beside the Today ring, or **Focus** in the bulk bar, or
+**Focus** on a right-click — a task in the rail or on the calendar, a slot on the calendar) narrows
 the rail to one sitting: a block on the calendar (a slot, or a lone timed task) or a few tasks you
 picked. The hero is the kit's `UnitCrown` with the block's name; one line says the time left and
 what comes after it ("37m left · then OE PermitHub stand-up at 9am", busy time read through
@@ -9325,5 +9326,11 @@ about one account (P16).
 *Status: built, desktop rail (by decision — the phone doesn't get it). Typechecked; `tests/focus.test.ts` (the read model and the line);
 driven at `?focus` (a block on the clock: ⌘. → the block, ticks, the close, Focus on the next →
 the picker) and `?focus=idle` (the picker); the picker and "Focus on 2" driven on the local dev
-account without completing anything. **Not done:** a "Focus" act in the calendar block's own popover; the
+account without completing anything. Right-click → Focus (added the same day, asked by the operator: "entry should be right clicking
+task or slot") rides the one task menu (`TaskActionsMenu`, rail and calendar, `⌘.` inside it) and
+the calendar's slot menu, offered only for today's work and never inside a focus; on a selection
+it reads "Focus on N". Driven: the rail menu (one task, a selection of two, ⌘. in the menu) and a
+calendar task's menu on the dev account; the slot item was not driven (no slot on that account
+today). **Not done:** a "Focus" act in the calendar block's own popover; the rail's slot header
+has no right-click; the
 focused block is not marked on the grid. Not driven on a real account's data.*

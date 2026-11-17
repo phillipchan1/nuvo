@@ -439,6 +439,14 @@ function LeftRail({
     if (on) focusStore.focus(on.target);
     else focusStore.pick();
   }, [selectedIds, focusOnSelection, today, slots, slotTitle, now]);
+  // Right-click → Focus: on the selection the row is in, else on the row.
+  // Not offered inside a focus (the rows ARE the focus) or on a row the rail
+  // can't hold today (lib/focus reads today + the inbox).
+  const focusFromMenu = (t: Task) => {
+    if (focus || !focusPool.some((x) => x.id === t.id)) return undefined;
+    if (selectedIds.size > 1 && selectedIds.has(t.id)) return { label: `Focus on ${selectedIds.size}`, action: focusOnSelection };
+    return { label: "Focus", action: () => focusStore.focus({ kind: "task", taskId: t.id }) };
+  };
   useEffect(() => {
     if (!hotkeysEnabled) return;
     const onKey = (e: KeyboardEvent) => {
@@ -1489,6 +1497,7 @@ function LeftRail({
           onDate={() => setRowMenu({ kind: "date", targets: [contextMenu.task], anchor: rowRect(contextMenu.task.id) })}
           onMove={() => setRowMenu({ kind: "move", targets: [contextMenu.task], anchor: rowRect(contextMenu.task.id) })}
           onRename={() => setEditingId(contextMenu.task.id)}
+          onFocus={focusFromMenu(contextMenu.task)}
           onOpen={() => {
             const el = document.querySelector<HTMLElement>(`[data-task-drag="${contextMenu.task.id}"]`);
             const anchor = el?.getBoundingClientRect() ?? new DOMRect(360, 200, 0, 40);

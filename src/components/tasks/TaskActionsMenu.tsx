@@ -118,6 +118,7 @@ export default function TaskActionsMenu({
   onDuplicate,
   onToEvent,
   onMakeSlot,
+  onFocus,
   startInDelete = false,
 }: {
   task: Task;
@@ -144,6 +145,9 @@ export default function TaskActionsMenu({
   /** The calendar's ⌘G, offered when the menu opened on a block inside a lit
    *  selection: what's lit becomes one slot. */
   onMakeSlot?: () => void;
+  /** ⌘. — narrow the rail to this task (or the selection it's in), D-242.
+   *  Only hosts whose task the rail can hold today offer it. */
+  onFocus?: { label: string; action: () => void };
   /** Open on the series' delete scope — ⌫ on a calendar block (D-158) asks the
    *  same question, in the same place, as ⌫ inside this menu. */
   startInDelete?: boolean;
@@ -261,6 +265,9 @@ export default function TaskActionsMenu({
       icon: done ? ("refresh" as const) : ("check" as const),
       action: () => { toggleDone(); onClose(); },
     },
+    ...(onFocus && !done
+      ? [{ kind: "action" as const, label: onFocus.label, key: "⌘.", icon: "focus" as const, action: () => { onClose(); onFocus.action(); } }]
+      : []),
     { kind: "sep" },
     ...dayItem("Today", todayISO(now)),
     ...dayItem("Tomorrow", tomorrowISO()),
@@ -353,10 +360,12 @@ export default function TaskActionsMenu({
         (actions[lit] ?? actions[0])?.action();
         return;
       }
-      // The printed hints: E · T · V · # · ⌘E.
+      // The printed hints: E · T · V · # · ⌘E · ⌘.
       const hint = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "e"
         ? "⌘E"
-        : !e.metaKey && !e.ctrlKey && !e.altKey ? e.key.toUpperCase() : null;
+        : (e.metaKey || e.ctrlKey) && e.key === "."
+          ? "⌘."
+          : !e.metaKey && !e.ctrlKey && !e.altKey ? e.key.toUpperCase() : null;
       const hit = hint ? actions.find((a) => a.key === hint) : undefined;
       if (hit) {
         spend();

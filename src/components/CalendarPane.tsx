@@ -17,6 +17,7 @@ import { restingStatus, type CalendarAccount, type ExternalEvent, type Recurrenc
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
 import { firstDayOfWeek } from "../hooks/useSettings";
 import { allDayDates, allDayRangeFromStart, allowAnytimeLanding, endOf, isOverdue, parseDateISO, spanFromCalendarDrop, toDateISO, todayISO, toFcInstant } from "../lib/dates";
+import { focusStore } from "../hooks/useFocus";
 import { resolveCompleteTarget } from "../lib/completeTarget";
 import { addDays, startOfDay } from "date-fns";
 import { eventRRule, expandRule } from "../lib/recurrence";
@@ -4827,6 +4828,12 @@ function CalendarPane({
           onMove={() => setTaskRowMenu({ kind: "move", targets: [taskMenu.task], anchor: taskMenu.el.getBoundingClientRect() })}
           // ⌘D's act: the copy, selected.
           onDuplicate={() => selectBlock(duplicateTask(taskMenu.task))}
+          // Focus is today's (D-242): the rail narrows to this block.
+          onFocus={
+            taskMenu.task.do_date === todayISO(now)
+              ? { label: "Focus", action: () => focusStore.focus({ kind: "task", taskId: taskMenu.task.id }) }
+              : undefined
+          }
           onMakeSlot={(() => {
             const lit = litForMenu(`task:${taskMenu.task.id}`);
             return lit ? () => makeSlotFrom(lit) : undefined;
@@ -4913,6 +4920,15 @@ function CalendarPane({
             }}>
               Open
             </EventMenuItem>
+            {/* Focus is today's (D-242): the rail narrows to this slot's work. */}
+            {slot.do_date === todayISO(now) && childCount > 0 && (
+              <EventMenuItem onClick={() => {
+                setSlotMenu(null);
+                focusStore.focus({ kind: "slot", slotId: slot.id });
+              }}>
+                Focus
+              </EventMenuItem>
+            )}
             {(() => {
               const lit = litForMenu(`slot:${slot.id}`);
               return lit ? (
