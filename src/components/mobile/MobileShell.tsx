@@ -42,6 +42,7 @@ import MobileTaskList, { type MobileTab } from "./MobileTaskList";
 import TaskFilter from "../TaskFilter";
 import BulkBar from "../BulkBar";
 import { useBulkOps } from "../../hooks/useBulkOps";
+import { useUnschedule } from "../../hooks/useUnschedule";
 import { useTaskFilter } from "../../hooks/useTaskFilter";
 import { describeQuery, queryFacetCount } from "../../lib/taskFilter";
 import MobileCalendar from "./MobileCalendar";
@@ -441,10 +442,12 @@ export default function MobileShell() {
   // The bulk bar's acts — the same hook the desktop rail uses, so a phone bulk
   // move files the initiative and domain alongside the project (D-088) and the
   // whole set undoes in one step.
+  const unschedule = useUnschedule(mutations);
   const bulkOps = useBulkOps({
     selected: [...pickedIds].map((id) => taskById.get(id)).filter((t): t is Task => !!t),
     mutations,
     clear: clearPicked,
+    unschedule,
   });
 
   // The calendar tap's slot children — `allTasks` (useAllTasks) has no

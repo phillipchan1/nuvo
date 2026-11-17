@@ -4,6 +4,7 @@
  *   j k ↑ ↓    move the cursor           ↵       open the task
  *   e          complete / reopen          ⌘E      rename in place
  *   t          when… (a day, a time)      v       move to… (a home, out of a slot)
+ *   u          unschedule (off the calendar — Inbox, or its project)
  *   x          select (then any act hits all)
  *   ⌫          trash, with undo           ⌥↑ ⌥↓   reorder
  *   a / ⇧A     add below / above          esc     clear the selection, then the cursor
@@ -40,6 +41,9 @@ export interface TaskListKeyActs<T extends KeyRow = Task> {
    *  Table's project headings), so the key falls through to the page. */
   date?: (targets: T[]) => void;
   move?: (targets: T[]) => void;
+  /** u — take the targets off the calendar (D-248). A host whose rows can't be
+   *  on the calendar leaves it out, and the key falls through. */
+  unschedule?: (targets: T[]) => void;
   rename: (t: T) => void;
   /** Move a row one place (⌥↑ -1, ⌥↓ +1). Absent when the list's order isn't
    *  the user's to set. */
@@ -242,6 +246,11 @@ export function useTaskListKeys<T extends KeyRow = Task>({
         case "v":
           if (!acts.move || !targets.length) return;
           acts.move(targets);
+          return handled();
+        case "u":
+          if (!acts.unschedule || !targets.length) return;
+          acts.unschedule(targets);
+          cursor.setSelectedIds(new Set());
           return handled();
         case "x": {
           if (!current) return;

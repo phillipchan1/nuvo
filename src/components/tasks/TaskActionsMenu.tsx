@@ -32,9 +32,12 @@ import { useRecurrenceMutations, useRecurrences } from "../../hooks/useRecurrenc
 import { useVertical } from "../../hooks/useVertical";
 import { useOptionalUndoStack } from "../../hooks/useUndoStack";
 import { fixedCssPx } from "../../hooks/useUiScale";
+import { useUnschedule } from "../../hooks/useUnschedule";
+import { isUnschedulable } from "../../lib/unschedule";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 const TRIAGE_UNDO = { undo: "toast" as const };
+type UndoOpts = Parameters<Mutations["planFor"]>[2];
 
 /** Commit a task to this week, or take it off — said, and undoable. Committing
  *  an inbox row usually takes it OFF the list you're looking at (it becomes
@@ -96,10 +99,10 @@ export function useTrashTask(mutations: Mutations) {
 
 /** Move a task to a day by hand. A timed task keeps its clock; an untimed one
  *  is planned for the day, as before. */
-export function moveToDay(mutations: Mutations, task: Task, dateISO: string) {
+export function moveToDay(mutations: Mutations, task: Task, dateISO: string, opts: UndoOpts = TRIAGE_UNDO) {
   const start = sameClockOn(task, dateISO);
-  if (start) mutations.block(task, start, task.duration_minutes ?? undefined, TRIAGE_UNDO);
-  else mutations.planFor(task, dateISO, TRIAGE_UNDO);
+  if (start) mutations.block(task, start, task.duration_minutes ?? undefined, opts);
+  else mutations.planFor(task, dateISO, opts);
 }
 
 export default function TaskActionsMenu({
@@ -119,6 +122,8 @@ export default function TaskActionsMenu({
   onToEvent,
   onMakeSlot,
   onFocus,
+  group,
+  onUnscheduleGroup,
   startInDelete = false,
 }: {
   task: Task;
@@ -148,6 +153,14 @@ export default function TaskActionsMenu({
   /** ⌘. — narrow the rail to this task (or the selection it's in), D-242.
    *  Only hosts whose task the rail can hold today offer it. */
   onFocus?: { label: string; action: () => void };
+  /** The menu opened on a row inside a selection of several: the day acts,
+   *  Mark done, Unschedule and Trash reach every task in it, and what only
+   *  makes sense for one task (Open, Rename, Duplicate…) steps aside (D-248).
+   *  `task` is still the row pointed at; `group` includes it. */
+  group?: readonly Task[];
+  /** The host's Unschedule for the whole selection, when it holds more than
+   *  tasks (the calendar's slots and events). Without it, the group's tasks. */
+  onUnscheduleGroup?: () => void;
   /** Open on the series' delete scope — ⌫ on a calendar block (D-158) asks the
    *  same question, in the same place, as ⌫ inside this menu. */
   startInDelete?: boolean;
@@ -181,6 +194,8 @@ export default function TaskActionsMenu({
     });
   }, [x, y, deleteMode]);
 
+  const unschedule = useUnschedule(mutations);
+  const many = group && group.length > 1 ? group : null;
   const done = task.status === "done";
   const inWeek = Boolean(task.sprint_id && task.sprint_id === vertical.sprint?.id);
   const timed = Boolean(task.start_time);
@@ -241,7 +256,74 @@ export default function TaskActionsMenu({
           action: () => { moveToDay(mutations, task, dateISO); onClose(); },
         }];
 
-  const items: Item[] = deleteMode && recurring
+  // ── Several tasks at once (D-248) ─────────────────────────────────────
+  // One coalesce key per open menu, so a day act over the selection is ONE
+  // undo whether each row moved by its clock (`block`) or by its day (`planFor`).
+  const groupUndo = useRef({ undo: "toast" as const, coalesceKey: `group:${Math.random().toString(36).slice(2)}` }).current;
+  const groupRecurring = Boolean(many?.some((t) => t.recurrence_id));
+  const groupOpen = many?.filter((t) => t.status !== "done" && t.status !== "trashed") ?? [];
+  const groupDay = (label: string, dateISO: string): Item[] => {
+    const moving = groupOpen.filter((t) => t.do_date !== dateISO);
+    return moving.length
+      ? [{
+          kind: "action",
+          label,
+          icon: dateISO === todayISO(now) ? "sun" : "calendar",
+          action: () => { moving.forEach((t) => moveToDay(mutations, t, dateISO, groupUndo)); onClose(); },
+        }]
+      : [];
+  };
+  const groupTimed = groupOpen.filter((t) => t.start_time);
+  const groupItems: Item[] = many
+    ? [
+        ...(onMakeSlot
+          ? [
+              { kind: "action" as const, label: "Make one slot", key: "⌘G", icon: "duration" as const, action: () => { onClose(); onMakeSlot(); } },
+              { kind: "sep" as const },
+            ]
+          : []),
+        ...(groupOpen.length
+          ? [{
+              kind: "action" as const, label: "Mark done", key: "E", icon: "check" as const,
+              action: () => { groupOpen.forEach((t) => mutations.complete(t, groupUndo)); onClose(); },
+            }]
+          : []),
+        { kind: "sep" },
+        ...groupDay("Today", todayISO(now)),
+        ...groupDay("Tomorrow", tomorrowISO()),
+        ...groupDay("Next week", nextWeekISO()),
+        ...(groupTimed.length
+          ? [{
+              kind: "action" as const, label: "Anytime that day", icon: "clock" as const,
+              action: () => { groupTimed.forEach((t) => mutations.unblock(t, groupUndo)); onClose(); },
+            }]
+          : []),
+        ...(onDate ? [{ kind: "action" as const, label: "When…", key: "T", icon: "calendar" as const, action: () => { onClose(); onDate(); } }] : []),
+        { kind: "sep" },
+        ...(onMove ? [{ kind: "action" as const, label: "Move to…", key: "V", icon: "arrow-right" as const, action: () => { onClose(); onMove(); } }] : []),
+        ...(many.some(isUnschedulable)
+          ? [{
+              kind: "action" as const, label: "Unschedule", key: "U", icon: "inbox" as const,
+              action: () => { if (onUnscheduleGroup) onUnscheduleGroup(); else unschedule(many); onClose(); },
+            }]
+          : []),
+        // A series asks which occurrences, one question each — never decided in
+        // bulk (D-158). With one in the selection, ⌫ on the grid asks them.
+        ...(!groupRecurring
+          ? [
+              { kind: "sep" as const },
+              {
+                kind: "action" as const, label: "Trash", key: "⌫", icon: "trash" as const, danger: true,
+                action: () => { many.forEach((t) => mutations.trash(t, groupUndo)); onClose(); },
+              },
+            ]
+          : []),
+      ]
+    : [];
+
+  const items: Item[] = many
+    ? groupItems
+    : deleteMode && recurring
     ? deleteItems
     : [
     ...(onMakeSlot
@@ -279,13 +361,15 @@ export default function TaskActionsMenu({
     ...(onSchedule ? [{ kind: "action" as const, label: "Pick a time…", icon: "clock" as const, action: onSchedule }] : []),
     { kind: "sep" },
     ...(onMove ? [{ kind: "action" as const, label: "Move to…", key: "V", icon: "arrow-right" as const, action: () => { onClose(); onMove(); } }] : []),
-    ...(task.status !== "inbox"
+    // Off the calendar: loose work to the Inbox, project work to its project
+    // (D-063a's routing) — the toast names which (D-248).
+    ...(isUnschedulable(task)
       ? [{
           kind: "action" as const,
-          // Say where it lands: project work rests in its project, not the Inbox.
-          label: task.project_id ? "Back to its project" : "Return to inbox",
+          label: "Unschedule",
+          key: "U",
           icon: task.project_id ? ("folder" as const) : ("inbox" as const),
-          action: () => { mutations.backToInbox(task, TRIAGE_UNDO); onClose(); },
+          action: () => { unschedule([task]); onClose(); },
         }]
       : []),
     ...(task.status === "inbox" && (task.project_id || task.initiative_id || task.domain_id)
@@ -322,13 +406,13 @@ export default function TaskActionsMenu({
   ];
 
   const actions = items.filter((i): i is Extract<Item, { kind: "action" }> => i.kind === "action");
-  const live = useRef({ actions, lit, deleteMode, recurring });
-  live.current = { actions, lit, deleteMode, recurring };
+  const live = useRef({ actions, lit, deleteMode, recurring, many });
+  live.current = { actions, lit, deleteMode, recurring, many };
   useEffect(() => setLit(-1), [deleteMode]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const { actions, lit, deleteMode, recurring } = live.current;
+      const { actions, lit, deleteMode, recurring, many } = live.current;
       if (e.key === "Escape") {
         e.stopImmediatePropagation();
         if (deleteMode && !startInDelete) setDeleteMode(false);
@@ -342,6 +426,12 @@ export default function TaskActionsMenu({
       };
       if (e.key === "Backspace" || e.key === "Delete") {
         spend();
+        // A selection trashes as the item does — and not at all with a series
+        // in it (that's a question per series, asked from the grid's ⌫).
+        if (many) {
+          actions.find((a) => a.key === "⌫")?.action();
+          return;
+        }
         // A series asks which occurrences, from the keyboard exactly as from
         // the click — ⌫ used to trash one row and leave the series' scope unasked.
         if (recurring && !deleteMode) setDeleteMode(true);
@@ -392,7 +482,7 @@ export default function TaskActionsMenu({
     <div
       ref={menuRef}
       role="menu"
-      aria-label={task.title}
+      aria-label={many ? `${many.length} tasks` : task.title}
       data-nested-surface=""
       className="k-pop"
       // Client px measured, CSS px placed — under UI zoom the two differ, and the
@@ -402,7 +492,7 @@ export default function TaskActionsMenu({
     >
       {/* Whose menu this is — on a narrow calendar block it's the only place
           the full title shows, and every calendar menu already led with it. */}
-      <div className="k-mtitle">{task.title}</div>
+      <div className="k-mtitle">{many ? `${many.length} tasks` : task.title}</div>
       {items.map((item, i) => {
         if (item.kind === "sep") {
           // Leading, trailing and doubled rules come from optional items.

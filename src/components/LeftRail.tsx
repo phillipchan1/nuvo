@@ -15,6 +15,7 @@ import { useTaskFilter } from "../hooks/useTaskFilter";
 import TaskFilter from "./TaskFilter";
 import BulkBar from "./BulkBar";
 import { useBulkOps } from "../hooks/useBulkOps";
+import { useUnschedule } from "../hooks/useUnschedule";
 import { queryFacetCount } from "../lib/taskFilter";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useListReorder } from "../hooks/useListReorder";
@@ -420,10 +421,12 @@ function LeftRail({
   // The bulk bar's acts, shared with the phone (useBulkOps) so "move these to a
   // project" means the same thing on both — including carrying the initiative
   // and domain with it (D-088), and taking ONE undo entry for the whole set.
+  const unschedule = useUnschedule(mutations);
   const bulkOps = useBulkOps({
     selected: visible.filter((t) => selectedIds.has(t.id)),
     mutations,
     clear: () => setSelectedIds(new Set()),
+    unschedule,
   });
 
   // ⌘. (D-242) — in, or out. In: the rows you've selected, else the block on
@@ -736,13 +739,14 @@ function LeftRail({
       },
       date: (targets) => setRowMenu({ kind: "date", targets, anchor: rowRect(targets[0].id) }),
       move: (targets) => setRowMenu({ kind: "move", targets, anchor: rowRect(targets[0].id) }),
+      unschedule: (targets) => unschedule(targets),
       rename: (t) => setEditingId(t.id),
       // `.` — the row's right-click menu, beside the row.
       menu: (t) => {
         const r = rowRect(t.id);
         setContextMenu({ task: t, x: r.left + 24, y: r.bottom });
       },
-  } satisfies Pick<TaskListKeyActs<Task>, "open" | "complete" | "trash" | "date" | "move" | "rename" | "menu">;
+  } satisfies Pick<TaskListKeyActs<Task>, "open" | "complete" | "trash" | "date" | "move" | "unschedule" | "rename" | "menu">;
   const trayOpenRef = useRef(trayOpen);
   trayOpenRef.current = trayOpen;
   // The crown holds the keys after a press in it, or whenever the tray's list
@@ -1506,16 +1510,23 @@ function LeftRail({
         <RemindPicker task={remindPickerFor} anchor={pickerAnchor} onClose={() => setRemindPickerFor(null)} />
       )}
 
-      {contextMenu && (
+      {contextMenu && (() => {
+        // Right-click on a row inside a selection acts on the selection (D-248).
+        const group = selectedIds.size > 1 && selectedIds.has(contextMenu.task.id)
+          ? visible.filter((t) => selectedIds.has(t.id))
+          : undefined;
+        const targets = group ?? [contextMenu.task];
+        return (
         <TaskActionsMenu
           task={contextMenu.task}
+          group={group}
           x={contextMenu.x}
           y={contextMenu.y}
           mutations={mutations}
           onSchedule={() => { setSchedulePickerFor(contextMenu.task); setContextMenu(null); }}
           onLabel={() => { setLabelPickerFor(contextMenu.task); setContextMenu(null); }}
-          onDate={() => setRowMenu({ kind: "date", targets: [contextMenu.task], anchor: rowRect(contextMenu.task.id) })}
-          onMove={() => setRowMenu({ kind: "move", targets: [contextMenu.task], anchor: rowRect(contextMenu.task.id) })}
+          onDate={() => setRowMenu({ kind: "date", targets, anchor: rowRect(contextMenu.task.id) })}
+          onMove={() => setRowMenu({ kind: "move", targets, anchor: rowRect(contextMenu.task.id) })}
           onRename={() => setEditingId(contextMenu.task.id)}
           onFocus={focusFromMenu(contextMenu.task)}
           onOpen={() => {
@@ -1526,7 +1537,8 @@ function LeftRail({
           }}
           onClose={() => setContextMenu(null)}
         />
-      )}
+        );
+      })()}
       {rowMenu?.kind === "date" && (
         <TaskDateMenu anchor={rowMenu.anchor} targets={rowMenu.targets} mutations={mutations} onClose={() => setRowMenu(null)} />
       )}
