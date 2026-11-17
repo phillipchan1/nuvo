@@ -9,8 +9,7 @@ import { readRevealConfig, isRevealReady, isAcknowledged, acknowledge, wasToaste
 import { fallbackPanelAnchor } from "../lib/appNav";
 import { MARQUEE_OPEN_EVENT, MARQUEE_CLOSE_EVENT } from "../lib/marquee";
 import type { ExternalEvent, Slot, Task } from "../lib/types";
-import { isTypingIn } from "../lib/a11y";
-import { useAllTasks, useDayTasks, useGroomInbox, useInboxTasks, usePlannedAnytimeTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations, useTrashedTasks } from "../hooks/useTasks";
+import { useAllTasks, useDayTasks, useGroomInbox, useInboxTasks, usePlannedAnytimeTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations } from "../hooks/useTasks";
 import { useCalendarAccounts, useCalendarRangePrefetch, useCalendarRefresh, useExternalEventMutations, useExternalEvents, useHiddenEvents, useLabels, useTravelDirection } from "../hooks/useCalendar";
 import { useSlots, useSlotTasks, useSlotMutations } from "../hooks/useSlots";
 import { todayWithSlotChildren } from "../lib/slotRuns";
@@ -53,6 +52,7 @@ const EMPTY_SLOTS: Slot[] = [];
 import ReconnectBanner from "./ReconnectBanner";
 import { EveningShutdown } from "./Rituals";
 import { useAgentContext } from "../hooks/useAgentContext";
+import { useMemory } from "../hooks/useMemory";
 
 export default function Planner({
   openFlow,
@@ -68,6 +68,9 @@ export default function Planner({
    *  slack back to the calendar. See AppShellInner for the arithmetic. */
   squeezed?: boolean;
 }) {
+  // Memory (docs/memory.md): the Schedule draws its Rhythm view from it, and
+  // Plan the week's What I noticed reads its sure observations.
+  const learned = useMemory();
   const railRef = useRef<HTMLDivElement | null>(null);
   const {
     nav,
@@ -78,6 +81,7 @@ export default function Planner({
     closeOverlay,
     closeFlow,
     navigate,
+    setSettingsSection,
     panelAnchor,
     panelAnchorEl,
   } = useAppNavigation();
@@ -509,40 +513,6 @@ export default function Planner({
   // while the rail beside it keeps its own.
   const gridCovered = anyModalOpen || weekPlanOpen || overlay !== "none";
 
-  const { data: trashedRows = [] } = useTrashedTasks();
-
-  // 1/2/3 switch the rail's Today · Inbox · Trash tabs. Lives here — not in
-  // LeftRail — so it still works in focus mode (⌘.) when the rail is slid shut,
-  // and so the numbers follow the tab strip left-to-right (Today is first now).
-  useEffect(() => {
-    if (!onSchedule || anyModalOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      // With a row under the cursor, 1–4 set its priority instead (the rail
-      // list marks the key it spent).
-      if (e.defaultPrevented) return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (isTypingIn(e.target)) return;
-      switch (e.key) {
-        case "1":
-          e.preventDefault();
-          setTab("today");
-          break;
-        case "2":
-          e.preventDefault();
-          setTab("inbox");
-          break;
-        case "3":
-          if (trashedRows.length > 0) {
-            e.preventDefault();
-            setTab("trash");
-          }
-          break;
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onSchedule, anyModalOpen, setTab, trashedRows.length]);
-
   // Stable identities for everything handed to the rail and the grid — both are
   // memo'd, and an inline arrow here re-rendered them on every Planner render.
   const handleConvertEventToTask = useStableHandler(
@@ -592,7 +562,10 @@ export default function Planner({
           bar is the grid's own PageBar (CalendarPane) — the Planner draws none.
           Plan/Shutdown → ⌘K + the morning prompt; Nuvo → ⌘J; settings → ⌘,. */}
 
-      <ReconnectBanner accounts={accounts} onManualReconnect={() => openOverlay("settings")} />
+      <ReconnectBanner accounts={accounts} onManualReconnect={() => {
+          setSettingsSection("connections");
+          openOverlay("settings");
+        }} />
 
       {/* Priorities moved off Schedule — too much for the workspace. They live on
           Today (the ribbon) for now; a dedicated dashboard view is TBD. */}
@@ -608,7 +581,7 @@ export default function Planner({
         <KeepAlive active={onSchedule} className="flex min-h-0 min-w-0 flex-1">
         {planning ? (
           <Suspense fallback={<div className="w-[340px] shrink-0 border-r" style={{ borderColor: "var(--line-1)" }} />}>
-            <PlanRail onOverlay={setPlanOverlay} onClose={closeFlow} railRef={railRef} />
+            <PlanRail onOverlay={setPlanOverlay} onClose={closeFlow} railRef={railRef} learned={learned} />
           </Suspense>
         ) : (
         <LeftRail
@@ -644,6 +617,7 @@ export default function Planner({
               slid shut: one door, always visible, never two opposite corners. */}
           <Suspense fallback={<div className="min-h-0 flex-1" />}>
           <CalendarPane
+            learned={learned}
             view={view}
             onViewChange={setCalView}
             hotkeysEnabled={!gridCovered && onSchedule && !planning}
