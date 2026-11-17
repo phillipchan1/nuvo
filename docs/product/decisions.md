@@ -9661,3 +9661,70 @@ user-facing name, no schema change.
 wake clock": every phase of a 30-min account lands on :00/:30 within 15–45 min; once aligned it stays
 30 min even when pulled 5 min early or run 90 s late; short intervals sit on the 10-min grid past the
 next look; the full run lands on a wake minute inside the cap).*
+
+---
+
+**D-248 · 2026-11-17 · Unschedule: clear a span of the calendar in two clicks and one act.**
+
+Origin ⓟ: *"other priorities came up. i needed to 'clear my calendar' quickly — i didn't find
+any good options within Nuvo."* Held against the code before a line changed: the grid already
+had a selection (D-158), but **its right-click moved one block** — When and Move were handed
+`[taskMenu.task]`, so only *Make one slot* and ⌫ reached the rest. Five blocks lit, one moved.
+
+→ **The menu speaks for the selection.** Right-clicking a task inside a lit selection (grid or
+rail) opens the same `TaskActionsMenu` in a group mode: titled *N tasks*, carrying Mark done ·
+Today / Tomorrow / Next week · Anytime that day · When… · Move to… · **Unschedule** · Trash. What
+only makes sense for one task (Open, Rename, Duplicate, → Event, Focus) steps aside. A day act is
+one undo (one coalesce key per menu, whether a row moved by its clock or its day). Trash is left
+out when a series is in the selection — one scope question each, never decided in bulk (D-158).
+
+→ **⇧-click takes a span; ⌘-click takes one.** On the grid ⇧ used to mean the same as ⌘. It is
+now the rail's rule: every block on screen between the anchor and the one you clicked, in time
+order, and the anchor stays put so a second ⇧-click redraws the range. Clearing an afternoon is
+click its first block · ⇧-click its last · `u`.
+
+→ **One word: Unschedule.** Four controls did this act under four names — *Return to inbox* and
+*Back to its project* (the menu), *Inbox* (the bulk bar), *Clear the date* (the bulk bar's When).
+All four are now **Unschedule**, on `u` in every task list (`useTaskListKeys`) and on the grid,
+through one hook (`useUnschedule`) and one set of words (`lib/unschedule.ts`). The write is
+unchanged — `backToInbox`, D-063a's routing — and D-063a's lesson is kept by the toast, which
+names the destination (*Unscheduled 4 — back to Inbox*, or *each back where it came from*).
+
+→ **A slot unschedules too** (added the same day, after the operator right-clicked a slot and
+found no way off). A slot is time on the calendar, so it answers the same word: its tasks go back,
+each where it came from, and a **one-off** slot comes off — one undo brings the slot back as
+itself (same id) and its tasks back into it. A **repeating** slot keeps its place: it is a
+rhythm, not today's plan, so only its tasks come off and the toast says *1 repeating slot kept*
+(skipping one day stays *Delete slot… → This occurrence*). On a slot's menu, on `u` over a slot,
+and inside any selection that holds one.
+
+→ **It says what it left alone.** A span over an afternoon catches meetings. Unschedule never
+touches them and counts them: *Unscheduled 4 — back to Inbox · 1 slot cleared · 3 events left
+alone*. Taking a meeting off your calendar is declining it, which carries a guest notice — never
+in bulk.
+
+**Language considered.** *Move back to inbox* (the operator's first word) is wrong for project
+work, which never goes to the Inbox (D-063a). *Clear* reads as delete. *Off the calendar* is
+accurate but is a phrase, not a verb. *Unschedule* is the literal inverse of the act that put it
+there, and it pairs cleanly against *Anytime* (keeps the day) in the same menu.
+
+**Anchor.** Opens and closes **D9** (new, Daily: *my day just changed — what comes off, and where
+does it go?*), the day-scale twin of **W3**. Strains **P11**: *Unschedule* sits beside *Anytime*;
+mitigated by retiring four names for one and by the two standing side by side in one menu, where
+the difference (keeps the day / doesn't) is read. No new pool — the destinations are the Inbox and
+the backlog, as before. Degrades on an empty account to the single-block menu (P7). Nothing that
+holds only in the builder's account (P16) — though the operator's own screenshot was mostly
+meetings, which is exactly why the toast counts them.
+
+**Not done, on purpose.** Events (above). A **project sitting** keeps *Can't get to this…*
+(D-150) beside Unschedule — that act also takes the project off the week, which Unschedule
+doesn't. A
+selection on the **phone's calendar**: the phone reaches the act through Tasks → Today → hold →
+**Unschedule**. A "clear from now" gesture that needs no selection — worth its own pass if the
+span gesture proves too fiddly under a real afternoon.
+
+*Status: built 2026-11-17 on `claude/unschedule` — `lib/unschedule.ts`, `hooks/useUnschedule.ts`,
+`TaskActionsMenu`'s group mode, the grid's `rangeToBlock`, `u` in `useTaskListKeys`, the bulk bar.
+Guarded by `tests/unschedule.test.tsx`. When the QA catalog lands, QA-TASK-12's bar list reads
+**Unschedule** where it said **Inbox**.*
+

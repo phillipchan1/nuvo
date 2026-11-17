@@ -38,7 +38,9 @@ export interface BulkOps {
   addLabels: (labelIds: string[]) => void;
   planFor: (dateISO: string) => void;
   complete: () => void;
-  backToInbox: () => void;
+  /** Off the calendar — loose work to the Inbox, project work to its project,
+   *  one undo, one toast that says which (D-248). */
+  unschedule: () => void;
   trash: () => void;
   clear: () => void;
 }
@@ -153,14 +155,6 @@ export default function BulkBar({
     { id: "today", name: "Today", act: () => ops.planFor(todayISO()) },
     { id: "tomorrow", name: "Tomorrow", act: () => ops.planFor(tomorrowISO()) },
     { id: "next-week", name: "Next week", act: () => ops.planFor(nextWeekISO()) },
-    {
-      id: "clear",
-      name: "Clear the date",
-      separated: true,
-      // Off the day and back to where it rests (inbox, or its home's backlog) —
-      // a "planned" row with no date showed on no list at all.
-      act: () => ops.patchAll(clearDatePatch, "unscheduled"),
-    },
   ];
   const priority: Choice[] = PRIORITIES.map((p) => ({
     id: p,
@@ -218,8 +212,11 @@ export default function BulkBar({
         <Button size="xs" icon={<Icon name="check" size={12} />} onClick={ops.complete}>
           Done
         </Button>
-        <Button size="xs" onClick={ops.backToInbox}>
-          Inbox
+        {/* Was two controls for one act — an "Inbox" button and "Clear the
+            date" under When — and neither said what a project's task did
+            (it goes back to its project). One word, and the toast names where. */}
+        <Button size="xs" onClick={ops.unschedule}>
+          Unschedule
         </Button>
         {onTrash && (
           <Button size="xs" kind="danger" onClick={ops.trash}>

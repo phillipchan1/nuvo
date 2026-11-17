@@ -12,6 +12,7 @@ import { useOptionalUndoStack } from "./useUndoStack";
 import type { BulkOps } from "../components/BulkBar";
 import type { Task } from "../lib/types";
 import { useTrashTask } from "../components/tasks/TaskActionsMenu";
+import { isUnschedulable } from "../lib/unschedule";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 
@@ -33,11 +34,15 @@ export function useBulkOps({
   selected,
   mutations,
   clear,
+  unschedule,
 }: {
   /** The tasks the bar is acting on, resolved by the surface. */
   selected: Task[];
   mutations: Mutations;
   clear: () => void;
+  /** `useUnschedule(mutations)` — the act with its one undo and its toast
+   *  naming where the work went. Without it, the same write, row by row. */
+  unschedule?: (tasks: readonly Task[]) => void;
 }): BulkOps {
   const { recordUndo } = useOptionalUndoStack();
   const trashTask = useTrashTask(mutations);
@@ -104,8 +109,9 @@ export function useBulkOps({
         });
         clear();
       },
-      backToInbox: () => {
-        for (const t of selected) mutations.backToInbox(t, { undo: "toast" });
+      unschedule: () => {
+        if (unschedule) unschedule(selected);
+        else for (const t of selected) if (isUnschedulable(t)) mutations.backToInbox(t, { undo: "toast" });
         clear();
       },
       trash: () => {
@@ -115,5 +121,5 @@ export function useBulkOps({
       },
       clear,
     };
-  }, [selected, mutations, recordUndo, clear, trashTask]);
+  }, [selected, mutations, recordUndo, clear, trashTask, unschedule]);
 }

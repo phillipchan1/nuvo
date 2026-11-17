@@ -65,6 +65,9 @@ import {
 } from "./calendar/blockKeys";
 import { createGestureCancel, type GestureCancel } from "./calendar/gestureCancel";
 import { DRAG_MIRROR_ATTR, selectionLost, sweepStrayGhosts } from "./calendar/strayGhosts";
+import { rangeBetween } from "../lib/selection";
+import { useUnschedule, type SlotToClear } from "../hooks/useUnschedule";
+import type { LeftAlone } from "../lib/unschedule";
 // One rule for "how big is this block", shared with the chat's `create_slot`.
 import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
 import { skipWhenAsleep } from "./KeepAlive";
@@ -742,11 +745,16 @@ function CalendarPane({
   /** Light one block (a click, j / k, a fresh copy) — painted now, not next render. */
   const selectBlock = (id: string | null) => {
     const none: ReadonlySet<string> = new Set();
+    gridAnchorRef.current = id;
     paintGridSelection(id, none);
     setGridCursor(id);
     setGridSelected(none);
   };
-  /** ⇧/⌘-click: add the block to the selection, or take it back out. */
+  /** Where a ⇧-click range starts: the last block picked by a plain click or a
+   *  ⌘-click. It stays put through ⇧-clicks, so a second one re-draws the range
+   *  rather than stacking on it — the rail's rule (D-248). */
+  const gridAnchorRef = useRef<string | null>(null);
+  /** ⌘-click: add the block to the selection, or take it back out. */
   const toggleBlock = (id: string) => {
     const { cursor, ids } = gridSelRef.current;
     const next = new Set(ids);
@@ -754,6 +762,7 @@ function CalendarPane({
     if (next.has(id)) next.delete(id);
     else next.add(id);
     const nextCursor = next.has(id) ? id : ([...next].pop() ?? null);
+    gridAnchorRef.current = nextCursor;
     paintGridSelection(nextCursor, next);
     setGridCursor(nextCursor);
     setGridSelected(next);
@@ -2567,6 +2576,16 @@ function CalendarPane({
   };
   const taskOf = (b: GridBlock) => (b.kind === "task" ? findTask(b.refId) : undefined);
   const tasksOf = (bs: readonly GridBlock[]) => bs.map(taskOf).filter((t): t is Task => Boolean(t));
+  const unschedule = useUnschedule(mutations, slotMutations);
+  const leftAloneIn = (bs: readonly GridBlock[]): LeftAlone => ({
+    events: bs.filter((b) => b.kind === "event").length,
+  });
+  /** The slots among some blocks, each with the tasks sitting in it. */
+  const slotsOf = (bs: readonly GridBlock[]): SlotToClear[] =>
+    bs.flatMap((b) => {
+      const slot = b.kind === "slot" ? findSlot(b.refId) : undefined;
+      return slot ? [{ slot, children: slotTasks[slot.id] ?? [] }] : [];
+    });
   const eventWritable = (ev: ExternalEvent) => isWritableCalendar(accountById.get(ev.account_id), ev.calendar_id);
   const extPropsOf = (b: GridBlock): ExtendedProps =>
     (calRef.current?.getApi().getEventById(b.id)?.extendedProps as ExtendedProps | undefined) ?? {
@@ -2972,6 +2991,30 @@ function CalendarPane({
       slotMutations.mergeSlots(plan.into, slotTasks[plan.into.id] ?? [], plan.from, slotTasks[plan.from.id] ?? []);
     }
   };
+  /**
+   * **⇧-click — every block between the anchor and this one, in time order**
+   * (D-248). "Other priorities came up" is an afternoon, not five ⌘-clicks:
+   * click its first block, ⇧-click its last. Only blocks on screen count, so a
+   * range never reaches into a week you've paged away from. Meetings and slots
+   * in the span light too — the acts that can't move them say so.
+   */
+  const rangeToBlock = (id: string) => {
+    const onScreen = gridRows
+      .filter((b) => b.end > visibleSpan.start && b.start < visibleSpan.end)
+      .map((b) => b.id);
+    const range = rangeBetween(onScreen, gridAnchorRef.current ?? gridSelRef.current.cursor, id);
+    if (!range) return toggleBlock(id);
+    if (!gridAnchorRef.current) gridAnchorRef.current = id;
+    paintGridSelection(id, range);
+    setGridCursor(id);
+    setGridSelected(range);
+  };
+  /** `u` / Unschedule over grid blocks: the tasks come off the calendar; what
+   *  isn't a task stays, and the toast counts it (D-248). */
+  const unscheduleBlocks = (targets: readonly GridBlock[]) => {
+    unschedule(tasksOf(targets), leftAloneIn(targets), slotsOf(targets));
+    clearGridSelection();
+  };
   /** The lit selection, when a menu opened on one of its blocks should offer it. */
   const litForMenu = (blockId: string): GridBlock[] | null => {
     const { cursor, ids } = gridSelRef.current;
@@ -2980,6 +3023,15 @@ function CalendarPane({
     if (lit.size < 2 || !lit.has(blockId)) return null;
     return gridRows.filter((b) => lit.has(b.id));
   };
+
+  /** The right-clicked block's selection, when it holds several tasks. */
+  const menuGroup = (() => {
+    if (!taskMenu) return null;
+    const lit = litForMenu(`task:${taskMenu.task.id}`);
+    if (!lit) return null;
+    const tasks = tasksOf(lit);
+    return tasks.length > 1 ? { tasks, lit } : null;
+  })();
 
   const onlyTasks = (targets: readonly GridBlock[], act: string): boolean => {
     if (targets.some((b) => b.kind === "task")) return false;
@@ -3013,6 +3065,7 @@ function CalendarPane({
         const tasks = tasksOf(targets);
         if (tasks.length) setTaskRowMenu({ kind: "move", targets: tasks, anchor: blockRect(`task:${tasks[0].id}`) });
       },
+      unschedule: unscheduleBlocks,
       rename: startRename,
       menu: (b) => openBlockMenu(b),
       duplicate: duplicateBlocks,
@@ -3935,11 +3988,16 @@ function CalendarPane({
         return;
       }
     }
-    // ⇧/⌘-click grows the selection — a pick, not a request to read the block,
-    // so nothing opens (the rail's modifier-click rule).
+    // ⌘-click picks one more block, ⇧-click takes the whole span of time up to
+    // it — a pick, not a request to read the block, so nothing opens (the
+    // rail's modifier-click rule).
     const je = info.jsEvent;
-    if (je && (je.shiftKey || je.metaKey || je.ctrlKey)) {
+    if (je && (je.metaKey || je.ctrlKey)) {
       toggleBlock(info.event.id);
+      return;
+    }
+    if (je?.shiftKey) {
+      rangeToBlock(info.event.id);
       return;
     }
     // A plain click selects the block — to the front of any overlap, full width,
@@ -4824,8 +4882,11 @@ function CalendarPane({
           // The block's own check: painted this frame, and a future occurrence
           // of a series redirects to today's (resolveCompleteTarget).
           onToggleDone={() => toggleCalendarTaskDone(taskMenu.task, taskMenu.el)}
-          onDate={() => setTaskRowMenu({ kind: "date", targets: [taskMenu.task], anchor: taskMenu.el.getBoundingClientRect() })}
-          onMove={() => setTaskRowMenu({ kind: "move", targets: [taskMenu.task], anchor: taskMenu.el.getBoundingClientRect() })}
+          // Inside a lit selection the menu speaks for all of it (D-248).
+          group={menuGroup?.tasks}
+          onUnscheduleGroup={menuGroup ? () => unscheduleBlocks(menuGroup.lit) : undefined}
+          onDate={() => setTaskRowMenu({ kind: "date", targets: menuGroup?.tasks ?? [taskMenu.task], anchor: taskMenu.el.getBoundingClientRect() })}
+          onMove={() => setTaskRowMenu({ kind: "move", targets: menuGroup?.tasks ?? [taskMenu.task], anchor: taskMenu.el.getBoundingClientRect() })}
           // ⌘D's act: the copy, selected.
           onDuplicate={() => selectBlock(duplicateTask(taskMenu.task))}
           // Focus is today's (D-242): the rail narrows to this block.
@@ -4946,6 +5007,21 @@ function CalendarPane({
             }}>
               Duplicate
             </EventMenuItem>
+            {/* Unschedule (D-248): the work inside goes back, a one-off slot
+                comes off. Inside a selection it takes the whole selection. */}
+            {(() => {
+              const lit = litForMenu(`slot:${slot.id}`);
+              const n = lit ? lit.filter((b) => b.kind !== "event").length : 1;
+              return (
+                <EventMenuItem shortcut={["U"]} onClick={() => {
+                  setSlotMenu(null);
+                  const own = blockById(`slot:${slot.id}`);
+                  unscheduleBlocks(lit ?? (own ? [own] : []));
+                }}>
+                  {n > 1 ? `Unschedule ${n}` : "Unschedule"}
+                </EventMenuItem>
+              );
+            })()}
             {/* Project time has a fourth act, and it isn't Delete: deleting the
                 block left the project on the week and its work stranded on the
                 day. The card says what each way out clears before you press. */}
