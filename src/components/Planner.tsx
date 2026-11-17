@@ -66,14 +66,9 @@ import { useTrackedRef } from "../hooks/useTrackedRef";
 
 export default function Planner({
   openFlow,
-  focusMode = false,
-  onToggleFocus,
   squeezed = false,
 }: {
   openFlow: (f: FlowName) => void;
-  /** Focus mode: the inbox·today rail slides closed and the calendar goes full-bleed. */
-  focusMode?: boolean;
-  onToggleFocus?: () => void;
   /** Squeeze mode: the chat is open on a narrow window, so the rail gives its
    *  slack back to the calendar. See AppShellInner for the arithmetic. */
   squeezed?: boolean;
@@ -238,8 +233,6 @@ export default function Planner({
   // week (Sun/Mon); the Friday review wins the rest of the time.
   const weekDoorMode: "plan" | "view" | "review" =
     !planForward && weekReady ? "review" : weekPlanned ? "view" : "plan";
-  const weekButtonLabel =
-    weekDoorMode === "review" ? "Review" : weekDoorMode === "view" ? "This week" : "Plan";
   const weekButtonTitle =
     weekDoorMode === "review"
       ? "Your week is ready to review"
@@ -743,11 +736,10 @@ export default function Planner({
           labels={labels}
           mutations={mutations}
           onOpenTask={openTaskAt}
-          hotkeysEnabled={!anyModalOpen && !focusMode && onSchedule}
+          hotkeysEnabled={!anyModalOpen && onSchedule}
           live={onSchedule}
           now={now}
           railRef={railRef}
-          collapsed={focusMode}
           squeezed={squeezed}
           weekDoor={weekDoor}
           slots={todaySlots}
@@ -756,6 +748,7 @@ export default function Planner({
           crownLine={onSchedule ? crownLine : null}
           onCrownLine={onCrownLine}
           rowCards={onSchedule ? ready.cards : undefined}
+          events={events}
         />
         )}
         {/* min-w: 280 was the old floor and it was too low to be a floor at
@@ -764,11 +757,6 @@ export default function Planner({
             one. 420 keeps columns above ~52px, where an event title still says
             which event it is. The rails yield to pay for it (AppShellInner). */}
         <div className="relative flex min-h-0 min-w-[420px] flex-1">
-          {/* The week door lives on the rail's Week's Plan header — on top of the
-              priorities it opens. The toolbar's right cluster acts on the canvas
-              (zone · view · tools); the door acts on the plan, so it was the one
-              stranger there. It stays here ONLY in focus mode, where the rail is
-              slid shut: one door, always visible, never two opposite corners. */}
           <Suspense fallback={<div className="min-h-0 flex-1" />}>
           <CalendarPane
             yours={yoursBand}
@@ -811,13 +799,6 @@ export default function Planner({
             resolveDropTask={resolveDropTask}
             onConvertTaskToEvent={handleConvertTaskToEvent}
             onConvertEventToTask={handleConvertEventToTask}
-            weekGlyph={onSchedule && focusMode ? glyphReport.emblem : null}
-            onOpenWeekPlan={onSchedule && focusMode ? openWeekDoor : undefined}
-            weekButtonLabel={weekButtonLabel}
-            weekButtonTitle={weekButtonTitle}
-            weekButtonGlow={onSchedule && weekDoorMode === "review"}
-            focusMode={focusMode}
-            onToggleFocus={onToggleFocus}
             domains={grid.domains}
             onOpenUpkeep={openUpkeep}
           />

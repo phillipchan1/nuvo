@@ -89,7 +89,7 @@ describe("rung switches keep both surfaces mounted", () => {
     );
     expect(planner, "CalendarPane must sleep, not unmount").toMatch(/live=\{onSchedule\}/);
     expect(planner, "rail hotkeys must follow onSchedule").toMatch(
-      /hotkeysEnabled=\{!anyModalOpen && !focusMode && onSchedule\}/,
+      /hotkeysEnabled=\{!anyModalOpen && onSchedule\}/,
     );
   });
 

@@ -22,7 +22,7 @@ export function PageBar({
   tabs?: ReactNode;
   /** right-aligned acts — kit Buttons / IconButtons / a Segmented */
   actions?: ReactNode;
-  /** before the breadcrumb — a "show panels" exit from focus mode */
+  /** before the breadcrumb */
   leading?: ReactNode;
 }) {
   return (

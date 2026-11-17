@@ -20,7 +20,7 @@ const GROUPS: Group[] = [
       { keys: [["="], ["⌘", "→"]], sep: "or", label: "Next period" },
       { keys: [["−"], ["⌘", "←"]], sep: "or", label: "Previous period" },
       { keys: [["⌘", "T"]], label: "Today" },
-      { keys: [["⌘", "."]], label: "Focus (hide panels)" },
+      { keys: [["⌘", "."]], label: "Focus on the block you're in" },
       { keys: [["⌘", "\\"]], label: "Collapse the spine to icons" },
       { keys: [["⌘", "["]], label: "Back" },
     ],

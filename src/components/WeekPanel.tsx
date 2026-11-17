@@ -898,9 +898,13 @@ export function RailDay({
   onLoose,
   now,
   slots,
+  onFocus,
 }: {
   today: readonly Task[];
   onLoose?: (t: Task) => void;
+  /** Focus (D-242): narrow the rail to the block on the clock — the door rides
+   *  the day it narrows, beside its ring. */
+  onFocus?: () => void;
   /** the rail's clock — "next" moves on when a block's time is missed */
   now: Date;
   /** today's blocks, so a task inside one ends when its block does */
@@ -919,6 +923,17 @@ export function RailDay({
         next={dayNext(day, now, slots)}
         loose={onLoose && loose.length > 0 ? { n: loose.length, run: () => onLoose(loose[0]) } : null}
       />
+      {onFocus && !day.closed && (
+        <IconButton
+          size="xs"
+          className="rail-day-focus"
+          label="Focus"
+          shortcut={["⌘", "."]}
+          icon={<Icon name="focus" size={14} />}
+          onClick={onFocus}
+          data-focus-door=""
+        />
+      )}
     </div>
   );
 }

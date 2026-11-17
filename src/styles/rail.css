@@ -1151,6 +1151,36 @@ html:root .crown-shape-item:focus-visible { outline: none; box-shadow: 0 0 0 2px
 
 /* Today, held above the rail's scroll (D-230): the same padding and hairline
    the crown wears, on the panel's ground — structure, not a float. */
-.rail-day { flex: none; padding: 14px 16px 12px; border-bottom: 1px solid var(--line-1); min-width: 0; }
+.rail-day { flex: none; padding: 14px 16px 12px; border-bottom: 1px solid var(--line-1); min-width: 0; position: relative; }
+/* the Focus door (D-242) rides the day it narrows, top right of its ring */
+.rail-day-focus { position: absolute; top: 12px; right: 12px; }
+
+/* ── Focus (D-242) — the rail narrowed to one block ──────────────────────
+   The day's own grammar at the block's size: the finish ring + the block's
+   name (UnitCrown), its tasks as the day list's rows, one quiet line for the
+   rest of the day. Structure stays flat on the panel's ground. */
+.focus { display: flex; flex-direction: column; min-width: 0; padding-bottom: 16px; }
+.focus-head { position: relative; padding: 14px 44px 14px 16px; border-bottom: 1px solid var(--line-1); }
+.focus-leave { position: absolute; top: 12px; right: 12px; }
+.focus-pick-hero { margin: 4px 0; }
+.focus-tasks { position: relative; padding-top: 6px; }
+/* In focus a done row stays where it was (the ring is the count), so it lands
+   — the stamp and the strike — but never folds away and springs back. */
+.focus-tasks .task-completing { animation: none; }
+.focus-after { display: flex; gap: 8px; flex-wrap: wrap; padding: 14px 16px 0; }
+.focus-rest {
+  align-self: flex-start;
+  margin: 12px 16px 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: 450 12.5px/1.4 var(--font-sans);
+}
+@media (hover: hover) { .focus-rest:hover { color: var(--ink); } }
+.focus-empty { margin: 16px; color: var(--muted); font: 450 12.5px/1.4 var(--font-sans); }
+.focus .rail-section { margin-top: 10px; }
+.focus [data-focus-block] { padding-inline: 16px; }
+
 /* with the day outside, the week opens the readings — no hairline above it */
 .crown-readings > .crown-week:first-child { border-top: 0; padding-top: 0; }

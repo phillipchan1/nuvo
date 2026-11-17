@@ -12,6 +12,7 @@ import {
   CreditCard,
   Eye,
   EyeOff,
+  Focus,
   Funnel,
   Globe,
   Hourglass,
@@ -64,6 +65,7 @@ export type IconName =
   | "chevron-down"
   | "chevron-left"
   | "filter"
+  | "focus"
   | "chevron-right"
   | "clock"
   | "close"
@@ -111,6 +113,7 @@ const GLYPHS: Record<IconName, LucideIcon> = {
   close: X,
   copy: Copy,
   filter: Funnel,
+  focus: Focus,
   duration: Hourglass,
   eye: Eye,
   "eye-off": EyeOff,

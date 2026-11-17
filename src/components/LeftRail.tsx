@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon";
-import type { Label, Slot, Task } from "../lib/types";
+import type { ExternalEvent, Label, Slot, Task } from "../lib/types";
 import { isOverdue, nextWeekISO, todayISO, clockInputValue } from "../lib/dates";
 import { undoAutoPatch } from "../lib/grooming";
 import { TRASH_LIMIT, TRASH_RETENTION_DAYS, useTrashedTasks, type useTaskMutations } from "../hooks/useTasks";
@@ -45,6 +45,11 @@ import { Button, Dot, FoldChevron, Input, IconButton, LIST_TAB_KEYS, listTabTitl
 import SlotRunHeader, { slotRunFace } from "./tasks/SlotRunHeader";
 import { clockEntries, type ClockEntry } from "../lib/slotRuns";
 import { coverage, pruneTo, rangeBetween, selectionClosesOverlay, toggleGroup, toggleId } from "../lib/selection";
+import FocusPanel from "./focus/FocusPanel";
+import { focusStore, useFocus } from "../hooks/useFocus";
+import { blockOnNow, dayBlocks, readFocus } from "../lib/focus";
+import { toBusyBlocks } from "../lib/now";
+import { useSettings } from "../hooks/useSettings";
 
 /**
  * The rail's faces. `trash` is the floor under delete (audit rank 8: a trashed
@@ -65,6 +70,7 @@ import { locateTargetAt, locateTargetForKey, setLocate } from "../lib/locate";
 const TRIAGE_UNDO = { undo: "toast" as const };
 
 const NO_SLOTS: readonly Slot[] = [];
+const NO_EVENTS: readonly ExternalEvent[] = [];
 
 function LeftRail({
   tab,
@@ -77,7 +83,6 @@ function LeftRail({
   hotkeysEnabled,
   now,
   railRef,
-  collapsed = false,
   squeezed = false,
   weekDoor,
   slots = NO_SLOTS,
@@ -87,6 +92,7 @@ function LeftRail({
   onCrownLine,
   deck,
   rowCards,
+  events = NO_EVENTS,
 }: {
   tab: RailTab;
   setTab: (t: RailTab) => void;
@@ -100,8 +106,6 @@ function LeftRail({
   live?: boolean;
   now: Date;
   railRef: React.MutableRefObject<HTMLDivElement | null>;
-  /** Focus mode: slide the rail closed so the calendar takes the whole width. */
-  collapsed?: boolean;
   /**
    * Squeeze mode: the chat is open on a narrow window, so give the calendar
    * back everything above the rail's own minimum. Clamps the *rendered* width
@@ -129,6 +133,9 @@ function LeftRail({
   /** The Get ready cards, handed down so each one that gives a project's work a
    *  time can ride that project's row as a chip (D-216). */
   rowCards?: readonly ReadyCard[];
+  /** The calendar's events in hand — focus says what comes after the block
+   *  ("then OE stand-up at 9am"), through `toBusyBlocks`. Memoize it. */
+  events?: readonly ExternalEvent[];
 }) {
   // The directory, not the whole vertical: the rail labels its rows (project,
   // domain, hue) and offers pickers; it shows no progress. Reading the whole
@@ -357,9 +364,20 @@ function LeftRail({
   // List order IS draw order — j / k, ⇧-ranges and ⌘A all walk what's on screen,
   // so a slot's tasks are contiguous (they were sorted by a start time they all
   // share, which scattered them among their neighbours).
+  // Focus (D-242): the rail narrowed to one block (lib/focus). Read once here,
+  // so the keyboard walks exactly the rows the panel draws.
+  const focus = useFocus();
+  const focusPool = useMemo(() => [...today, ...inbox], [today, inbox]);
+  const focusRead = useMemo(
+    () => (focus?.mode === "on" ? readFocus(focus.target, focusPool, slots, slotTitle) : null),
+    [focus, focusPool, slots, slotTitle],
+  );
+
   const visible: Task[] = useMemo(
     () =>
-      tab === "inbox"
+      focus
+        ? (focusRead?.tasks ?? [])
+        : tab === "inbox"
         ? inboxOrdered
         : tab === "trash"
           ? trashed
@@ -369,21 +387,21 @@ function LeftRail({
               ...clock.flatMap((e) => (e.kind === "slot" ? e.open : [e.task])),
               ...todaySections.done,
             ],
-    [tab, inboxOrdered, trashed, todaySections, clock],
+    [focus, focusRead, tab, inboxOrdered, trashed, todaySections, clock],
   );
   // Only rows that are drawn: a shut section (the Done tail, or any other the
   // hand folded) is in `visible` but not on screen, and an invisible row must
   // never be in a selection or a range.
   const hiddenIds = useMemo(() => {
     const hidden = new Set<string>();
-    if (tab !== "today") return hidden;
+    if (focus || tab !== "today") return hidden;
     const hide = (ts: Task[]) => ts.forEach((t) => hidden.add(t.id));
     if (!todayOpen.overdue) hide(todaySections.pinned);
     if (!todayOpen.unblocked) hide(todaySections.unblocked);
     if (!todayOpen.clock) hide(clock.flatMap((e) => (e.kind === "slot" ? e.open : [e.task])));
     if (!todayOpen.done) hide(todaySections.done);
     return hidden;
-  }, [tab, todayOpen, todaySections, clock]);
+  }, [focus, tab, todayOpen, todaySections, clock]);
   const drawn: Task[] = useMemo(
     () => (hiddenIds.size > 0 ? visible.filter((t) => !hiddenIds.has(t.id)) : visible),
     [visible, hiddenIds],
@@ -406,6 +424,45 @@ function LeftRail({
     mutations,
     clear: () => setSelectedIds(new Set()),
   });
+
+  // ⌘. (D-242) — in, or out. In: the rows you've selected, else the block on
+  // the clock now, else the rail asks what to focus on. Never a guess (P4).
+  const focusOnSelection = useCallback(() => {
+    const ids = visible.filter((t) => selectedIds.has(t.id) && t.status !== "done").map((t) => t.id);
+    setSelectedIds(new Set());
+    if (ids.length) focusStore.focus({ kind: "set", taskIds: ids });
+  }, [visible, selectedIds, setSelectedIds]);
+  const toggleFocus = useCallback(() => {
+    if (focusStore.get()) return focusStore.leave();
+    if (selectedIds.size > 0) return focusOnSelection();
+    const on = blockOnNow(dayBlocks(today, slots, slotTitle), now);
+    if (on) focusStore.focus(on.target);
+    else focusStore.pick();
+  }, [selectedIds, focusOnSelection, today, slots, slotTitle, now]);
+  useEffect(() => {
+    if (!hotkeysEnabled) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== "." || e.altKey || e.shiftKey) return;
+      if (isTypingIn(e.target)) return;
+      e.preventDefault();
+      toggleFocus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hotkeysEnabled, toggleFocus]);
+
+  // What comes after the block — busy time, as the day reads it (toBusyBlocks).
+  const { settings } = useSettings();
+  const hiddenCals = settings?.hidden_calendar_ids;
+  const focusBusy = useMemo(
+    () => (focus ? toBusyBlocks(events as ExternalEvent[], today, hiddenCals ?? []) : []),
+    [focus, events, today, hiddenCals],
+  );
+  const focusRest = useMemo(() => {
+    if (!focusRead) return 0;
+    const inside = new Set(focusRead.tasks.map((t) => t.id));
+    return today.filter((t) => t.status !== "done" && t.status !== "trashed" && !inside.has(t.id)).length;
+  }, [focusRead, today]);
 
 
   const metaOf = (t: Task): TaskMeta => {
@@ -1024,19 +1081,16 @@ function LeftRail({
       onPointerLeave={onLocateLeave}
       className="relative z-40 h-full shrink-0 overflow-hidden"
       style={{
-        width: collapsed ? 0 : railWidth,
+        width: railWidth,
         transition: "width var(--d-slow) var(--ease-out)",
       }}
     >
-      {/* Inner keeps its natural width so nothing reflows while the outer clips
-          it shut in focus mode. Window drag is scoped to the titlebar strip +
-          crown/tabs — the task list opts out so row drags aren't window drags. */}
+      {/* Window drag is scoped to the titlebar strip + crown/tabs — the task
+          list opts out so row drags aren't window drags. */}
       <div
         className={`rail-inner relative flex h-full flex-col ${trayOpen ? "rail-tray-open" : "rail-tray-shut"}`}
         style={{
           width: railWidth,
-          opacity: collapsed ? 0 : 1,
-          transition: "opacity var(--d-base) var(--ease-out)",
         }}
       >
       <div
@@ -1045,17 +1099,49 @@ function LeftRail({
         aria-label="Resize sidebar"
         data-tauri-drag-region="false"
         onPointerDown={startResize}
-        // Hidden while squeezed as well as collapsed: the rendered width is
+        // Hidden while squeezed: the rendered width is
         // pinned to the minimum there, so a drag would grab the handle and
         // move nothing — a control that visibly does nothing is worse than an
         // absent one.
-        className={`rail-resize ${collapsed || squeezed ? "hidden" : ""}`}
+        className={`rail-resize ${squeezed ? "hidden" : ""}`}
       />
       {/* Clears macOS traffic lights — explicit drag target, not inherited from deep. */}
       <div data-tauri-drag-region className="rail-titlebar-drag w-full shrink-0" aria-hidden />
       {/* Today stays put above the scroll (D-230): finishing the day is the
           moment the rail exists for, so it never scrolls out of sight. */}
+      {focus ? (
+        <div className="rail-col min-h-0 flex-1 overflow-y-auto" data-tauri-drag-region="false">
+          <FocusPanel
+            state={focus}
+            pool={focusPool}
+            today={today}
+            slots={slots}
+            slotTitle={slotTitle}
+            busy={focusBusy}
+            now={now}
+            restCount={focusRest}
+            renderTask={(t, pick) =>
+              pick ? (
+                <TaskRow
+                  key={t.id}
+                  {...rowProps(t)}
+                  ref={undefined}
+                  draggable={false}
+                  selected={false}
+                  multiSelected={pick.picked}
+                  onSelect={() => {}}
+                  onOpen={pick.toggle}
+                />
+              ) : (
+                <TaskRow key={t.id} {...rowProps(t)} />
+              )
+            }
+          />
+        </div>
+      ) : (
+      <>
       <RailDay
+        onFocus={toggleFocus}
         today={today}
         now={now}
         slots={slots}
@@ -1320,6 +1406,8 @@ function LeftRail({
       </div>
 
       </div>
+      </>
+      )}
 
       {/* Capture — the kit's field at the foot of the pool, out of the
           hierarchy: it interrupts every mode, so it isn't a titled section.
@@ -1365,6 +1453,7 @@ function LeftRail({
           vertical={vertical}
           total={drawnIds.length}
           onSelectAll={() => setSelectedIds(new Set(drawnIds))}
+          onFocus={focus ? undefined : focusOnSelection}
         />
       )}
 

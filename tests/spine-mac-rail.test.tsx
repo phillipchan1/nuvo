@@ -28,7 +28,7 @@ Object.defineProperty(globalThis, "localStorage", {
 
 const invoke = vi.fn(async () => undefined);
 
-async function mountSpine(opts: { mac: boolean; railed?: boolean; zoom?: number; collapsed?: boolean; overlaid?: boolean }) {
+async function mountSpine(opts: { mac: boolean; railed?: boolean; zoom?: number; overlaid?: boolean }) {
   vi.resetModules();
   vi.doMock("@tauri-apps/api/core", () => ({ invoke }));
   if (opts.railed ?? true) localStorage.setItem("nuvo-spine-rail", "1");
@@ -46,7 +46,7 @@ async function mountSpine(opts: { mac: boolean; railed?: boolean; zoom?: number;
       <VerticalStoreProvider value={store}>
         <AppNavigationProvider>
           <AgentProvider>
-            <Spine rung="day" setRung={() => {}} openSettings={() => {}} openShortcuts={() => {}} collapsed={opts.collapsed} overlaid={opts.overlaid} />
+            <Spine rung="day" setRung={() => {}} openSettings={() => {}} openShortcuts={() => {}} overlaid={opts.overlaid} />
             <div className="app-panel" />
           </AgentProvider>
         </AppNavigationProvider>
@@ -89,12 +89,6 @@ describe("the collapsed sidebar and the Mac traffic lights", { timeout: 20_000 }
     await mountSpine({ mac: true });
     await settled();
     // Never measured (a cold start railed): AppKit's own 16pt, for when they return.
-    expect(invoke).toHaveBeenLastCalledWith("align_traffic_lights", { x: 16, hidden: true });
-  });
-
-  it("hides them while focus mode has the sidebar shut", async () => {
-    await mountSpine({ mac: true, railed: false, collapsed: true });
-    await settled();
     expect(invoke).toHaveBeenLastCalledWith("align_traffic_lights", { x: 16, hidden: true });
   });
 

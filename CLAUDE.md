@@ -285,7 +285,8 @@ it needs to work on a phone.
   so queue anything that points at a new row (a `slot_id`) only after that row's insert, and
   never patch a row first "to prepare it".
 - **Desktop-only (NOT mounted on mobile):** the other rituals (Summit/Blueprint), the Record
-  *modal* (the phone has its own detail Sheet), Collection board/table/timeline, and
+  *modal* (the phone has its own detail Sheet), Collection board/table/timeline,
+  Focus (the rail narrowed to one block, D-242 — the phone doesn't get it, by decision), and
   the FullCalendar `CalendarPane`. Mobile uses the **mobile Calendar** instead.
 - **Each altitude has ONE tap meaning** (D-121). Year: a month opens the Month. Month: a day
  tap **selects** it (the plan under the grid is that day) — a second tap on the selected day,

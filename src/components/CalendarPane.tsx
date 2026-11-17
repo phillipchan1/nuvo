@@ -36,10 +36,8 @@ import { at, span } from "./mobile/dayPlan";
 import TaskActionsMenu from "./tasks/TaskActionsMenu";
 import { TaskDateMenu, TaskMoveMenu } from "./tasks/TaskMenus";
 import { RecurMark } from "./ui";
-import WeekEmblem from "./floors/WeekEmblem";
 import WeekBoard from "./floors/WeekBoard";
 import CalendarYear from "./CalendarYear";
-import type { EmblemSpec } from "../lib/weekEmblem";
 import { useWeather, indexWeather, type WeatherDay } from "../hooks/useWeather";
 import WeatherIcon from "./WeatherIcon";
 import WeatherPopover from "./WeatherPopover";
@@ -341,13 +339,6 @@ function CalendarPane({
   onViewChange,
   hotkeysEnabled = true,
   barSlot,
-  weekGlyph,
-  onOpenWeekPlan,
-  weekButtonLabel,
-  weekButtonTitle,
-  weekButtonGlow,
-  focusMode = false,
-  onToggleFocus,
   domains = [],
   onOpenUpkeep,
   plan,
@@ -362,15 +353,6 @@ function CalendarPane({
   barSlot?: HTMLElement | null;
   /** False while a floor covers the Schedule — skip reconciling the grid. */
   live?: boolean;
-  /** The living emblem for the current week — the toolbar's ambient gauge + door. */
-  weekGlyph?: EmblemSpec | null;
-  onOpenWeekPlan?: () => void;
-  /** Short toolbar label for the week door: "Plan" / "This week" / "Review". */
-  weekButtonLabel?: string;
-  /** Longer tooltip for the week door (hover). Falls back to the short label. */
-  weekButtonTitle?: string;
-  /** Friday-review glow — only the review state lights the signal ring. */
-  weekButtonGlow?: boolean;
   tasks: Task[];
   events: ExternalEvent[];
   slots: Slot[];
@@ -446,10 +428,6 @@ function CalendarPane({
    *  there is only one calendar to offer. */
   onConvertTaskToEvent?: (task: Task, target?: CreateTarget) => void;
   onConvertEventToTask?: (event: ExternalEvent) => void;
-  /** Focus mode is on — toolbar shows a slim "Show panels" exit (⌘. still toggles). */
-  focusMode?: boolean;
-  /** Toggle focus mode (slide the side panels away / back). Enables the exit button. */
-  onToggleFocus?: () => void;
   /** Domains offered on the Slot create dialog (standing "domain slots"). */
   domains?: Array<{ id: string; name: string; color: string }>;
   onOpenUpkeep?: () => void;
@@ -5083,13 +5061,6 @@ function CalendarPane({
             so the pane never repeats it (the Year's numeral too, D-129). */}
       {inBar(
       <PageBar
-        leading={
-          onToggleFocus && focusMode ? (
-            <Button size="xs" active onClick={onToggleFocus} title="Show panels (⌘.)" aria-pressed={true}>
-              Show panels
-            </Button>
-          ) : undefined
-        }
         icon={<Icon name="calendar" size={16} />}
         trail={["Schedule", view === "board" ? "Spread" : isYear ? String(yearCursor) : monthTitle]}
         tabs={onViewChange && <Tabs label="Calendar view" value={view as CalView} onChange={onViewChange} tabs={CAL_VIEWS} />}
@@ -5111,17 +5082,6 @@ function CalendarPane({
                 title="Take your hours and the habits Nuvo noticed off this week"
               >
                 Rhythm
-              </Button>
-            )}
-            {onOpenWeekPlan && weekGlyph && (
-              <Button
-                onClick={onOpenWeekPlan}
-                title={weekButtonTitle ?? weekButtonLabel}
-                collapsible
-                icon={<WeekEmblem spec={weekGlyph} state="forming" size={18} hideAmbient />}
-                style={weekButtonGlow ? { boxShadow: "0 0 0 1px var(--signal), 0 0 0 4px var(--signal-soft)" } : undefined}
-              >
-                {weekButtonLabel}
               </Button>
             )}
             {view !== "board" && (

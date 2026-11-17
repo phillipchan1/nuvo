@@ -63,26 +63,6 @@ function CreateSheetFallback() {
   );
 }
 
-// Focus mode — one gesture (⌘. / the toolbar's "Show panels" exit when collapsed)
-// slides the spine + the inbox·today rail out of the way so the calendar goes
-// full-bleed. Desktop-only chrome; persisted so the workspace opens the way you
-// left it. Enter via ⌘. — the Focus pill was removed from the default toolbar.
-const FOCUS_KEY = "nuvo-focus-mode";
-function readFocusMode(): boolean {
-  try {
-    return localStorage.getItem(FOCUS_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-function writeFocusMode(v: boolean) {
-  try {
-    localStorage.setItem(FOCUS_KEY, v ? "1" : "0");
-  } catch {
-    /* ignore */
-  }
-}
-
 // Memo'd with no props: `Shell` re-renders on its own state (the session, the
 // subscription, settings), and without this every one of those rebuilt the
 // provider elements below and re-rendered every screen in the app.
@@ -303,23 +283,9 @@ const AppShellInner = memo(function AppShellInner() {
   const openSettings = useCallback(() => openOverlay("settings"), [openOverlay]);
   const openSearch = useCallback(() => openOverlay("search"), [openOverlay]);
 
-  // Focus mode: collapse the spine + the inbox·today rail to give the calendar
-  // the whole workspace. Lives here (the common ancestor of Spine and Planner)
-  // rather than in nav history — the back button shouldn't toggle chrome.
-  const [focusMode, setFocusMode] = useState(readFocusMode);
-  const toggleFocus = useCallback(() => {
-    setFocusMode((v) => {
-      const next = !v;
-      writeFocusMode(next);
-      return next;
-    });
-  }, []);
-
-  // Declared here rather than beside the media queries above because it reads
-  // focusMode: focus mode already hands the calendar the whole workspace, so
-  // there is no squeeze left to apply — the spine and rail are shut either way.
-  // Squeezed at 1024, the grid gets ~720px (~100px a day).
-  const squeezed = !focusMode && narrowViewport;
+  // Squeezed at 1024, the grid gets ~720px (~100px a day). (The old ⌘. "hide
+  // the panels" mode is gone — ⌘. is Focus now, owned by the rail, D-242.)
+  const squeezed = narrowViewport;
 
   // One create surface, summonable from anywhere. There is no "more options"
   // fork any more — it swapped in a second layout mid-typing and dropped the
@@ -425,18 +391,6 @@ const AppShellInner = memo(function AppShellInner() {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [openOverlay, nav.flow, nav.overlay]);
 
-  // ⌘. slides the side panels away (and back) — focus the calendar from anywhere.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.key !== ".") return;
-      const el = e.target as HTMLElement;
-      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
-      e.preventDefault();
-      toggleFocus();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [toggleFocus]);
 
   // ⌘= / ⌘+ zoom in, ⌘− zooms out, ⌘0 resets — whole-UI zoom, works from any
   // focus (including inputs), matching the OS/browser zoom convention.
@@ -502,7 +456,6 @@ const AppShellInner = memo(function AppShellInner() {
       <TrialBanner />
       <div className="flex min-h-0 flex-1">
       <Spine
-        collapsed={focusMode}
         forceRail={squeezed}
         // Only a flow that covers the WINDOW brings the lights back. Plan the
         // week ("sunday") is a rail inside the panel — the sidebar is still
@@ -520,8 +473,6 @@ const AppShellInner = memo(function AppShellInner() {
         <div className="relative min-w-0 flex-1">
           <Planner
             openFlow={openFlow}
-            focusMode={focusMode}
-            onToggleFocus={toggleFocus}
             squeezed={squeezed}
           />
           {floorsSeen && (

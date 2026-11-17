@@ -40,7 +40,6 @@
   overflow: hidden;
   --atmosphere-base: var(--panel);
 }
-.spine[data-collapsed] + .app-panel { margin-left: 8px; }
 /* The chat sits on the ground beside the panel: the panel keeps its right
    gutter only when the chat rail is shut (a 64px strip of its own). */
 

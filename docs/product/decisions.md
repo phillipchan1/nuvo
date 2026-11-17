@@ -9279,3 +9279,51 @@ fixed: the agent's `create_recurring_*` / `update_recurring_*` tools are still s
 `{ ok: true, skipped }` in `agentExec.ts`, so no agent tool reaches the recurrence writes yet. A
 local rehearsal DB made by an older `neon.sql` keeps its old shape (the upgrade ALTERs add missing
 columns, not constraints). Rebuild it to match prod.*
+
+**D-242 · 2026-11-17 · Focus: the rail narrows to the block you're in, and closes with the day's
+ring. The old ⌘. "hide the panels" mode is retired.** *(Asked by the operator, from a real
+Tuesday: "the number of tasks on left is overwhelming, I'm JUST focused on this block … a nice
+little reward if we finish all tasks in focus mode … how to know what to focus on?" and "I really
+just want to work on a few things. That focus mode previously is not good, we should get rid of
+it.")*
+
+→ **What it is.** ⌘. (or the Focus door beside the Today ring, or **Focus** in the bulk bar) narrows
+the rail to one sitting: a block on the calendar (a slot, or a lone timed task) or a few tasks you
+picked. The hero is the kit's `UnitCrown` with the block's name; one line says the time left and
+what comes after it ("37m left · then OE PermitHub stand-up at 9am", busy time read through
+`toBusyBlocks`); the block's tasks render through the rail's own `TaskRow` wiring, and done rows
+stay in place. The rest of the day folds to one line ("5 more today") that leaves focus.
+
+→ **How it knows what to focus on.** In order: the rows you selected · the block on the clock now
+(the one you stepped into last, if two overlap) · otherwise it **asks**: today's blocks still ahead,
+then "Pick a few" from the day's open tasks. It never picks a block for you that isn't on the
+clock (P4). The rule is `lib/focus.ts` (`dayBlocks` · `blockOnNow` · `readFocus` · `thenAfter`);
+surfaces draw it.
+
+→ **The reward is the day's, at the block's size.** The finish ring closes, the check draws, the
+ember stop drops on the block's name, and the line says "Cleared at 8:48am. 12m to spare." Then
+two acts: **Focus on the next** · **Back to the day**. Juice, not economy (D-199): it plays once,
+only on your own tick, and counts nothing across blocks (N-04).
+
+→ **What it replaces.** ⌘. used to slide the spine and the rail shut so the calendar went
+full-bleed — a second way to do what railing the spine already does, under the name "Focus mode",
+and it hid exactly the list you needed while working. Retired with its "Show panels" exit and the
+toolbar week door that only existed while the rail was hidden. Two things called Focus would have
+been P11's named failure; there is one now.
+
+→ **Desktop only, on purpose.** The phone does not get Focus — the operator's call, 2026-11-17
+("I don't think phone should have focus mode"). This is a deliberate exception to "every UI
+change ships mobile-ready", not a gap to close: don't port it to `MobileShell`. An iPad wide
+enough to wear the desktop shell (D-209) has it, because it has the rail.
+
+→ **Anchor.** Ledger **D1** (*what's the one thing that matters?*), answered at the grain it is
+asked inside a block. **Strains P9** (a reward), held the D-093 / D-231 way. Four no's: no pool (a
+focus is a view, stored only in localStorage for the day it started); one name, and the old one
+is gone; an empty account has no blocks and the picker says "Nothing open today" (P7); nothing
+about one account (P16).
+
+*Status: built, desktop rail (by decision — the phone doesn't get it). Typechecked; `tests/focus.test.ts` (the read model and the line);
+driven at `?focus` (a block on the clock: ⌘. → the block, ticks, the close, Focus on the next →
+the picker) and `?focus=idle` (the picker); the picker and "Focus on 2" driven on the local dev
+account without completing anything. **Not done:** a "Focus" act in the calendar block's own popover; the
+focused block is not marked on the grid. Not driven on a real account's data.*

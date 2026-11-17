@@ -90,7 +90,6 @@ const BUILD = RUNGS.slice(1);
 
 // Two widths, one spine. Railed, the icons carry the whole table of contents —
 // the glyphs are the altitude, so the labels are what's spent, not the meaning.
-// (Focus mode is a third state above both: it slides the spine shut entirely.)
 const FULL_W = 228;
 const RAIL_W = 52;
 
@@ -135,8 +134,6 @@ interface SpineProps {
   setRung: (r: Rung) => void;
   openSettings: () => void;
   openSearch: () => void;
-  /** Focus mode: slide the whole spine closed (the calendar takes the room). */
-  collapsed?: boolean;
   /**
    * Squeeze mode: render railed because the workspace has no room for the wide
    * spine — the chat is open on a narrow window. Distinct from the user's own
@@ -173,14 +170,13 @@ const SpineBody = memo(function SpineBody({
   setRung,
   openSettings,
   openSearch,
-  collapsed = false,
   forceRail = false,
   overlaid = false,
 }: SpineProps & { spine: SpineState | null }) {
   // The macOS traffic lights are drawn by AppKit, outside the zoomed document,
   // so they can't left-align themselves to the wordmark — nothing native knows
   // where it is. Measure it here and hand Rust the answer in WINDOW POINTS
-  // (css × --ui-scale). Re-runs when the spine rails, focus mode closes it, or
+  // (css × --ui-scale). Re-runs when the spine rails, or
   // the zoom changes, i.e. every time the mark actually moves.
   const wordmarkRef = useRef<HTMLButtonElement>(null);
   // Kept in CSS px, not points: on a zoom change the layout is unchanged, so
@@ -235,7 +231,7 @@ const SpineBody = memo(function SpineBody({
   // timer, which a window behind others outruns (its transitions don't run).
   useEffect(() => {
     if (!("__TAURI_INTERNALS__" in globalThis)) return;
-    const shut = (railed || collapsed) && !overlaid;
+    const shut = railed && !overlaid;
     const send = () => {
       // Before the mark was ever measured (a cold start railed), rest is
       // AppKit's own 16pt.
@@ -243,7 +239,7 @@ const SpineBody = memo(function SpineBody({
     };
     send();
     const el = wordmarkRef.current;
-    if (railed || collapsed || !el) return;
+    if (railed || !el) return;
 
     let live = true;
     const measure = () => {
@@ -268,7 +264,7 @@ const SpineBody = memo(function SpineBody({
     return () => {
       live = false;
     };
-  }, [railed, collapsed, overlaid, uiScale]);
+  }, [railed, overlaid, uiScale]);
 
   // Signing out unmounts the spine; the lights go back to rest with it.
   useEffect(
@@ -337,9 +333,8 @@ const SpineBody = memo(function SpineBody({
     <div
       className="spine relative z-40 shrink-0 overflow-hidden"
       data-rail={railed || undefined}
-      data-collapsed={collapsed || undefined}
       style={{
-        width: collapsed ? 0 : width,
+        width,
         transition: "width var(--d-slow) var(--ease-out)",
       }}
     >
@@ -349,8 +344,7 @@ const SpineBody = memo(function SpineBody({
         className="sb-inner"
         style={{
           width,
-          opacity: collapsed ? 0 : 1,
-          transition: "opacity var(--d-base) var(--ease-out), width var(--d-slow) var(--ease-out)",
+          transition: "width var(--d-slow) var(--ease-out)",
         }}
       >
         {/* Pure drag region — clears the macOS traffic lights. */}

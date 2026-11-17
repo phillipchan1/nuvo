@@ -809,8 +809,8 @@ hand-roll a fifth stack of `border-t` sections.
   touch, where there is no hover to reveal them with. Shared by all three chat surfaces:
   the rail, the phone's `ChatPane`, and the ⌘K spotlight.
 - **The spine has two widths, and one vocabulary.** 188px named, 64px railed (⌘\ or the
-  footer control, persisted in `nuvo-spine-rail`); focus mode (⌘.) is a third state that
-  shuts it entirely. Railed, the glyph *is* the row — readiness survives the narrowing as
+  footer control, persisted in `nuvo-spine-rail`). (⌘. no longer shuts it — the old
+  "hide the panels" mode was retired for Focus, which narrows the rail instead, D-242.) Railed, the glyph *is* the row — readiness survives the narrowing as
   a status dot on the shoulder and the meter as a hairline underscore, and the label comes
   back as a glass flyout on hover, never a native tooltip. Anything positioning against
   the spine reads `--spine-width`, which the component keeps in sync with both states.

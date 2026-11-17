@@ -132,6 +132,7 @@ export default function BulkBar({
   onTrash = true as boolean | undefined,
   total,
   onSelectAll,
+  onFocus,
 }: {
   count: number;
   ops: BulkOps;
@@ -143,6 +144,8 @@ export default function BulkBar({
    *  take the rest, so a bulk act never needs the count tapped out row by row. */
   total?: number;
   onSelectAll?: () => void;
+  /** Focus on just these (D-242) — the rail's; a host without focus omits it. */
+  onFocus?: () => void;
 }) {
   const projects = (vertical?.projects ?? []).filter((p) => p.status !== "complete" && p.status !== "cancelled");
 
@@ -207,6 +210,11 @@ export default function BulkBar({
         {labels.length > 0 && <BulkMenu label="Label" title="Add a label" choices={label} />}
         {projects.length > 0 && <BulkMenu label="Move" title="File under a project" choices={move} />}
 
+        {onFocus && (
+          <Button size="xs" icon={<Icon name="focus" size={12} />} shortcut={["⌘", "."]} onClick={onFocus}>
+            Focus
+          </Button>
+        )}
         <Button size="xs" icon={<Icon name="check" size={12} />} onClick={ops.complete}>
           Done
         </Button>
