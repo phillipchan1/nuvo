@@ -28,8 +28,9 @@ import { useRecordContextMenu } from "../RecordContextMenu";
 import { ProjectShipAssess } from "../record/ShipAssess";
 import TaskListView from "../tasks/TaskListView";
 import { useTaskListKeys } from "../tasks/useTaskListKeys";
+import { KeyHint, useKeyHints } from "../tasks/keyHints";
 import { Icon } from "../Icon";
-import { Button, Dot, EmptyState, IconButton, Kbd, listTabTitle, Menu, MenuItem, MenuLabel, MenuSeparator, PaceTrack, SearchField, Segmented, useListTabKeys } from "../kit";
+import { Button, Dot, EmptyState, IconButton, listTabTitle, Menu, MenuItem, MenuLabel, MenuSeparator, PaceTrack, SearchField, Segmented, useListTabKeys } from "../kit";
 import { DomainPicker, InlineDate, InlineText, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL, RipenessPip, StatusPill } from "./parts";
 import FloorStanding from "./FloorStanding";
 import {
@@ -78,16 +79,6 @@ const COLS = "minmax(0, 1fr) 150px 120px 84px 56px 112px 28px";
 const COLS_NARROW = "minmax(0, 1fr) 150px 120px 84px 28px";
 const COLS_PHONE = "minmax(0, 1fr) auto";
 
-// A few uses and the hints go — they teach the keys, they are not furniture.
-const HINT_KEY = "nuvo.table.hints";
-const HINT_UNTIL = 40;
-const readNum = (k: string) => {
-  try {
-    return Number(localStorage.getItem(k) ?? 0) || 0;
-  } catch {
-    return 0;
-  }
-};
 function usePersisted<T>(key: string, initial: T): [T, (v: T) => void] {
   const [v, setV] = useState<T>(() => {
     try {
@@ -155,16 +146,9 @@ export default function OutlineFloor({
   const expanded = useMemo(() => new Set(expandedList), [expandedList]);
   const [search, setSearch] = useState("");
   const [folded, setFolded] = useState<Set<string>>(new Set());
-  const [hints, setHints] = useState(() => readNum(HINT_KEY) < HINT_UNTIL);
-  const learn = useCallback(() => {
-    const n = readNum(HINT_KEY) + 1;
-    try {
-      localStorage.setItem(HINT_KEY, String(n));
-    } catch {
-      /* ignore */
-    }
-    if (n >= HINT_UNTIL) setHints(false);
-  }, []);
+  // The app's one hint count (tasks/keyHints): learning a key here teaches it
+  // in every list, and the other way round.
+  const { on: hints, learn, setOn: setHints } = useKeyHints();
 
   const openRecord = (kind: "project" | "initiative", id: string) =>
     onOpenRecord ? onOpenRecord(kind, id) : nav.openRecord(kind, id);
@@ -603,14 +587,7 @@ export default function OutlineFloor({
             {!phone && (
               <MenuItem
                 checked={hints}
-                onSelect={() => {
-                  try {
-                    localStorage.setItem(HINT_KEY, hints ? String(HINT_UNTIL) : "0");
-                  } catch {
-                    /* ignore */
-                  }
-                  setHints(!hints);
-                }}
+                onSelect={() => setHints(!hints)}
               >
                 Keyboard hints
               </MenuItem>
@@ -698,7 +675,7 @@ export default function OutlineFloor({
                 <span className={g.late ? "ol-late" : undefined}>{g.label}</span>
                 {g.span && <span className="ol-span">{g.span}</span>}
                 <span className="k-count">{g.items.length}</span>
-                {hints && cursorId === gid && <HeadHint keys={gOpen ? ["←", "close"] : ["→", "open"]} />}
+                {hints && cursorId === gid && <KeyHint keys={gOpen ? ["←", "close"] : ["→", "open"]} />}
                 <span className="ol-grp-meta">
                   {view === "completed"
                     ? g.doneTasks
@@ -860,7 +837,7 @@ export default function OutlineFloor({
             }
           }}
         />
-        {hints && cursorId === id && !phone && <HeadHint keys={["↵", "add", "esc", "back"]} />}
+        {hints && cursorId === id && !phone && <KeyHint keys={["↵", "add", "esc", "back"]} />}
       </div>
     );
   }
@@ -933,7 +910,7 @@ export default function OutlineFloor({
               context={{ projectId: p.id, initiativeId: p.initiativeId, domainId: p.domainId }}
               keyboard={listActive && !onTop}
               selection={sharedSelection}
-              cursorHint={hints ? <HeadHint keys={["⌘E", "rename", "e", "done", "x", "select", "←", "close"]} /> : undefined}
+              cursorKeys={["a", "add", "⌘E", "rename", "e", "done", "←", "close"]}
               onOpen={(t) => nav.openOverlay("task-record", t.id)}
               flush
               reorderable={view !== "completed"}
@@ -1035,7 +1012,7 @@ export default function OutlineFloor({
           </span>
           {!open && count > 0 && <span className="k-count">{count}</span>}
           {hints && lit && !phone && (
-            <HeadHint
+            <KeyHint
               keys={
                 kind === "project"
                   ? open
@@ -1069,23 +1046,6 @@ export default function OutlineFloor({
       </div>
     );
   }
-}
-
-/** The keys a lit heading answers, said once, faintly, beside it — and only
- *  until they have been used a few times. Pairs of [keys, words]. */
-function HeadHint({ keys }: { keys: (string | string[])[] }) {
-  const pairs: [string | string[], string][] = [];
-  for (let i = 0; i < keys.length; i += 2) pairs.push([keys[i], keys[i + 1] as string]);
-  return (
-    <span className="ol-hint" aria-hidden>
-      {pairs.map(([k, w], i) => (
-        <span key={i}>
-          <Kbd keys={k} />
-          {w}
-        </span>
-      ))}
-    </span>
-  );
 }
 
 function toggle(set: Set<string>, key: string): Set<string> {

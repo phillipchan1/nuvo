@@ -3649,6 +3649,39 @@ html .glass-grab {
   box-shadow: 0 0 0 2px var(--accent-wash);
 }
 
+/* The keys a lit row answers (tasks/keyHints) — faint, beside the row it
+   describes, gone once learned, never under a finger. Every task list and the
+   Table's headings wear it. */
+.key-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: 6px;
+  color: var(--faint);
+  font: 450 11px/1 var(--font-sans);
+  white-space: nowrap;
+  animation: key-hint-in var(--d-slow, 260ms) var(--ease-out) 180ms both;
+}
+.key-hint > span { display: inline-flex; align-items: center; gap: 4px; }
+@keyframes key-hint-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .key-hint { animation: none; } }
+@media (hover: none) { .key-hint { display: none; } }
+.key-hint-anchor { display: none; }
+/* On a narrow row the hint floats beside it — solid, like anything that
+   floats (P14), and never under the pointer's way. */
+.key-hint.key-hint-float {
+  position: fixed;
+  z-index: 60;
+  margin: 0;
+  padding: 5px 8px;
+  border-radius: var(--r-ctl);
+  background: var(--surface);
+  box-shadow: var(--sh-pop);
+  color: var(--muted);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
 /* row — the list's add box. Open, it is the kit field in place. */
 .task-composer-row.is-open .task-composer-line {
   border-color: var(--accent);

@@ -8577,7 +8577,14 @@ it, and the extra line appearing as ↓ passed through the box shoved every row 
 "Add a project…" row — the project twin of a list's add box. The keys walk onto it like any
 row (its field takes over), `a` on an initiative jumps to it, ↵ files a project under the
 initiative (in its domain) and stays for the next, ↑/↓ on an empty field walk on, Esc goes
-back to the initiative. It replaces the dead "No projects yet" line, which offered no way in.
+back to the initiative. It replaces the dead "No projects yet" line, which offered no way in. **The key hints are every task list's now** (2026-11-17): the keys were one grammar
+everywhere already, but only the Table *said* them, so `a` and ⌘E sat undiscovered in a
+record's list and the Schedule's rail. `tasks/keyHints` (`KeyHint`, `useKeyHints`) is the one
+hint and the one count: every `TaskListView` and the rail light "a add · ⌘E rename · e done ·
+⌫ delete" on the lit row, the Table adds "← close", and learning a key anywhere fades them
+everywhere (40 acts). On a row too narrow to carry it inline (the rail) the hint floats beside
+the row like a tooltip — inline it wrapped and made the lit row 18px taller, the jump fixed
+above.
 
 **Not yet:** a task's **steps** (D-103) show in its popover (↵), not inline — no disclosure in
 the outline, and Tab does not turn a task into a step. That needs a row disclosure in `TaskRow`

@@ -29,6 +29,7 @@ import TaskActionsMenu, { useTrashTask } from "./TaskActionsMenu";
 import { TaskDateMenu, TaskMoveMenu, useRenameAct } from "./TaskMenus";
 import { placeBeside, useTaskListKeys } from "./useTaskListKeys";
 import type { PathDraft } from "./usePathDraft";
+import { KeyHint, TASK_ROW_KEYS, useKeyHints } from "./keyHints";
 
 export interface TaskListViewProps {
   /** In display order. */
@@ -74,8 +75,10 @@ export interface TaskListViewProps {
   /** One selection held by the host across several lists (the Table): `pool`
    *  is every task it may hold, so ⌫ / e / t here act on all of them. */
   selection?: { ids: ReadonlySet<string>; set: (ids: Set<string>) => void; pool: Task[] };
-  /** Drawn faintly on the lit row only — the keys it answers, until learned. */
-  cursorHint?: ReactNode;
+  /** The keys the lit row says (until learned, `useKeyHints`). Every list
+   *  shows how to add and edit (`TASK_ROW_KEYS`); a host whose rows answer
+   *  more says so here (the Table: ← close). */
+  cursorKeys?: (string | string[])[];
   outline?: {
     /** ↑ past the first row or Esc — "up" (to the heading); ← — "close" (to the
      *  heading, folding it: → opened it, ← shuts it); ↓ past the add box — "down". */
@@ -109,9 +112,10 @@ export default function TaskListView({
   outline,
   composer: withComposer = true,
   selection: sharedSelection,
-  cursorHint,
+  cursorKeys = TASK_ROW_KEYS,
 }: TaskListViewProps) {
   const liveMutations = useTaskMutations();
+  const hints = useKeyHints();
   // A harness that captures into a sink is looking, not editing: its rows'
   // acts go nowhere either (fixture ids must never reach the outbox).
   const sink = useContext(TaskCaptureSinkContext);
@@ -247,16 +251,22 @@ export default function TaskListView({
     acts: {
       open: (t) => onOpen(t, rowRect(t.id), rowEl(t.id)),
       complete: (targets) =>
-        targets.forEach((t) => {
+        (hints.learn(), targets).forEach((t) => {
           if (t.status === "done") return mutations.uncomplete(t, { undo: "toast" });
           const h = handles.current.get(t.id);
           if (h) h.triggerToggle();
           else mutations.complete(t, { undo: "toast" });
         }),
-      trash: (targets) => targets.forEach((t) => trashTask(t, { undo: "toast" })),
+      trash: (targets) => {
+        hints.learn();
+        targets.forEach((t) => trashTask(t, { undo: "toast" }));
+      },
       date: (targets) => setMenu({ kind: "date", targets, anchor: rowRect(targets[0].id) }),
       move: (targets) => setMenu({ kind: "move", targets, anchor: rowRect(targets[0].id) }),
-      rename: (t) => setEditingId(t.id),
+      rename: (t) => {
+        hints.learn();
+        setEditingId(t.id);
+      },
       reorderBy: reorderable
         ? (t, delta) => {
             const next = shiftId(ids, t.id, delta);
@@ -284,6 +294,7 @@ export default function TaskListView({
           }
         : undefined,
       add: (anchor, where) => {
+        hints.learn();
         const placed = anchor ? placeBeside(tasks, anchor, where) : undefined;
         // A tied run (fresh captures share one sort_order) spreads first, in the
         // order on screen, so the new row has room right beside the anchor.
@@ -390,10 +401,10 @@ export default function TaskListView({
                       ⠿
                     </span>
                   </>
-                ) : !phone && cursorHint && t.id === cursorId && keyboard ? (
+                ) : !phone && hints.on && t.id === cursorId && keyboard && !editingId ? (
                   <>
                     {rowAction?.(t)}
-                    {cursorHint}
+                    <KeyHint keys={cursorKeys} />
                   </>
                 ) : (
                   rowAction?.(t)

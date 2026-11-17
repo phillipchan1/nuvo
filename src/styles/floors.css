@@ -652,21 +652,6 @@ html:root .ol-addrow-input:focus-visible { outline: none; box-shadow: none; }
   font: 450 12px/1.3 var(--font-sans);
 }
 
-/* The keys a lit heading answers — faint, beside it, and gone once learned. */
-.ol-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  margin-left: 6px;
-  color: var(--faint);
-  font: 450 11px/1 var(--font-sans);
-  white-space: nowrap;
-  animation: ol-hint-in var(--d-slow, 260ms) var(--ease-out) 180ms both;
-}
-.ol-hint > span { display: inline-flex; align-items: center; gap: 4px; }
-@keyframes ol-hint-in { from { opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .ol-hint { animation: none; } }
-@media (hover: none) { .ol-hint { display: none; } }
 
 /* ══ PHONE ══════════════════════════════════════════════════════════════ */
 @media (max-width: 1180px) {

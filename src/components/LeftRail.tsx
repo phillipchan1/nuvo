@@ -43,6 +43,7 @@ import { InboxAddressHint } from "./InboxAddress";
 import { skipWhenAsleep } from "./KeepAlive";
 import { Button, Dot, FoldChevron, Input, IconButton, LIST_TAB_KEYS, listTabTitle, MenuLabel, Picker, Popover, SectionHeader, useListTabKeys } from "./kit";
 import SlotRunHeader, { slotRunFace } from "./tasks/SlotRunHeader";
+import { KeyHint, TASK_ROW_KEYS, useKeyHints } from "./tasks/keyHints";
 import { clockEntries, type ClockEntry } from "../lib/slotRuns";
 import { coverage, pruneTo, rangeBetween, selectionClosesOverlay, toggleGroup, toggleId } from "../lib/selection";
 import FocusPanel from "./focus/FocusPanel";
@@ -712,6 +713,9 @@ function LeftRail({
     new DOMRect(360, 200, 0, 40);
   const renameTask = useRenameAct(mutations);
   const trashTask = useTrashTask(mutations);
+  // The keys a lit row answers, said beside it until learned — the same hint
+  // and the same count as every task list (tasks/keyHints).
+  const hints = useKeyHints();
   const railKeysOn =
     hotkeysEnabled && !rowMenu && !editingId && !contextMenu && !labelPickerFor && !schedulePickerFor && !remindPickerFor;
   // The acts on a task row, shared by the tray's list and the crown's open
@@ -800,6 +804,19 @@ function LeftRail({
     },
     acts: {
       ...rowActs,
+      // each act done by key counts toward the hints going (useKeyHints)
+      complete: (targets) => {
+        hints.learn();
+        rowActs.complete(targets);
+      },
+      trash: (targets) => {
+        hints.learn();
+        rowActs.trash(targets);
+      },
+      rename: (t) => {
+        hints.learn();
+        rowActs.rename(t);
+      },
       reorderBy: (t, delta) => {
         const moved = moveBy(t.id, delta);
         // Nothing moved: the row is at the end of its band, or its band won't
@@ -809,6 +826,7 @@ function LeftRail({
       },
       toComposer: () => captureRef.current?.focus(),
       add: (anchor, where) => {
+        hints.learn();
         const band = anchor ? bands.of.get(anchor.id) : null;
         const peers = band ? (bands.ids.get(band) ?? []).map((id) => byId.get(id)).filter((x): x is Task => Boolean(x)) : [];
         const placed = anchor && peers.length ? placeBeside(peers, anchor, where) : undefined;
@@ -962,6 +980,8 @@ function LeftRail({
     // One clock for the row and the group that sorted it — see TaskRow's `now`.
     now,
     selected: t.id === openTaskId || (keyCursor && t.id === selectedId),
+    // the lit row says how to add and edit it, until learned
+    action: hints.on && keyCursor && t.id === selectedId && !editingId && !openTaskId ? <KeyHint keys={TASK_ROW_KEYS} /> : undefined,
     editing: editingId === t.id,
     onRename: (title: string | null) => {
       setEditingId(null);
