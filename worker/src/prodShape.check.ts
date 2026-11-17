@@ -1,4 +1,4 @@
-// The Worker's writes, held against production's REAL schema (D-240).
+// The Worker's writes, held against production's REAL schema (D-241).
 //
 // The agent and MCP write recurrences and event routing through store.ts, and
 // Google sync writes external_events. Each once targeted a shape only neon.sql

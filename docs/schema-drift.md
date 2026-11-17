@@ -1,4 +1,4 @@
-# Schema drift — is `neon.sql` still production? (D-240)
+# Schema drift — is `neon.sql` still production? (D-241)
 
 **Run this before any migration:**
 
@@ -81,7 +81,7 @@ feed (`sync_changes`) are hand-written and not emitted.
 
 ## What the checks run against
 
-`worker/src/isolationDb.ts` builds every PGlite check from `neon.sql`. Since D-240 that *is*
+`worker/src/isolationDb.ts` builds every PGlite check from `neon.sql`. Since D-241 that *is*
 production's shape: enums, generated columns, `NOT NULL`s without defaults, and every `CHECK`
 (`tasks_step_is_not_schedulable`, `reminders_one_target`, `recurrences_one_day_rule`…). A fixture
 that prod would refuse now fails the check, which is the point. `worker/src/prodShape.check.ts`

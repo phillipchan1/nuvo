@@ -49,7 +49,7 @@ INSERT INTO public.slots (id, user_id, title, do_date, start_time, duration_minu
   ('aaaaaaaa-9999-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'A slot', '2026-10-26', '2026-10-26T09:00:00Z', 60),
   ('bbbbbbbb-9999-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'B slot', '2026-10-26', '2026-10-26T09:00:00Z', 60);
 
--- Production's shape: the rule is columns, there is no `rrule` (neon.sql, D-240).
+-- Production's shape: the rule is columns, there is no `rrule` (neon.sql, D-241).
 INSERT INTO public.recurrences (id, user_id, kind, freq, anchor_date, title) VALUES
   ('aaaaaaaa-aaaa-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'task', 'weekly', '2026-10-26', 'A series'),
   ('bbbbbbbb-aaaa-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'task', 'daily', '2026-10-26', 'B series');

@@ -31,7 +31,7 @@ export function requireUuid(value: string | undefined, label = "id"): string {
 /**
  * A planner row's key from a path. Every table is keyed by a uuid `id` except
  * event_domain_routing, which production keys (user_id, event_key) — there the
- * path segment is the event_key (D-240).
+ * path segment is the event_key (D-241).
  */
 export function requireRowKey(table: string, value: string | undefined): string {
   if (table !== "event_domain_routing") return requireUuid(value);

@@ -103,7 +103,7 @@ ok(settings?.new?.theme === "dark", "a settings change arrives");
 ok(settings && !("inbound_token" in (settings.new ?? {})), "…without the inbound token");
 
 // --- routing in production's shape: keyed (user_id, event_key), no `id` ------
-// neon.sql is production's shape (D-240), so the table has no `id` here either.
+// neon.sql is production's shape (D-241), so the table has no `id` here either.
 // Keying the trigger or the feed by `id` raised on every routing write.
 await db.query(`INSERT INTO event_domain_routing (user_id, event_key) VALUES ($1, 'gcal:standup')`, [A]);
 next = delta(await syncChanges(sql, A, cursor));

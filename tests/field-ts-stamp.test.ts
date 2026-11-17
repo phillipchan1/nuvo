@@ -22,7 +22,7 @@ function fnBody(sql: string): string {
   return sql.slice(start, end).toLowerCase().replace(/--[^\n]*/g, "").replace(/\s+/g, " ").trim();
 }
 
-/** Production's shape: neon.sql is generated from prod (D-240) and carries field_ts on every synced table. */
+/** Production's shape: neon.sql is generated from prod (D-241) and carries field_ts on every synced table. */
 async function copiedShape(): Promise<PGlite> {
   const db = new PGlite();
   await applyIsolationSchema(db);

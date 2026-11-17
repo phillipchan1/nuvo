@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Does `worker/schema/neon.sql` still describe production? Run before ANY
- * migration (docs/schema-drift.md, D-240).
+ * migration (docs/schema-drift.md, D-241).
  *
  * Production was made by the cutover copying Supabase's tables, not by
  * running neon.sql, so the two drift apart silently: on 2026-11-17 a migration

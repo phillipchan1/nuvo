@@ -1,4 +1,4 @@
--- Neon schema: what production's `public` schema IS (D-240).
+-- Neon schema: what production's `public` schema IS (D-241).
 --
 -- Production was not made by this file. The cutover copied Supabase's tables
 -- (scripts/cutover_copy.py), so for months this file described a thinner,
