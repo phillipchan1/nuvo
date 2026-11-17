@@ -6,6 +6,7 @@ import { ACCESS_MAILTO, APP_URL } from './config'
 import { appUrlWithCode } from './referral'
 import { CtaGroup, NavOpenAppCtas } from './components/CtaButtons'
 import { AMBITIONS, CASCADE_STEPS, MEMORY_RULES, WEEK_STEPS } from './home/data'
+import { HABITS } from './method/data'
 import {
   CaptureScene,
   CascadeCanvas,
@@ -39,6 +40,10 @@ import {
    Every scene renders its final state as markup (prerendered, readable without
    JS, and what reduced-motion users get). home/motion.ts animates toward it.
    ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Where each of /method's five habits is shown on this page, in habit order. */
+const HABIT_ANCHORS = ['#capture', '#system', '#week', '#day', '#tied'] as const
+const habitLabel = (i: number) => `Habit ${HABITS[i].n} · ${HABITS[i].short}`
 
 const PLANS = [
   {
@@ -115,6 +120,7 @@ export default function Home() {
           Nuvo
         </a>
         <nav className="hm-links">
+          <a href="/method">The method</a>
           <a href="#system">The system</a>
           <a href="#week">The week</a>
           <a href="#day">The day</a>
@@ -222,11 +228,50 @@ export default function Home() {
           </div>
         </section>
 
+        {/* ── THE FIVE HABITS — the page's spine (D-246) ──────────────────────
+            The sections below already show the five habits /method names; this
+            strip names them and points down to each. /method is the long read:
+            why five apps break them, and one task through all five. */}
+        <section className="hb" aria-labelledby="hb-h">
+          <div className="hb-head">
+            <p className="k-label accent">The method</p>
+            <h2 id="hb-h" className="h2">
+              Five habits of people who <em>get it all done.</em>
+            </h2>
+            <a href="/method" className="hb-more tap">
+              Why they only work as one system <span aria-hidden>→</span>
+            </a>
+          </div>
+          <ol className="hb-list">
+            {HABITS.map((h, i) => (
+              <li key={h.id}>
+                <a href={HABIT_ANCHORS[i]} className="tap">
+                  <span className="mono">{h.n}</span>
+                  <b>{h.title}</b>
+                </a>
+              </li>
+            ))}
+          </ol>
+        </section>
+
+        {/* ── CAPTURE ─────────────────────────────────────────────────────── */}
+        <section id="capture" className="cp" data-capture>
+          <div className="cp-copy">
+            <p className="k-label accent">{habitLabel(0)}</p>
+            <h2 className="h2">At the speed of the idea.</h2>
+            <p className="body">
+              ⌥Space from anywhere on your Mac. ⌘K in the app. Your voice on the phone. Type it the
+              way you’d text it, and it lands as structure — day, time, length, where it belongs.
+            </p>
+          </div>
+          <CaptureScene />
+        </section>
+
         {/* ── THE SYSTEM — one initiative, all the way down ─────────────────── */}
         <section id="system" className="sys" data-cascade>
           <div className="sys-pin">
             <div className="sys-copy">
-              <p className="k-label accent">The system</p>
+              <p className="k-label accent">{habitLabel(1)}</p>
               <h2 className="sys-h2">
                 Every task has a reason. <em>Every reason has a time.</em>
               </h2>
@@ -270,24 +315,11 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ── CAPTURE ─────────────────────────────────────────────────────── */}
-        <section className="cp" data-capture>
-          <div className="cp-copy">
-            <p className="k-label accent">Capture</p>
-            <h2 className="h2">At the speed of the idea.</h2>
-            <p className="body">
-              ⌥Space from anywhere on your Mac. ⌘K in the app. Your voice on the phone. Type it the
-              way you’d text it, and it lands as structure — day, time, length, where it belongs.
-            </p>
-          </div>
-          <CaptureScene />
-        </section>
-
         {/* ── THE WEEK ────────────────────────────────────────────────────── */}
         <section id="week" className="wkp" data-week>
           <div className="wkp-pin">
             <div className="wkp-head">
-              <p className="k-label accent">Plan the week</p>
+              <p className="k-label accent">{habitLabel(2)}</p>
               <h2 className="h2">
                 Sunday night, <em>commit the week.</em>
               </h2>
@@ -314,7 +346,7 @@ export default function Home() {
           <div className="dy-inner">
             <div className="dy-side">
               <div className="dy-sticky">
-                <p className="k-label">Your planning partner</p>
+                <p className="k-label">{habitLabel(3)}</p>
                 <h2 className="h2">
                   Then it walks <em>every day</em> with you.
                 </h2>
@@ -330,9 +362,9 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ── MEMORY + THE CHAT — the learning engine (docs/memory.md) ─────────
+        {/* ── MEMORY — the learning engine (docs/memory.md) ─────────────────────
             What Nuvo learns from what you already do, how sure it is, and the
-            chat planning from it. The spec's line: a memory is never a guess
+            week planning from it. The spec's line: a memory is never a guess
             the app acts on — it's a fact you confirmed, evidence attached. */}
         <section id="memory" className="mem" data-memory>
           <div className="mem-copy">
@@ -343,7 +375,7 @@ export default function Home() {
             <p className="body">
               Your calendar, the blocks you finish, the drafts you correct. Nuvo notices the patterns
               in what you already do. Keep one, and everything that plans for you uses it: your
-              hours, your week, the chat.
+              hours, your week, what Nuvo offers.
             </p>
             <ul className="mem-rules">
               {MEMORY_RULES.map(([t, b]) => (
@@ -358,9 +390,9 @@ export default function Home() {
         </section>
 
         {/* ── ARITHMETIC + FRIDAY ─────────────────────────────────────────── */}
-        <section className="ar" data-arith>
+        <section id="tied" className="ar" data-arith>
           <div className="ar-copy">
-            <p className="k-label accent">The honest part</p>
+            <p className="k-label accent">{habitLabel(4)}</p>
             <h2 className="ar-h2">
               Ambition without arithmetic is a <em>wish list.</em>
             </h2>
@@ -454,6 +486,7 @@ export default function Home() {
           Nuvo
         </span>
         <div>
+          <a href="/method">The method</a>
           <a href="/share">Share</a>
           <a href="/support">Support</a>
           <a href="/privacy">Privacy</a>

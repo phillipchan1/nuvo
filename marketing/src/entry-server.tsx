@@ -4,6 +4,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { ComponentType } from 'react'
 import Home from './Home'
+import Method from './method/Method'
 import Privacy from './pages/Privacy'
 import Share from './pages/Share'
 import Support from './pages/Support'
@@ -11,6 +12,7 @@ import Terms from './pages/Terms'
 
 const PAGES: Record<string, ComponentType> = {
   '/': Home,
+  '/method': Method,
   '/privacy': Privacy,
   '/terms': Terms,
   '/support': Support,

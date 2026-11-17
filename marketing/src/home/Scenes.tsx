@@ -15,6 +15,7 @@ import {
   DATES,
   DAYS,
   DAY_MOMENTS,
+  OFFERS,
   FRIDAY_HOURS,
   FRIDAY_MOVED,
   H0,
@@ -392,24 +393,33 @@ export function DayMoments() {
             {m.time} <span>· {m.label}</span>
           </p>
           <h3 className="moment-title">{m.title}</h3>
-          {m.kind === 'ask' ? (
-            <div className="chat">
-              <p className="chat-me">Board call ran long. Push the rest of my afternoon.</p>
-              <div className="chat-nuvo">
-                <p>Moved two blocks to tomorrow, both before your 11am. The Chapter 4 draft keeps its slot.</p>
+          {m.kind === 'offer' ? (
+            /* D-201: no chat. Nuvo offers on the task itself — the first time
+               that fits, or the next one when today is full — and nothing moves
+               until you tap it. The words are the app's own (RailOffers). */
+            <div className="offer">
+              <div className="offer-card">
+                <p className="offer-k">
+                  <span aria-hidden>✦</span> Two tasks lost their time
+                </p>
                 <ul>
-                  <li>
-                    <span>Onboarding · Step 2</span>
-                    <span className="mono">Thu 9–10:30am</span>
-                  </li>
-                  <li>
-                    <span>Pricing page · FAQ</span>
-                    <span className="mono">Thu 10:30–11am</span>
-                  </li>
+                  {OFFERS.map((o) => (
+                    <li key={o.task} data-offer>
+                      <span className="offer-t">
+                        {o.task} <span className="mono">{o.size}</span>
+                      </span>
+                      <span className="offer-when">
+                        Schedule <b className="mono">{o.when}</b> · {o.why}
+                      </span>
+                      <span className="offer-acts" aria-hidden>
+                        <span className="offer-btn is-primary">Schedule</span>
+                        <span className="offer-btn">Not now</span>
+                      </span>
+                    </li>
+                  ))}
                 </ul>
-                <span className="undo">Undo</span>
               </div>
-              <p className="moment-body">It proposes and shows its work. Every change carries an undo.</p>
+              <p className="moment-body">It offers, on the task itself. Nothing moves until you tap it, and every change carries an undo.</p>
             </div>
           ) : (
             <p className="moment-body">{m.body}</p>
@@ -463,10 +473,10 @@ export function FridayScene() {
   )
 }
 
-/* ── Memory + the chat ────────────────────────────────────────────────────
-   The Inspector the app opens over the page (docs/memory.md §4.3), and the
-   chat answering from what you kept (§7). The chat reads Memory; it never
-   keeps or forgets one — that act lives in the panel. */
+/* ── Memory, and what plans from it ───────────────────────────────────────
+   The Inspector the app opens over the page (docs/memory.md §4.3), and Plan
+   the week's draft landing in the slot you kept. There is no chat (D-201):
+   Memory is read by what plans for you, never by a conversation. */
 
 export function MemoryScene() {
   return (
@@ -527,9 +537,9 @@ export function MemoryScene() {
       </div>
 
       <div className="mem-chat" data-mem-chat>
-        <p className="mem-me">Find time for Chapter 4 this week.</p>
         <div className="mem-nuvo">
-          <p>Two sittings in your Deep work afternoons, Tuesday and Thursday.</p>
+          <p className="k-label">Plan the week · draft</p>
+          <p>Chapter 4 lands in your Deep work afternoons, Tuesday and Thursday.</p>
           <ul>
             <li style={{ '--hue': CRAFT } as CSSProperties}>
               <span>Chapter 4 · Draft</span>

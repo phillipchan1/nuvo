@@ -241,7 +241,7 @@ export type Moment = {
   label: string
   title: string
   body: string
-  kind: 'brief' | 'block' | 'ask' | 'close'
+  kind: 'brief' | 'block' | 'offer' | 'close'
 }
 
 export const DAY_MOMENTS: Moment[] = [
@@ -264,10 +264,10 @@ export const DAY_MOMENTS: Moment[] = [
   {
     time: '1:10pm',
     h: 13.17,
-    label: 'Ask Nuvo',
+    label: 'Nuvo offers',
     title: 'The board call ran long.',
     body: '',
-    kind: 'ask',
+    kind: 'offer',
   },
   {
     time: '6:00pm',
@@ -277,6 +277,14 @@ export const DAY_MOMENTS: Moment[] = [
     body: 'What didn’t happen rolls forward with its project attached. Tomorrow starts warm, not from scratch.',
     kind: 'close',
   },
+]
+
+/** The 1:10pm moment: Nuvo's offers on the two tasks a long meeting knocked
+ *  off the day — in the app's own words (RailOffers' hold: "the first time that
+ *  fits" / "today is full; the next time that fits"). There is no chat (D-201). */
+export const OFFERS = [
+  { task: 'Pricing page · FAQ', size: '30m', when: '3:30pm', why: 'the first time that fits' },
+  { task: 'Onboarding · Step 2', size: '1h30', when: 'Thu 9am', why: 'today is full; the next time that fits' },
 ]
 
 /* ── Friday ──────────────────────────────────────────────────────────────── */

@@ -3435,7 +3435,7 @@ macOS stays `com.nuvo.app`. First green TestFlight upload pending GitHub secrets
 | **Q-02** | Is *refusal* a first-class act at Summit — an explicit "not this quarter" object? | Q6 in the Question Ledger is ◐ because there's nowhere to put a no | Wanting a "refused bets" surface at all |
 | **Q-03** | Does non-calendar work become visible via activity sources beyond GitHub? | W8 ("where did my time go") is ◐ while shipped-but-unblocked work is invisible | The GitHub instance proving the pattern |
 | **Q-04** | Should `TendingFlow` be retired now the Refine run has proven out? | Two grooming paths is a Principle 11 violation waiting to happen | Refine run confidence on real data |
-| **Q-05** | What is the transitional CTA on the marketing site? | Currently direct CTA only — the biggest funnel gap (brandscript §5) | Picking one and writing it |
+| **Q-05** | ~~What is the transitional CTA on the marketing site?~~ **Answered by D-246** — `/method`, *the five habits of people who get it all done* — a cousin of the *Commitment explainer* candidate from brandscript §5. Still open: whether it converts; nobody has measured it | Was direct CTA only — the biggest funnel gap (brandscript §5) | A read on whether strangers who reach `/method` start a trial |
 | **Q-10** | ~~Do the two first-run surfaces compose?~~ **Mostly answered by D-059** — the sequence is now deliberate and each surface asks one question: the picker collects *what you carry*, the fork asks *how you want to learn*, the path teaches. Still open: nobody has watched a stranger take the pair back to back, and the live door's auto-advance transition is unverified (every milestone is pre-satisfied in the builder's account) | Principle 8, and whether the fork reads as a choice or as a wall | One genuinely fresh account, watched |
 | **Q-07** | Where do timezone and working hours come from for a new account? | Rollover is LA-anchored and hours default to 480/990. Both are silent wrongness for anyone else — and capacity math depends on them | Reading how the rollover cron and `user_settings` actually resolve per user |
 | **Q-11** | Where does Monday's reader for `note_to_monday` live? | The Find has written this column since migration 33 and **nothing reads it** — the surface that did went with the Today rung. It's a letter from Friday-you to Monday-you that never arrives, and it's the precedent D-062 was written against. Either give it a reader or cut the field; leaving it is the one thing that shouldn't continue | Deciding which surface Monday actually opens on |
@@ -9561,3 +9561,69 @@ same local account: identical to master, render for render (the same 17 budgets 
 both; they were set on the smaller dummy account). Scale note: one
 object answers every account's polls; past a few hundred polls a second, shard it by account (the
 credential map would move to KV or the Cache API).*
+
+**D-246 · 2026-11-17 · The site gets its transitional CTA: `/method`, "How the ambitious get it
+all done" — five habits, one system, a partner inside each. Answers
+[Q-05](#3--open-questions-decide-these-deliberately).** *(Asked by the operator: explain the
+methodology "in an interesting, compelling way"; then the frame, in his words — "4/5 habits of
+ambitious people to get everything done… the story is how Nuvo does all of this in an integrated
+way, and agentic connection to help along the way.")*
+
+**The five habits, in the order work moves through them** (his list, reordered into the
+pipeline): **01 Everything goes in one place** (capture) · **02 They plan in quarters, not just
+days** (initiatives → projects → tasks) · **03 Everything has a time and a place** (a scheduled
+task is the block; Sunday drafts the week into open hours) · **04 Every day is measured** (the
+morning brief, the next block, the evening close) · **05 It all ties together** (pace,
+Commitment, Friday's evidence). Each habit is stated as a practice anyone could keep, then *In
+Nuvo* says how the app makes it the default, then a scene shows it.
+
+**The story after the list.** *Five habits. Usually five apps* — notes, a board, a calendar,
+memory, a spreadsheet — and the handoffs between them are where work gets lost: **Drift**
+(brandscript §2, said on the site for the first time). Then the integration, shown rather than
+claimed: **one task followed through all five habits** (typed Monday 8:02 → filed under Pricing
+page → Tue 9–9:45 → done, with its prepared draft → the project reads 6 of 7, on pace). Then
+**the partner**: one line per habit for what Nuvo drafts or prepares, under the rule *It drafts.
+You keep.*
+
+**Why a page, not a home section.** The home page shows *what* Nuvo does (D-186) and is already
+long; this argues *why it has to be one system*, which is the job brandscript §5 gave the
+transitional CTA.
+
+**The home page wears the habits (same day, the operator's pick over folding `/method` in).** The
+home page already showed all five, unnamed: Capture · The system · Plan the week · The day · the
+honest part and Friday. So each of those sections now carries its habit as its label (`Habit 01 ·
+One place` … `Habit 05 · Tied together`, read from `method/data.ts`'s `HABITS`, so the two pages
+can't drift), Capture moved up ahead of the system so the numbers run in order, and a **five-habit
+strip** after the manifesto links down to each section and over to `/method` ("Why they only work
+as one system"). `/method` keeps what the home page doesn't have: five apps and Drift, one task
+through all five, and the partner. Rejected: folding `/method` into home — a longer page, and
+reordering the pinned scenes (the system, the week) is the most fragile motion on the site.
+Also linked from the nav and the footer.
+
+**Three objections, led with.**
+- **"Habits" is near a refusal.** Overview §2 says Nuvo is *not* a habit or streak tracker. The
+  page uses "habit" only for the reader's own practice; nothing on it tracks, scores or streaks
+  the person, and the tracking in habit 05 is of projects against dates. If the word starts
+  pulling the product toward streaks, the frame is wrong, not the refusal. **P11:** Memory's
+  Rhythm also says "habits" (recurring calendar patterns); the site word is not an app name.
+- **The partner is not a chat.** D-201 removed the chat; every partner line names an act inside
+  the work (capture parsing, the new-project scaffold, Plan the week's draft and Memory's hours,
+  Prepare ✦, the Review's narration and the Find). No "Ask Nuvo" on this page. *Fixed the same
+  day on the home page too:* the Day chapter's 1:10pm "Ask Nuvo" chat became **Nuvo offers** —
+  the app's own hold offer on the two tasks a long meeting knocked off the day ("Schedule 3:30pm ·
+  the first time that fits" / "today is full; the next time that fits", Schedule · Not now) — and
+  Memory's chat bubble became Plan the week's draft landing in the kept Deep work slot. `/method`'s
+  partner section gains the one way left to *talk* to Nuvo: connect your own assistant (master's
+  `NuvoConnect`). **Still stale:** `Support.tsx` documents Ask Nuvo in two places.
+- **Strains [P7](./principles.md).** Habits 03 and 05 lean on a pace "you've proven"; a
+  brand-new account has none, and the page's example week is a lived-in one.
+
+**Honesty.** No statistic anywhere. Every number is one example world (`method/data.ts`): the four
+projects' pace sums to 19h against 17 open hours for the 112%, and the thread's "6 of 7" is the
+same project Friday reports.
+
+*Status: built in `marketing/src/method/` (`Method.tsx`, `data.ts`, `method.css`, `motion.ts`),
+routed and prerendered at `/method`. Typecheck + build + prerender green. The prerendered page (the
+no-JS final state) was viewed at desktop width and at 375px: single column on the phone, no
+horizontal overflow. **Not run:** the scroll motion in a live browser (no dev-server slot was
+free), a real iPhone.*

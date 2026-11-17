@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import Home from './Home'
+import Method from './method/Method'
 import Privacy from './pages/Privacy'
 import Share from './pages/Share'
 import Support from './pages/Support'
@@ -64,6 +65,7 @@ export default function App() {
     }
   }, [path])
 
+  if (path === '/method') return <Method />
   if (path === '/privacy') return <Privacy />
   if (path === '/terms') return <Terms />
   if (path === '/share') return <Share />

@@ -1,0 +1,796 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   /method — "How the ambitious get it all done." Five habits.  (D-246)
+
+   Rides on home.css: the same nav, hero, manifesto, close and footer, so the
+   two pages read as one site. What's here: the five habits beside a sticky
+   index, one scene per habit, the dark "why it's hard" chapter, one task
+   threaded through all five, and the partner. Tokens only; domain hues arrive
+   through --hue. Every scene's final state is the default; motion.ts animates
+   toward it.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.mth-hero .hero-h1 {
+  font-size: clamp(3.2rem, 12.5vw, 11rem);
+}
+.mth-hero .hero-line:nth-child(3) {
+  padding-left: 0;
+}
+.mth-hero .hero-line:nth-child(4) {
+  padding-left: 0.9em;
+}
+@media (max-width: 699px) {
+  .mth-hero .hero-line:nth-child(4) {
+    padding-left: 0;
+  }
+}
+.mth-cue {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+  padding: 10px 0;
+}
+.mth-cue span {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--line-2);
+}
+@media (min-width: 900px) {
+  .mth-cue {
+    justify-self: end;
+  }
+}
+@media (hover: hover) {
+  .mth-cue:hover span {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+}
+.mth .mf {
+  padding-top: clamp(110px, 18vh, 200px);
+}
+
+/* ── shared card + dot ───────────────────────────────────────────────────── */
+.mth-card {
+  position: relative;
+  background: var(--raised);
+  border-radius: var(--r-dialog);
+  box-shadow: var(--sh-pop);
+  padding: clamp(18px, 2.4vw, 28px);
+  min-width: 0;
+}
+.mth-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--hue, var(--accent));
+  flex: none;
+}
+
+/* ── the five habits, beside a sticky index ──────────────────────────────── */
+.mth-habits {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 0 var(--pad) clamp(60px, 10vh, 120px);
+  display: grid;
+  gap: 40px;
+}
+.mth-index {
+  display: none;
+}
+@media (min-width: 1000px) {
+  .mth-habits {
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 80px;
+  }
+  .mth-index {
+    display: block;
+  }
+  .mth-index-sticky {
+    position: sticky;
+    top: 110px;
+  }
+}
+.mth-index ol {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.mth-index li {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0 8px 14px;
+  border-left: 2px solid var(--line);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--faint);
+  transition: color var(--d-2, 180ms) ease, border-color var(--d-2, 180ms) ease;
+}
+.mth-index li .mono {
+  font-size: 12px;
+  padding-top: 1px;
+}
+.mth-index ol[data-on="0"] li[data-index-item="0"],
+.mth-index ol[data-on="1"] li[data-index-item="1"],
+.mth-index ol[data-on="2"] li[data-index-item="2"],
+.mth-index ol[data-on="3"] li[data-index-item="3"],
+.mth-index ol[data-on="4"] li[data-index-item="4"] {
+  color: var(--text);
+  border-left-color: var(--accent);
+}
+
+.mth-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: clamp(96px, 16vh, 180px);
+}
+.mth-habit {
+  display: grid;
+  gap: 0 56px;
+  scroll-margin-top: 96px;
+}
+@media (min-width: 1200px) {
+  .mth-habit {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    align-items: start;
+  }
+  .mth-habit > :not(.mth-scene) {
+    grid-column: 1;
+  }
+  .mth-habit > .mth-scene {
+    grid-column: 2;
+    grid-row: 1 / span 5;
+    margin-top: 0;
+  }
+}
+.mth-habit-n {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.mth-habit-t {
+  margin: 12px 0 0;
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-weight: 560;
+  font-size: clamp(2.1rem, 4.4vw, 3.8rem);
+  line-height: 1;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+.mth-habit-p {
+  margin: 20px 0 0;
+  max-width: 34rem;
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-weight: 420;
+  font-size: clamp(1.2rem, 1.8vw, 1.45rem);
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.mth-in-nuvo {
+  margin-top: 24px;
+  max-width: 34rem;
+  padding-left: 16px;
+  border-left: 2px solid var(--accent);
+}
+.mth-in-nuvo p:last-child {
+  margin: 6px 0 0;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+.mth-scene {
+  margin-top: 32px;
+  min-width: 0;
+}
+
+/* habit 01 — a sentence becomes structure */
+.mth-cap-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 0 14px;
+  border-radius: var(--r-card);
+  border: 1px solid var(--accent-ring);
+  background: var(--panel);
+  font-size: clamp(14px, 1.6vw, 16px);
+}
+.mth-cap-k {
+  flex: none;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: var(--r-chip);
+  border: 1px solid var(--line-2);
+  color: var(--muted);
+}
+.mth-cap-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mth-cap-arrow {
+  text-align: center;
+  color: var(--faint);
+  padding: 10px 0;
+}
+.mth-cap-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+@media (min-width: 560px) {
+  .mth-cap-chips {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.mth-cap-chips li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--r-card);
+  background: var(--sunk);
+}
+.mth-cap-chips b {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* habit 02 — the chain */
+.mth-chain {
+  display: grid;
+  gap: 10px;
+}
+.mth-chain-row {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin-left: calc(var(--i) * clamp(10px, 3vw, 28px));
+  padding: 10px 12px;
+  border-radius: var(--r-card);
+  background: var(--sunk);
+  box-shadow: inset 3px 0 0 var(--work);
+}
+.mth-chain-row b {
+  font-size: 15px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mth-chain-row .mono {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+@media (max-width: 479px) {
+  .mth-chain-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .mth-chain-row .k-label {
+    grid-column: 1 / -1;
+  }
+}
+
+/* habit 03 — the week */
+.mth-wk-head {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.mth-wk-head span {
+  padding-left: 4px;
+}
+.mth-wk-body {
+  position: relative;
+  height: clamp(280px, 30vw, 340px);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(10% - 1px),
+    var(--line) calc(10% - 1px),
+    var(--line) 10%
+  );
+}
+.mth-mtg,
+.mth-blk {
+  position: absolute;
+  overflow: hidden;
+  padding: 3px 6px;
+  border-radius: var(--r-chip);
+  font-size: 11px;
+  line-height: 1.25;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mth-mtg {
+  border: 1px solid var(--line-strong);
+  background: var(--sunk);
+  color: var(--muted);
+}
+.mth-blk {
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--hue) 14%, var(--raised));
+  box-shadow: inset 2px 0 0 var(--hue);
+  color: var(--text);
+}
+.mth-blk b {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mth-blk span {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 479px) {
+  .mth-mtg {
+    font-size: 0;
+  }
+  .mth-blk {
+    font-size: 10px;
+    padding: 2px 4px;
+  }
+  .mth-blk span {
+    display: none;
+  }
+}
+
+/* habit 04 — the measured day */
+.mth-day ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: relative;
+  display: grid;
+  gap: 22px;
+}
+.mth-day ol::before {
+  content: "";
+  position: absolute;
+  left: 64px;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: var(--line-2);
+}
+.mth-day li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 24px;
+}
+.mth-day li::before {
+  content: "";
+  position: absolute;
+  left: 60px;
+  top: 4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--raised);
+  border: 2px solid var(--accent);
+}
+.mth-day-at {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: right;
+  padding-top: 1px;
+}
+.mth-day p {
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.mth-prep {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: var(--r-chip);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  vertical-align: 1px;
+}
+
+/* habit 05 — tied together */
+.mth-commit-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.mth-commit-num {
+  font-size: clamp(3.2rem, 6vw, 4.6rem);
+  font-weight: 680;
+  line-height: 0.85;
+  letter-spacing: -0.06em;
+  color: var(--warn);
+}
+.mth-commit-l {
+  margin: 0;
+  font-weight: 650;
+}
+.mth-commit-m {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.mth-pace {
+  list-style: none;
+  margin: 20px 0 0;
+  padding: 0;
+}
+.mth-pace li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  font-size: 14px;
+  border-top: 1px solid var(--line);
+}
+.mth-pace li > span:nth-of-type(1) {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mth-pace-math {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.mth-pace li b {
+  min-width: 96px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ok);
+  white-space: nowrap;
+}
+.mth-pace li b.is-behind {
+  color: var(--warn);
+}
+.mth-fri {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-2);
+}
+.mth-fri ul {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+}
+.mth-fri li {
+  display: flex;
+  gap: 10px;
+}
+.mth-fri li > span {
+  color: var(--ok);
+  font-weight: 700;
+  width: 14px;
+  flex: none;
+}
+
+/* ── why it's hard (the ink chapter) ─────────────────────────────────────── */
+.mth-villain {
+  background: var(--bg);
+  color: var(--text);
+}
+.mth-villain-inner {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: clamp(110px, 18vh, 200px) var(--pad);
+}
+.mth-villain-h2 {
+  max-width: 900px;
+}
+.mth-scatter {
+  list-style: none;
+  margin: clamp(36px, 5vw, 56px) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+@media (min-width: 900px) {
+  .mth-scatter {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 14px;
+  }
+}
+.mth-scatter li {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 12px;
+  padding: 14px 16px;
+  border-radius: var(--r-card);
+  border: 1px solid var(--line-2);
+}
+@media (min-width: 900px) {
+  .mth-scatter li {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    padding: 16px;
+  }
+}
+.mth-scatter .mono {
+  font-size: 12px;
+  color: var(--faint);
+  padding-top: 2px;
+}
+.mth-scatter b {
+  font-size: 15px;
+  font-weight: 600;
+}
+.mth-scatter-lost {
+  grid-column: 2;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--signal);
+}
+@media (min-width: 900px) {
+  .mth-scatter-lost {
+    grid-column: 1;
+  }
+}
+.mth-villain-h {
+  margin: clamp(72px, 12vh, 140px) 0 0;
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-weight: 460;
+  font-size: clamp(1.6rem, 3.2vw, 2.7rem);
+  letter-spacing: -0.02em;
+  color: var(--muted);
+}
+.mth-villain-word {
+  display: block;
+  margin-top: 0.1em;
+  font-weight: 620;
+  font-size: clamp(5rem, 22vw, 19rem);
+  line-height: 0.85;
+  letter-spacing: -0.06em;
+  color: var(--text);
+  will-change: transform;
+}
+.mth-villain-def {
+  margin: clamp(32px, 5vw, 56px) 0 0;
+  max-width: 1000px;
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-weight: 460;
+  font-size: clamp(1.6rem, 3.4vw, 3rem);
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+}
+.mth-villain-foot {
+  margin-top: clamp(40px, 6vw, 72px);
+  padding-top: 28px;
+  border-top: 1px solid var(--line-2);
+  display: grid;
+  gap: 18px 64px;
+  max-width: 1000px;
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.mth-villain-foot p {
+  margin: 0;
+}
+.mth-villain-foot b {
+  color: var(--text);
+  font-weight: 600;
+}
+@media (min-width: 760px) {
+  .mth-villain-foot {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ── one system: a single task through all five ──────────────────────────── */
+.mth-thread-s {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: clamp(110px, 18vh, 200px) var(--pad) clamp(60px, 10vh, 120px);
+}
+.mth-thread-head {
+  max-width: 760px;
+}
+.mth-thread {
+  list-style: none;
+  margin: clamp(40px, 6vw, 64px) 0 0;
+  padding: 0;
+  position: relative;
+  display: grid;
+  gap: 14px;
+}
+@media (min-width: 1000px) {
+  .mth-thread {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .mth-thread::before {
+    content: "";
+    position: absolute;
+    left: 10%;
+    right: 10%;
+    top: 30px;
+    height: 2px;
+    background: var(--accent);
+    opacity: 0.35;
+  }
+}
+.mth-thread li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px;
+  border-radius: var(--r-dialog);
+  background: var(--raised);
+  box-shadow: var(--sh-pop);
+}
+.mth-thread-dot {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-bottom: 6px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.mth-thread b {
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+.mth-thread-when {
+  font-size: 12px;
+  color: var(--muted);
+}
+.mth-thread p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.mth-thread-foot {
+  margin: 28px 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.25rem, 2vw, 1.6rem);
+  letter-spacing: -0.015em;
+}
+
+/* ── the partner ─────────────────────────────────────────────────────────── */
+.mth-partner {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: clamp(80px, 14vh, 160px) var(--pad);
+  display: grid;
+  gap: 48px;
+}
+@media (min-width: 960px) {
+  .mth-partner {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 96px;
+    align-items: start;
+  }
+}
+.mth-rule {
+  margin-top: 32px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 18px 20px;
+  border-radius: var(--r-dialog);
+  background: var(--accent-soft);
+}
+.mth-rule-star {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 18px;
+}
+.mth-rule div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mth-rule b {
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+.mth-rule div > span {
+  font-size: 14px;
+  color: var(--muted);
+}
+.mth-connect {
+  margin: 20px 0 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.mth-connect b {
+  color: var(--text);
+  font-weight: 600;
+}
+.mth-partner-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.mth-partner-list li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 4px 14px;
+  padding: 20px 0;
+  border-top: 1px solid var(--line-2);
+}
+.mth-partner-list li:last-child {
+  border-bottom: 1px solid var(--line-2);
+}
+.mth-partner-list .mono {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  padding-top: 3px;
+}
+.mth-partner-h {
+  font-weight: 650;
+}
+.mth-partner-list p {
+  grid-column: 2;
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* motion-only starting states live in motion.ts (gsap.from) — never here,
+   so a page without JS is simply finished. */

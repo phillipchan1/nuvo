@@ -777,6 +777,101 @@
   background: var(--accent);
 }
 
+/* ── the five habits — the page's spine (D-246) ───────────────────────────
+   Five doors down the page, one over to /method. Hairline cells on the flat
+   ground; nothing floats, because nothing here is an object. */
+.hb {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 0 var(--pad) clamp(60px, 10vh, 110px);
+}
+.hb-head {
+  display: grid;
+  gap: 16px;
+  align-items: end;
+}
+.hb-head .h2 {
+  max-width: 14em;
+}
+@media (min-width: 900px) {
+  .hb-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .hb-head .k-label {
+    grid-column: 1 / -1;
+  }
+}
+.hb-more {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  padding: 10px 0;
+}
+.hm .hb-more {
+  color: var(--accent);
+}
+.hb-list {
+  list-style: none;
+  margin: 36px 0 0;
+  padding: 0;
+  display: grid;
+  border-top: 1px solid var(--line-2);
+}
+@media (min-width: 900px) {
+  .hb-list {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .hb-list li + li {
+    border-left: 1px solid var(--line-2);
+  }
+}
+.hb-list li {
+  border-bottom: 1px solid var(--line-2);
+}
+.hb-list a {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  height: 100%;
+  padding: 16px 4px;
+  text-decoration: none;
+}
+@media (min-width: 900px) {
+  .hb-list a {
+    flex-direction: column;
+    gap: 10px;
+    padding: 20px 18px 24px;
+  }
+}
+.hb-list .mono {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.hb-list b {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-weight: 540;
+  font-size: clamp(1.15rem, 1.6vw, 1.35rem);
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+}
+@media (hover: hover) {
+  .hb-list a:hover {
+    background: var(--hover);
+  }
+  .hb-more:hover span {
+    translate: 3px 0;
+  }
+}
+.hb-more span {
+  transition: translate var(--d-2, 180ms) ease;
+}
+
 /* ── the system (cascade) ─────────────────────────────────────────────────── */
 .sys-pin {
   max-width: var(--max);
@@ -1634,24 +1729,14 @@ html:not(.hm-motion) .moment-dot {
   border-radius: var(--r-chip);
   padding: 2px 7px;
 }
-.chat {
+.offer {
   margin-top: 20px;
   display: grid;
   gap: 12px;
   max-width: 34rem;
 }
-.chat-me {
-  justify-self: end;
-  max-width: 85%;
-  margin: 0;
-  padding: 10px 14px;
-  border-radius: var(--r-dialog) var(--r-dialog) var(--r-chip) var(--r-dialog);
-  background: var(--accent);
-  color: var(--on-accent);
-  font-size: 15px;
-  line-height: 1.45;
-}
-.chat-nuvo {
+/* Nuvo's offers on the tasks a long meeting knocked off the day (D-201) */
+.offer-card {
   padding: 16px;
   border-radius: var(--r-dialog);
   background: var(--night-2);
@@ -1659,33 +1744,44 @@ html:not(.hm-motion) .moment-dot {
   font-size: 15px;
   line-height: 1.5;
 }
-.chat-nuvo p {
+.offer-k {
   margin: 0;
+  font-weight: 600;
 }
-.chat-nuvo ul {
+.offer-k span {
+  color: var(--accent);
+  margin-right: 4px;
+}
+.offer-card ul {
   list-style: none;
   margin: 12px 0 0;
   padding: 0;
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
-.chat-nuvo li {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 9px 12px;
+.offer-card li {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
   border-radius: var(--r-ctl);
   background: color-mix(in srgb, var(--work) 14%, var(--night-2));
   box-shadow: inset 2px 0 0 var(--work);
   font-size: 13.5px;
 }
-.chat-nuvo li .mono {
+.offer-t .mono,
+.offer-when {
   color: var(--night-muted);
-  white-space: nowrap;
 }
-.undo {
-  display: inline-block;
-  margin-top: 12px;
+.offer-when b {
+  color: var(--night-ink);
+  font-weight: 600;
+}
+.offer-acts {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.offer-btn {
   font-size: 12.5px;
   font-weight: 600;
   padding: 4px 10px;
@@ -1693,13 +1789,18 @@ html:not(.hm-motion) .moment-dot {
   border: 1px solid var(--night-line);
   color: var(--night-ink);
 }
-.chat .moment-body {
+.offer-btn.is-primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.offer .moment-body {
   margin-top: 4px;
 }
 
-/* ── memory + the chat ────────────────────────────────────────────────────
-   The Inspector (352px, flush: head · tabs · rows · footer) and the chat
-   answering from it. Kit surfaces, Inter, nothing blurs. */
+/* ── memory, and what plans from it ───────────────────────────────────────
+   The Inspector (352px, flush: head · tabs · rows · footer) and Plan the
+   week's draft landing in a kept slot (no chat, D-201). Kit surfaces, Inter, nothing blurs. */
 .mem {
   max-width: var(--max);
   margin: 0 auto;
@@ -1933,7 +2034,7 @@ html:not(.hm-motion) .moment-dot {
   color: var(--muted);
 }
 
-/* the chat, answering from Memory — overlaps the panel's corner on desktop */
+/* Plan the week's draft, planning from Memory — overlaps the panel's corner on desktop */
 .mem-chat {
   display: grid;
   gap: 10px;
@@ -1947,18 +2048,6 @@ html:not(.hm-motion) .moment-dot {
     bottom: 0;
   }
 }
-.mem-me {
-  justify-self: end;
-  max-width: 85%;
-  margin: 0;
-  padding: 10px 14px;
-  border-radius: var(--r-dialog) var(--r-dialog) var(--r-chip) var(--r-dialog);
-  background: var(--accent);
-  color: var(--on-accent);
-  font-size: 14px;
-  line-height: 1.45;
-  box-shadow: var(--sh-1);
-}
 .mem-nuvo {
   padding: 14px;
   border-radius: var(--r-dialog);
@@ -1969,6 +2058,9 @@ html:not(.hm-motion) .moment-dot {
 }
 .mem-nuvo p {
   margin: 0;
+}
+.mem-nuvo .k-label {
+  margin-bottom: 6px;
 }
 .mem-nuvo ul {
   list-style: none;

@@ -273,13 +273,11 @@ export function initMotion(root: HTMLElement): () => void {
         scrollTrigger: { trigger: m, start: 'top 80%', toggleClass: { targets: m, className: 'is-lit' } },
       })
       ScrollTrigger.create({ trigger: m, start: 'top 60%', end: 'bottom 40%', toggleClass: { targets: m, className: 'is-lit' } })
-      const chat = m.querySelector('.chat')
-      if (chat) {
-        const ctl = gsap.timeline({ scrollTrigger: { trigger: chat, start: 'top 75%' } })
-        ctl.from(chat.querySelector('.chat-me'), { opacity: 0, x: 40, duration: 0.6, ease: 'power3.out' })
-        ctl.from(chat.querySelector('.chat-nuvo'), { opacity: 0, y: 20, duration: 0.6, ease: 'power3.out' }, '+=0.5')
-        ctl.from(q(chat, '.chat-nuvo li'), { opacity: 0, x: -14, stagger: 0.15, duration: 0.4 }, '-=0.2')
-        ctl.from(chat.querySelector('.undo'), { opacity: 0, scale: 0.7, duration: 0.4, ease: 'back.out(2)' })
+      const offer = m.querySelector('.offer-card')
+      if (offer) {
+        const ctl = gsap.timeline({ scrollTrigger: { trigger: offer, start: 'top 75%' } })
+        ctl.from(offer, { opacity: 0, y: 20, duration: 0.6, ease: 'power3.out' })
+        ctl.from(q(offer, '[data-offer]'), { opacity: 0, x: -14, stagger: 0.15, duration: 0.4 }, '-=0.2')
       }
     })
 
@@ -322,7 +320,7 @@ export function initMotion(root: HTMLElement): () => void {
       scrollTrigger: { trigger: '[data-arith]', start: 'top 75%' },
     })
 
-    /* ── MEMORY ── the panel's rows arrive, then the chat plans from them */
+    /* ── MEMORY ── the panel's rows arrive, then the week's draft plans from them */
     gsap.from('[data-mem]', {
       opacity: 0,
       y: 16,
@@ -335,8 +333,7 @@ export function initMotion(root: HTMLElement): () => void {
     if (memChat) {
       gsap
         .timeline({ scrollTrigger: { trigger: '[data-memory]', start: 'top 55%' } })
-        .from(memChat.querySelector('.mem-me'), { opacity: 0, x: 30, duration: 0.5, ease: 'power3.out' }, 0.6)
-        .from(memChat.querySelector('.mem-nuvo'), { opacity: 0, y: 16, duration: 0.5, ease: 'power3.out' }, '+=0.35')
+        .from(memChat.querySelector('.mem-nuvo'), { opacity: 0, y: 16, duration: 0.5, ease: 'power3.out' }, 0.6)
         .from(memChat.querySelectorAll('.mem-nuvo li'), { opacity: 0, y: 8, duration: 0.38, stagger: 0.1, ease: 'back.out(1.6)' }, '-=0.1')
     }
 
