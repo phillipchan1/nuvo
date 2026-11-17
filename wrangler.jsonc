@@ -61,10 +61,20 @@
   // reminders and calendar polls are next due, so a quiet minute never touches
   // Neon. SQLite-backed; `wrangler deploy` creates it from the migration, no
   // manual namespace. Named envs do not inherit this — preview declares its own.
+  // SYNC_MARKER (worker/src/syncMarker.ts, D-245): the change feed's edge-held
+  // "has this account changed since" marker, so a quiet feed poll touches no
+  // database. Persists its clock, proofs and verified credentials (an evicted
+  // object would otherwise forget them between polls); SQLite-backed like CronGate.
   "durable_objects": {
-    "bindings": [{ "name": "CRON_GATE", "class_name": "CronGate" }]
+    "bindings": [
+      { "name": "CRON_GATE", "class_name": "CronGate" },
+      { "name": "SYNC_MARKER", "class_name": "SyncMarker" }
+    ]
   },
-  "migrations": [{ "tag": "v1-cron-gate", "new_sqlite_classes": ["CronGate"] }],
+  "migrations": [
+    { "tag": "v1-cron-gate", "new_sqlite_classes": ["CronGate"] },
+    { "tag": "v2-sync-marker", "new_sqlite_classes": ["SyncMarker"] }
+  ],
   // Calendar-dispatch fan-out. Included Queue ops on Workers Paid; see
   // worker/src/cronJobs.ts for the per-account projection. The queue must
   // exist before `wrangler deploy` (it does not create it):
@@ -102,9 +112,12 @@
         "BETTER_AUTH_URL": "https://nuvo-preview.nq-morning-briefing.workers.dev",
         "ENVIRONMENT": "preview"
       },
-      // Not inherited from the top level (D-239).
+      // Not inherited from the top level (D-239, D-245).
       "durable_objects": {
-        "bindings": [{ "name": "CRON_GATE", "class_name": "CronGate" }]
+        "bindings": [
+          { "name": "CRON_GATE", "class_name": "CronGate" },
+          { "name": "SYNC_MARKER", "class_name": "SyncMarker" }
+        ]
       },
       // Its OWN queue. A queue has exactly one consumer Worker, so sharing
       // `nuvo-calendar-sync` would make the preview and prod deploys steal

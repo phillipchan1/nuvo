@@ -388,14 +388,16 @@ function errorStatus(err: unknown): number | string | undefined {
 export async function sessionUser(
   auth: AuthInstance,
   req: Request,
-): Promise<{ id: string; email?: string | null; emailVerified: boolean } | null> {
+): Promise<{ id: string; email?: string | null; emailVerified: boolean; sessionExpiresAt?: number | null } | null> {
   try {
     const session = await auth.api.getSession({ headers: req.headers });
     if (!session?.user?.id) return null;
+    const expires = session.session?.expiresAt ? new Date(session.session.expiresAt).getTime() : NaN;
     return {
       id: session.user.id,
       email: session.user.email,
       emailVerified: session.user.emailVerified === true,
+      sessionExpiresAt: Number.isFinite(expires) ? expires : null,
     };
   } catch (err) {
     const status = errorStatus(err);

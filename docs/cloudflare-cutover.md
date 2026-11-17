@@ -332,7 +332,9 @@ functions/triggers/policies, `auth` stub); 3 and 4 changed in code; 5, 7 and 10 
    topics reject a Better Auth bearer. Other devices converge on window focus (15s stale,
    `App.tsx`). **Since D-238** they converge through a polled change feed instead
    (`sync_changes`, `worker/src/syncFeed.ts` + `src/lib/sync/feed.ts`): once a minute, on focus,
-   and after each write, the client asks what moved and paints only that. A socket would cut the
+   and after each write, the client asks what moved and paints only that. **Since D-245** a quiet
+   answer comes from the `SYNC_MARKER` Durable Object (`worker/src/syncMarker.ts`) with no session
+   lookup and no SQL, so an idle open app lets Neon suspend. A socket would cut the
    latency from ≤60s to instant; it is no longer needed for cost. **Smallest honest design (not built):**
    - One Durable Object per account (`idFromName(userId)`) holding hibernatable WebSockets —
      an idle socket costs nothing, a message costs one request.

@@ -9,6 +9,7 @@ import { runWorkerOneShot } from "./agentOneShot.ts";
 import { OPEN_CORS, json } from "./cors.ts";
 import type { Env } from "./env.ts";
 import { requireStore, type AppEnv } from "./session.ts";
+import { markerPoke } from "./syncMarker.ts";
 
 const NOT_FOUND_RE = /^(project|initiative|task|domain) not found$/i;
 
@@ -131,6 +132,9 @@ export async function handleAgent(c: Context<AppEnv>): Promise<Response> {
         /* ignore */
       }
     } finally {
+      // The turn's tool writes land after the response began, so after the
+      // catch-all poke: tell the feed's marker once the turn is done (D-245).
+      await markerPoke(c.env, { users: [store.userId] });
       try {
         await writer.close();
       } catch {

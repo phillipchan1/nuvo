@@ -185,14 +185,20 @@ function standDown(qc: QueryClient) {
   catchUpAfterOwingKnown(qc);
 }
 
-async function pollOnce(qc: QueryClient): Promise<void> {
+async function pollOnce(qc: QueryClient, fresh: boolean): Promise<void> {
   const prev = qc.getQueryData<FeedState>(FEED_STATE_KEY) ?? {};
   lastPollAt = Date.now();
+  // `p_fresh`: the Worker asks Postgres rather than its change marker (D-245).
+  // After this device's own write the answer must carry what that write did;
+  // and a launch always gets the truth, so a change the marker could ever have
+  // missed is never further away than reopening the app.
+  const args = fresh || !launched ? { p_since: prev.cursor ?? null, p_fresh: true } : { p_since: prev.cursor ?? null };
   // Bounded: polls share one in-flight promise, so a request that never
   // settles (a socket a sleeping laptop left half-open) would silence the feed.
   const { data, error, status } = await supabase
-    .rpc("sync_changes", { p_since: prev.cursor ?? null })
+    .rpc("sync_changes", args)
     .abortSignal(AbortSignal.timeout(FEED_TIMEOUT_MS));
+  if (!error) launched = true;
   if (error) {
     // PGRST202: this Worker has no such RPC. Anything else (offline, a 5xx) is
     // a blip — the next focus or minute asks again.
@@ -211,6 +217,8 @@ async function pollOnce(qc: QueryClient): Promise<void> {
 let inflight: Promise<void> | null = null;
 let again = false;
 let lastPollAt = 0;
+/** This session has had one answer: later unforced polls may be answered at the edge. */
+let launched = false;
 
 /**
  * Ask the feed. Calls overlapping one in flight share it; a `force`d call (a
@@ -230,7 +238,7 @@ export function pollFeed(qc: QueryClient, opts: { force?: boolean } = {}): Promi
   const run = (async () => {
     try {
       await restoreGate;
-      await pollOnce(qc);
+      await pollOnce(qc, opts.force === true);
     } catch {
       // A network failure is the same as no answer: ask again next time.
     } finally {
@@ -255,6 +263,7 @@ export function installFeed(qc: QueryClient): void {
 /** Test seam. */
 export function resetFeedForTests(): void {
   health = "unknown";
+  launched = false;
   inflight = null;
   again = false;
   lastPollAt = 0;

@@ -21,7 +21,11 @@ export async function requireStore(
   c: Context<AppEnv>,
   raw?: Request,
 ): Promise<
-  | { store: Store; email: string | null; user: { id: string; email?: string | null; emailVerified: boolean } }
+  | {
+      store: Store;
+      email: string | null;
+      user: { id: string; email?: string | null; emailVerified: boolean; sessionExpiresAt?: number | null };
+    }
   | { error: Response }
 > {
   const io = await requestIo(c);

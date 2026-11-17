@@ -104,11 +104,34 @@ describe("the change feed — delta", () => {
 
     await pollFeed(qc);
 
-    expect(rpc).toHaveBeenCalledWith("sync_changes", { p_since: "10" });
+    // A launch's first question always reaches Postgres (D-245).
+    expect(rpc).toHaveBeenCalledWith("sync_changes", { p_since: "10", p_fresh: true });
     expect(qc.getQueryData<{ theme: string }>(["settings"])?.theme).toBe("dark");
     expect(invalidated(qc)).toEqual([]);
     expect(fetches.n).toBe(0);
     expect(qc.getQueryData(FEED_STATE_KEY)).toEqual({ cursor: "12" });
+  });
+
+  it("only the launch and a poll after this device's own write ask past the change marker (D-245)", async () => {
+    const qc = client();
+    qc.setQueryData(FEED_STATE_KEY, { cursor: "10" });
+    rpc.mockResolvedValue(answer({ mode: "delta", cursor: "10", reset: false, changes: [] }));
+
+    await pollFeed(qc);
+    expect(rpc).toHaveBeenLastCalledWith("sync_changes", { p_since: "10", p_fresh: true });
+
+    await pollFeed(qc, { force: true });
+    expect(rpc).toHaveBeenLastCalledWith("sync_changes", { p_since: "10", p_fresh: true });
+
+    // A plain minute poll: the marker may answer it.
+    const later = Date.now() + 60_000;
+    const clock = vi.spyOn(Date, "now").mockReturnValue(later);
+    try {
+      await pollFeed(qc);
+    } finally {
+      clock.mockRestore();
+    }
+    expect(rpc).toHaveBeenLastCalledWith("sync_changes", { p_since: "10" });
   });
 
   it("removes a row the server deleted", async () => {
@@ -140,7 +163,7 @@ describe("the change feed — delta", () => {
 
     await pollFeed(qc);
 
-    expect(rpc).toHaveBeenCalledWith("sync_changes", { p_since: null });
+    expect(rpc).toHaveBeenCalledWith("sync_changes", { p_since: null, p_fresh: true });
     expect(qc.getQueryData(FEED_STATE_KEY)).toEqual({ cursor: "7" });
     // The refetch already ran (active queries refetch on invalidate).
     expect(invalidated(qc)).toEqual([]);
