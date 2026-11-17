@@ -50,7 +50,7 @@ export async function handleAgent(c: Context<AppEnv>): Promise<Response> {
       typeof body.tool === "object" && body.tool && "args" in body.tool
         ? ((body.tool as { args?: Record<string, unknown> }).args ?? {})
         : ((body.args as Record<string, unknown> | undefined) ?? {});
-    const result = await executeOwnedTool(store, name, args ?? {});
+    const result = await executeOwnedTool(store, name, args ?? {}, resolveTz(body.tz));
     return json({ result }, 200, OPEN_CORS);
   }
 
@@ -110,7 +110,7 @@ export async function handleAgent(c: Context<AppEnv>): Promise<Response> {
           model: "gpt-4.1",
           headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
         }),
-        execute: async (name, args) => ({ result: await executeOwnedTool(store, name, args) }),
+        execute: async (name, args) => ({ result: await executeOwnedTool(store, name, args, tz) }),
         onText: async (chunk) => {
           await sse({ t: "c", v: chunk });
         },

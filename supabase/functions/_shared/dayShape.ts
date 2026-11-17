@@ -175,6 +175,35 @@ export function localToUtc(localStr: string, tz: string): string {
   return new Date(asIfUtc.getTime() + offsetMs).toISOString();
 }
 
+/**
+ * A tool's start time as a UTC ISO instant, or null when it can't be read.
+ *
+ * The agent's tools take the caller's LOCAL wall time ("YYYY-MM-DDTHH:MM",
+ * seconds tolerated and dropped), read in `tz`; an absolute ISO carrying `Z` or
+ * an offset — negative ones included, which a `+`-only test misreads as local —
+ * passes through as the instant it names. Anything else is null, never a guess.
+ */
+export function startInstant(raw: unknown, tz: string): string | null {
+  if (typeof raw !== "string") return null;
+  const s = raw.trim();
+  try {
+    const local = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?$/.exec(s);
+    if (local) {
+      const iso = localToUtc(local[1], tz);
+      // Date rolls Feb 30 into March without a word; a day that doesn't come
+      // back as itself was never a real day.
+      return localDateISO(iso, tz) === local[1].slice(0, 10) ? iso : null;
+    }
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}.*(?:Z|[+-]\d{2}:?\d{2})$/i.test(s)) {
+      const ms = Date.parse(s);
+      return Number.isNaN(ms) ? null : new Date(ms).toISOString();
+    }
+  } catch {
+    // An impossible wall time (month 13, hour 25) — unreadable, not a guess.
+  }
+  return null;
+}
+
 /** Minutes as a human duration: "45m", "3h", "3h 20m". */
 export function fmtMins(mins: number): string {
   if (mins <= 0) return "0m";

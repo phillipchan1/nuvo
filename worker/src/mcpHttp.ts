@@ -94,7 +94,7 @@ export async function handleMcp(c: Context<AppEnv>): Promise<Response> {
         );
         return JSON.stringify({ operator: { email: null }, ...ctx });
       }
-      return executeOwnedTool(store, name, args);
+      return executeOwnedTool(store, name, args, tz);
     }, null);
   };
 

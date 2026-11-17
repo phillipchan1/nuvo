@@ -24,9 +24,12 @@ import {
   FALLBACK_TZ,
   fmtEvent,
   fmtTask,
+  localDateISO,
   makeEventVisibility,
+  startInstant,
   todayIn,
 } from "../../supabase/functions/_shared/dayShape.ts";
+import { completionStamp, FALLBACK_PLANNED_MINUTES } from "../../supabase/functions/_shared/completedWork.ts";
 import {
   assertOwnedFks,
   contacts,
@@ -296,10 +299,14 @@ export async function executeOwnedTool(
   store: Store,
   name: string,
   args: Record<string, unknown>,
+  tz?: string,
 ): Promise<string> {
+  // The caller's zone reads every local wall time a tool is handed. The tool
+  // definitions promise America/Los_Angeles, which is FALLBACK_TZ.
+  const zone = resolveTz(tz ?? args.timezone);
   switch (name) {
     case "get_snapshot":
-      return JSON.stringify(await buildSnapshot(store, asId(args.range_start) ?? undefined, asId(args.range_end) ?? undefined, resolveTz(args.timezone)));
+      return JSON.stringify(await buildSnapshot(store, asId(args.range_start) ?? undefined, asId(args.range_end) ?? undefined, zone));
     case "list_vertical":
       return JSON.stringify({
         domains: await listOwned(store, "domains"),
@@ -322,44 +329,62 @@ export async function executeOwnedTool(
       return JSON.stringify(rows.filter((t) => t.status === "trashed"));
     }
     case "create_task":
-      return createRow(store, "tasks", {
-        title: args.title ?? args.text ?? "Untitled",
-        notes: args.notes,
-        status: args.status ?? "inbox",
-        project_id: args.project_id,
-        domain_id: args.domain_id,
-        slot_id: args.slot_id,
-        parent_task_id: args.parent_task_id ?? args.parent_id,
-      });
+      return createTask(store, args, zone);
     case "update_task":
-      return patchRow(store, "tasks", args.id, {
-        title: args.title,
-        project_id: args.project_id,
-        domain_id: args.domain_id,
-        slot_id: args.slot_id,
-        parent_task_id: args.parent_task_id,
-      });
+      return updateTask(store, args);
     case "complete_task":
-      return setTaskStatus(store, args.id, "done");
+      return onTask(store, args, (task) => setTaskStatus(store, task.id, "done"));
     case "trash_task":
-      return setTaskStatus(store, args.id, "trashed");
+      return onTask(store, args, (task) => setTaskStatus(store, task.id, "trashed"));
     case "move_to_inbox":
-      return setTaskStatus(store, args.id, "inbox");
+      // "Clearing dates and times" — an inbox task with a start_time still
+      // sat on the calendar under a status that said it hadn't been placed.
+      return onTask(store, args, (task) =>
+        writeTask(store, task.id, {
+          status: "inbox",
+          do_date: null,
+          start_time: null,
+          ...completionStamp("inbox", new Date().toISOString()),
+        }),
+      );
     case "restore_task":
-      return setTaskStatus(store, args.id, "inbox");
+      return setTaskStatus(store, args.id ?? args.task_id, "inbox");
     case "purge_task":
-      return removeRow(store, "tasks", args.id);
-    case "unschedule_task":
-      return patchRow(store, "tasks", args.id, { project_id: undefined });
-    case "plan_task":
+      return removeRow(store, "tasks", args.id ?? args.task_id);
+    case "plan_task": {
+      const doDate = isoDate(args.do_date);
+      if (!doDate) return badArg("do_date must be YYYY-MM-DD");
+      return onTask(store, args, (task) =>
+        writeTask(store, task.id, {
+          status: "planned",
+          do_date: doDate,
+          start_time: null,
+          ...completionStamp("planned", new Date().toISOString()),
+        }),
+      );
+    }
     case "schedule_task":
-    case "reschedule_task":
-      return patchRow(store, "tasks", args.id, {
-        title: typeof args.title === "string" ? args.title : undefined,
-        project_id: args.project_id,
-        domain_id: args.domain_id,
-        slot_id: args.slot_id,
+    case "reschedule_task": {
+      const startTime = startInstant(args.start_time, zone);
+      if (!startTime) return badArg("start_time must be local 'YYYY-MM-DDTHH:MM' (24h)");
+      const duration = args.duration_minutes == null ? null : positiveMinutes(args.duration_minutes);
+      if (duration === undefined) return badArg("duration_minutes must be a positive number");
+      return onTask(store, args, (task) => {
+        const patch: TaskPatch = { do_date: localDateISO(startTime, zone), start_time: startTime };
+        if (name === "schedule_task" || task.status !== "done") {
+          // A time block is planned work. Moving an inbox task to 3pm and
+          // leaving it "inbox" put it on no calendar at all.
+          patch.status = "planned";
+          Object.assign(patch, completionStamp("planned", new Date().toISOString()));
+        }
+        if (duration != null) patch.duration_minutes = duration;
+        else if (name === "schedule_task" || task.duration_minutes == null) patch.duration_minutes = FALLBACK_PLANNED_MINUTES;
+        return writeTask(store, task.id, patch);
       });
+    }
+    case "unschedule_task":
+      // Off the calendar, still planned for its day.
+      return onTask(store, args, (task) => writeTask(store, task.id, { start_time: null }));
     case "create_domain":
       return createRow(store, "domains", { name: args.name ?? "Untitled", color: args.color });
     case "update_domain":
@@ -546,4 +571,268 @@ async function setTaskStatus(store: Store, id: unknown, status: string): Promise
 
 export async function listOwnedTaskLabels(store: Store, taskId: string) {
   return listTaskLabels(store, taskId);
+}
+
+// ── Tasks: resolve the one a tool names, and write its whole row ────────────
+// The tool definitions (supabase/functions/agent/toolDefs.ts) name a task by
+// `task_id` or `task_title`. The port read `args.id`, so every MCP / Shortcuts
+// call that followed the definition got "not found", and the writes it did
+// make had no time columns — schedule_task could not put a task on a calendar.
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const TASK_STATUSES = new Set(["inbox", "backlog", "planned", "done", "trashed"]);
+const PRIORITIES = new Set(["none", "low", "medium", "high"]);
+const ENERGIES = new Set(["deep", "shallow", "quick", "social"]);
+
+type TaskRow = Record<string, unknown> & { id: string };
+
+/** Columns a tool may write on a task. Each one present in the patch is set —
+ *  `null` included — and each one absent is left as it stands. */
+const TASK_COLUMNS = [
+  "title",
+  "notes",
+  "status",
+  "do_date",
+  "start_time",
+  "duration_minutes",
+  "completed_at",
+  "priority",
+  "deadline",
+  "energy",
+  "project_id",
+  "initiative_id",
+  "domain_id",
+  "slot_id",
+  "parent_task_id",
+] as const;
+type TaskPatch = Partial<Record<(typeof TASK_COLUMNS)[number], unknown>>;
+
+function badArg(message: string): string {
+  return JSON.stringify({ error: message });
+}
+
+function isoDate(value: unknown): string | null {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const ms = Date.parse(`${value}T00:00:00Z`);
+  return !Number.isNaN(ms) && new Date(ms).toISOString().slice(0, 10) === value ? value : null;
+}
+
+/** A positive whole number of minutes; undefined when the value isn't one. */
+function positiveMinutes(value: unknown): number | undefined {
+  const mins = Number(value);
+  return Number.isFinite(mins) && mins > 0 ? Math.round(mins) : undefined;
+}
+
+/**
+ * The live task a tool names: `task_id` (or the older `id`), else a title.
+ * A title resolves to an exact (case-insensitive) match first, then to the one
+ * task containing it; more than one is a question back, never a pick. Trashed
+ * tasks are invisible here — restore/purge resolve the trash on purpose.
+ */
+async function resolveTask(
+  store: Store,
+  args: Record<string, unknown>,
+): Promise<{ task: TaskRow } | { error: string }> {
+  const id = asId(args.task_id) ?? asId(args.id);
+  if (id) {
+    const row = UUID_RE.test(id) ? await getOwned(store, "tasks", id) : null;
+    if (!row || row.status === "trashed") return { error: MISSING };
+    return { task: row as TaskRow };
+  }
+  const title = typeof args.task_title === "string" ? args.task_title.trim() : "";
+  if (!title) return { error: badArg("Provide task_id or task_title") };
+  const q = title.toLowerCase();
+  const live = (await listOwned(store, "tasks")).filter((t) => t.status !== "trashed");
+  const exact = live.filter((t) => String(t.title ?? "").trim().toLowerCase() === q);
+  const matches = exact.length ? exact : live.filter((t) => String(t.title ?? "").toLowerCase().includes(q));
+  if (matches.length === 1) return { task: matches[0] as TaskRow };
+  if (!matches.length) return { error: badArg(`No task matching "${title}"`) };
+  return {
+    error: JSON.stringify({
+      error: `Multiple tasks match "${title}". Use task_id.`,
+      candidates: matches.slice(0, 5).map((t) => ({ id: t.id, title: t.title, status: t.status, do_date: t.do_date })),
+    }),
+  };
+}
+
+async function onTask(
+  store: Store,
+  args: Record<string, unknown>,
+  act: (task: TaskRow) => Promise<string | Record<string, unknown> | null>,
+): Promise<string> {
+  const found = await resolveTask(store, args);
+  if ("error" in found) return found.error;
+  const out = await act(found.task);
+  if (out == null) return MISSING;
+  return typeof out === "string" ? out : JSON.stringify(out);
+}
+
+/** One UPDATE for any subset of TASK_COLUMNS. FKs must resolve to this owner. */
+async function writeTask(store: Store, id: string, patch: TaskPatch): Promise<Record<string, unknown> | null> {
+  if (!(await assertOwnedFks(store, "tasks", patch))) return null;
+  const set = (k: (typeof TASK_COLUMNS)[number]) => (k in patch ? 1 : 0);
+  const val = (k: (typeof TASK_COLUMNS)[number]) => (patch[k] === undefined ? null : patch[k]) as string | number | null;
+  const rows = await store.sql`
+    UPDATE tasks
+    SET
+      title = CASE WHEN ${set("title")} = 1 THEN ${val("title")} ELSE title END,
+      notes = CASE WHEN ${set("notes")} = 1 THEN ${val("notes") ?? ""} ELSE notes END,
+      status = CASE WHEN ${set("status")} = 1 THEN ${val("status")} ELSE status END,
+      do_date = CASE WHEN ${set("do_date")} = 1 THEN ${val("do_date")}::date ELSE do_date END,
+      start_time = CASE WHEN ${set("start_time")} = 1 THEN ${val("start_time")}::timestamptz ELSE start_time END,
+      duration_minutes = CASE WHEN ${set("duration_minutes")} = 1 THEN ${val("duration_minutes")}::integer ELSE duration_minutes END,
+      completed_at = CASE WHEN ${set("completed_at")} = 1 THEN ${val("completed_at")}::timestamptz ELSE completed_at END,
+      priority = CASE WHEN ${set("priority")} = 1 THEN ${val("priority") ?? "none"} ELSE priority END,
+      deadline = CASE WHEN ${set("deadline")} = 1 THEN ${val("deadline")}::date ELSE deadline END,
+      energy = CASE WHEN ${set("energy")} = 1 THEN ${val("energy")} ELSE energy END,
+      project_id = CASE WHEN ${set("project_id")} = 1 THEN ${val("project_id")}::uuid ELSE project_id END,
+      initiative_id = CASE WHEN ${set("initiative_id")} = 1 THEN ${val("initiative_id")}::uuid ELSE initiative_id END,
+      domain_id = CASE WHEN ${set("domain_id")} = 1 THEN ${val("domain_id")}::uuid ELSE domain_id END,
+      slot_id = CASE WHEN ${set("slot_id")} = 1 THEN ${val("slot_id")}::uuid ELSE slot_id END,
+      parent_task_id = CASE WHEN ${set("parent_task_id")} = 1 THEN ${val("parent_task_id")}::uuid ELSE parent_task_id END,
+      updated_at = now()
+    WHERE id = ${id}
+      AND user_id = ${store.userId}
+    RETURNING *
+  `;
+  return rows[0] ?? null;
+}
+
+/** A project's chain, or null when it isn't this owner's (D-088: a parented
+ *  task belongs to its parent's domain, so the chain is read, never trusted). */
+async function projectChain(store: Store, projectId: string): Promise<{ initiative_id: unknown; domain_id: unknown } | null> {
+  if (!UUID_RE.test(projectId)) return null;
+  const proj = await getOwned(store, "projects", projectId);
+  return proj ? { initiative_id: proj.initiative_id ?? null, domain_id: proj.domain_id ?? null } : null;
+}
+
+/** create_task, as toolDefs.ts describes it: a dated task is planned, a timed
+ *  one is on the calendar at the caller's local time, a parented-but-undated one
+ *  is backlog, the rest is inbox. (Free-text `capture` is kept as the title —
+ *  the Worker has no capture parser yet.) */
+async function createTask(store: Store, args: Record<string, unknown>, zone: string): Promise<string> {
+  const title = String(args.title ?? args.capture ?? args.text ?? "").trim() || "Untitled";
+
+  let startTime: string | null = null;
+  if (args.start_time != null && args.start_time !== "") {
+    startTime = startInstant(args.start_time, zone);
+    if (!startTime) return badArg("start_time must be local 'YYYY-MM-DDTHH:MM' (24h)");
+  }
+  let doDate: string | null = null;
+  if (args.do_date != null && args.do_date !== "") {
+    doDate = isoDate(args.do_date);
+    if (!doDate) return badArg("do_date must be YYYY-MM-DD");
+  }
+  // A time names its day; a do_date that disagrees with it loses to the time.
+  if (startTime) doDate = localDateISO(startTime, zone);
+
+  let duration: number | null = null;
+  if (args.duration_minutes != null) {
+    const mins = positiveMinutes(args.duration_minutes);
+    if (mins === undefined) return badArg("duration_minutes must be a positive number");
+    duration = mins;
+  }
+  if (startTime && duration == null) duration = FALLBACK_PLANNED_MINUTES;
+
+  const projectId = asId(args.project_id);
+  let initiativeId = asId(args.initiative_id);
+  let domainId = asId(args.domain_id);
+  if (projectId) {
+    const chain = await projectChain(store, projectId);
+    if (!chain) return FORBIDDEN_FK;
+    initiativeId = asId(chain.initiative_id) ?? initiativeId;
+    domainId = asId(chain.domain_id) ?? domainId;
+  }
+  if (initiativeId) {
+    const init = UUID_RE.test(initiativeId) ? await getOwned(store, "initiatives", initiativeId) : null;
+    if (!init) return FORBIDDEN_FK;
+    domainId = domainId ?? asId(init.domain_id);
+  }
+
+  const parented = Boolean(projectId || initiativeId || domainId);
+  const explicit = typeof args.status === "string" && TASK_STATUSES.has(args.status) ? args.status : null;
+  const status = doDate ? "planned" : (explicit ?? (parented ? "backlog" : "inbox"));
+  const priority = typeof args.priority === "string" && PRIORITIES.has(args.priority) ? args.priority : "none";
+
+  const row: TaskPatch = {
+    project_id: projectId,
+    domain_id: domainId,
+    slot_id: asId(args.slot_id),
+    parent_task_id: asId(args.parent_task_id) ?? asId(args.parent_id),
+  };
+  for (const k of ["project_id", "domain_id", "slot_id", "parent_task_id"] as const) {
+    const v = row[k];
+    if (typeof v === "string" && !UUID_RE.test(v)) return FORBIDDEN_FK;
+  }
+  if (!(await assertOwnedFks(store, "tasks", row))) return FORBIDDEN_FK;
+
+  const rows = await store.sql`
+    INSERT INTO tasks (
+      id, user_id, title, notes, status, do_date, start_time, duration_minutes, priority,
+      project_id, initiative_id, domain_id, slot_id, parent_task_id
+    )
+    VALUES (
+      ${crypto.randomUUID()}, ${store.userId}, ${title}, ${typeof args.notes === "string" ? args.notes : ""},
+      ${status}, ${doDate}, ${startTime}, ${duration}, ${priority},
+      ${projectId}, ${initiativeId}, ${domainId}, ${(row.slot_id as string | null) ?? null},
+      ${(row.parent_task_id as string | null) ?? null}
+    )
+    RETURNING *
+  `;
+  return rows[0] ? JSON.stringify(rows[0]) : FORBIDDEN_FK;
+}
+
+/** update_task: the task's own attributes. Placement is plan/schedule_task. */
+async function updateTask(store: Store, args: Record<string, unknown>): Promise<string> {
+  const patch: TaskPatch = {};
+  if (typeof args.title === "string" && args.title.trim()) patch.title = args.title.trim();
+  if (typeof args.notes === "string") patch.notes = args.notes;
+  if (args.priority !== undefined) {
+    if (typeof args.priority !== "string" || !PRIORITIES.has(args.priority)) return badArg("priority must be none, low, medium or high");
+    patch.priority = args.priority;
+  }
+  if (args.deadline !== undefined) {
+    if (args.deadline === "" || args.deadline === null) patch.deadline = null;
+    else {
+      const d = isoDate(args.deadline);
+      if (!d) return badArg("deadline must be YYYY-MM-DD, or empty to clear");
+      patch.deadline = d;
+    }
+  }
+  if (args.duration_minutes !== undefined) {
+    const mins = positiveMinutes(args.duration_minutes);
+    if (mins === undefined) return badArg("duration_minutes must be a positive number");
+    patch.duration_minutes = mins;
+  }
+  if (args.energy !== undefined) {
+    if (args.energy === "" || args.energy === null) patch.energy = null;
+    else if (typeof args.energy === "string" && ENERGIES.has(args.energy)) patch.energy = args.energy;
+    else return badArg("energy must be deep, shallow, quick or social");
+  }
+  // Filing carries the whole chain (D-088) — never a project with a stale domain.
+  if (args.project_id !== undefined) {
+    const pid = asId(args.project_id);
+    if (pid) {
+      const chain = await projectChain(store, pid);
+      if (!chain) return FORBIDDEN_FK;
+      patch.project_id = pid;
+      patch.initiative_id = chain.initiative_id;
+      patch.domain_id = chain.domain_id;
+    } else {
+      patch.project_id = null;
+      patch.initiative_id = null;
+    }
+  } else if (args.domain_id !== undefined) {
+    const did = asId(args.domain_id);
+    if (did && !UUID_RE.test(did)) return FORBIDDEN_FK;
+    patch.domain_id = did;
+  }
+  for (const k of ["slot_id", "parent_task_id"] as const) {
+    if (args[k] === undefined) continue;
+    const v = asId(args[k]);
+    if (v && !UUID_RE.test(v)) return FORBIDDEN_FK;
+    patch[k] = v;
+  }
+  if (!Object.keys(patch).length) return badArg("No fields to update");
+  return onTask(store, args, (task) => writeTask(store, task.id, patch));
 }
