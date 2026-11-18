@@ -20,7 +20,7 @@ tools) is how two answers for one week get born.
 
 ```
 Grok Bot
-  → POST https://<project>.supabase.co/functions/v1/mcp
+  → POST https://api.nuvo.day/api/mcp       (the Worker; the Supabase copy is legacy — D-250)
     Authorization: Bearer <connection token>
     → the same executeTool / executeVerticalTool the chat uses
     → the same buildContext snapshot

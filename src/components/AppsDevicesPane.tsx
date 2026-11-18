@@ -19,6 +19,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase, supabaseAnonKey, supabaseUrl } from "../lib/supabase";
+import { edgeFunctionUrl, workersEnabled } from "../lib/backend";
 import { randomUrlSafeToken as mintToken, sha256Hex } from "../lib/webcrypto";
 import { Icon, type IconName } from "./Icon";
 import { PaneHeader, TextInput } from "./form";
@@ -75,9 +76,13 @@ const machineKey = (name: string) =>
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
 
+/** The address an outside app is given. On the Worker it is `api.nuvo.day/api/<fn>` — the
+ *  Supabase function is the legacy copy (old tools, old database); handing it out after the
+ *  cutover is how a connector ended up without the hand-off tools (D-250). Only the Supabase
+ *  gateway needs `apikey`. */
 function edgeEndpoint(fn: "mcp" | "capture"): string {
-  const url = new URL(`${supabaseUrl.replace(/\/$/, "")}/functions/v1/${fn}`);
-  url.searchParams.set("apikey", supabaseAnonKey);
+  const url = new URL(edgeFunctionUrl(supabaseUrl, fn));
+  if (!workersEnabled) url.searchParams.set("apikey", supabaseAnonKey);
   return url.toString();
 }
 
