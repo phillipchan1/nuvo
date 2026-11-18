@@ -56,6 +56,8 @@ import { useRenameAct } from "./tasks/TaskMenus";
 import { PLAN_EVENT_PREFIX, PLAN_GHOST_PREFIX, type PlanOverlay } from "./plan/planOverlay";
 import {
   DRAFT_PREVIEW_ID,
+  besideForKey,
+  blockBeside,
   gridBlocks,
   homeBlockId,
   shiftForKey,
@@ -3074,6 +3076,19 @@ function CalendarPane({
         if (how) {
           if (!targets.length) return false;
           shiftBlocks(targets, how);
+          return true;
+        }
+        // ← / → walk to the nearest block on the day beside — j/k's sideways
+        // twin, so the cursor reaches Thursday without stepping through every
+        // block between. Nothing lit yet: the first press lights home, as j does.
+        const side = besideForKey(e);
+        if (side) {
+          const from = gridCursor;
+          const to = from ? blockBeside(gridRows, from, side) : homeId;
+          if (to) {
+            setGridCursor(to);
+            revealBlock(to);
+          }
           return true;
         }
         if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "g") {

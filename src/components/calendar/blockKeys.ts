@@ -159,3 +159,61 @@ export function shiftForKey(e: Pick<KeyboardEvent, "key" | "altKey" | "shiftKey"
   }
   return null;
 }
+
+/** Minutes past local midnight; an anytime chip sits above the first hour. */
+function clockOf(b: GridBlock): number {
+  if (b.allDay) return -1;
+  const d = new Date(b.start);
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+function dayOf(b: GridBlock): number {
+  const d = new Date(b.start);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/**
+ * ← / → — the block beside this one: on the nearest day in that direction that
+ * has any block (an empty day is skipped, as j skips nothing), the block whose
+ * time of day is closest to this one's, earlier on a tie. So → from Wednesday's
+ * 11:30 lands on Thursday's 11:30-ish block, the way the eye moves across the
+ * grid. An anytime chip only meets a day's anytime row if it has one, else its
+ * first block. Null = nothing that way.
+ */
+export function blockBeside(
+  blocks: readonly GridBlock[],
+  fromId: string,
+  dir: -1 | 1,
+): string | null {
+  const from = blocks.find((b) => b.id === fromId);
+  if (!from) return null;
+  const fromDay = dayOf(from);
+  let targetDay: number | null = null;
+  for (const b of blocks) {
+    const d = dayOf(b);
+    if (dir > 0 ? d <= fromDay : d >= fromDay) continue;
+    if (targetDay === null || (dir > 0 ? d < targetDay : d > targetDay)) targetDay = d;
+  }
+  if (targetDay === null) return null;
+  const clock = clockOf(from);
+  let best: GridBlock | null = null;
+  let bestGap = Infinity;
+  for (const b of blocks) {
+    if (dayOf(b) !== targetDay) continue;
+    const gap = Math.abs(clockOf(b) - clock);
+    // `blocks` is in time order, so a strict < keeps the earlier on a tie.
+    if (gap < bestGap) {
+      best = b;
+      bestGap = gap;
+    }
+  }
+  return best?.id ?? null;
+}
+
+/** Bare ← / → walk the grid sideways; anything held is someone else's key. */
+export function besideForKey(
+  e: Pick<KeyboardEvent, "key" | "altKey" | "shiftKey" | "metaKey" | "ctrlKey">,
+): -1 | 1 | null {
+  if (e.altKey || e.shiftKey || e.metaKey || e.ctrlKey) return null;
+  return e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : null;
+}

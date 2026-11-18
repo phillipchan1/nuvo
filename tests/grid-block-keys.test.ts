@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import {
+  besideForKey,
+  blockBeside,
   DRAFT_PREVIEW_ID,
   gridBlocks,
   homeBlockId,
@@ -172,5 +174,52 @@ describe("Esc calls a drag off — the release writes nothing (#32)", () => {
     g.begin();
     expect(g.cancelled).toBe(false);
     g.dispose();
+  });
+});
+
+describe("← / → walk the grid sideways", () => {
+  const span = (d: Date, mins: number) => iso(new Date(d.getTime() + mins * 60_000));
+  const wed1130 = local(2026, 11, 18, 11, 30);
+  const wed9 = local(2026, 11, 18, 9);
+  const thu8 = local(2026, 11, 19, 8);
+  const thu1145 = local(2026, 11, 19, 11, 45);
+  const thu1400 = local(2026, 11, 19, 14);
+  const mon10 = local(2026, 11, 23, 10);
+  const rows = gridBlocks([
+    block("task:gym", iso(wed1130), span(wed1130, 90), "task"),
+    block("evt:wed9", iso(wed9), span(wed9, 30), "google"),
+    block("task:wedAny", "2026-11-18", undefined, "task", { allDay: true }),
+    block("evt:thu8", iso(thu8), span(thu8, 60), "google"),
+    block("evt:thu1145", iso(thu1145), span(thu1145, 30), "google"),
+    block("slot:thu14", iso(thu1400), span(thu1400, 60), "slot"),
+    block("task:thuAny", "2026-11-19", undefined, "task", { allDay: true }),
+    block("evt:mon", iso(mon10), span(mon10, 60), "google"),
+  ]);
+
+  it("lands on the next day's block closest in time of day", () => {
+    expect(blockBeside(rows, "task:gym", 1)).toBe("evt:thu1145");
+    expect(blockBeside(rows, "evt:thu1145", -1)).toBe("task:gym");
+    expect(blockBeside(rows, "evt:thu8", -1)).toBe("evt:wed9");
+  });
+
+  it("keeps an anytime chip on the anytime row", () => {
+    expect(blockBeside(rows, "task:wedAny", 1)).toBe("task:thuAny");
+  });
+
+  it("skips empty days, and stops at the last day with anything", () => {
+    expect(blockBeside(rows, "slot:thu14", 1)).toBe("evt:mon");
+    expect(blockBeside(rows, "evt:mon", 1)).toBeNull();
+    expect(blockBeside(rows, "evt:wed9", -1)).toBeNull();
+  });
+
+  it("takes only the bare arrows — ⌥ moves, ⌘ pages", () => {
+    const k = (key: string, mods: Partial<KeyboardEvent> = {}) =>
+      besideForKey({ key, altKey: false, shiftKey: false, metaKey: false, ctrlKey: false, ...mods });
+    expect(k("ArrowLeft")).toBe(-1);
+    expect(k("ArrowRight")).toBe(1);
+    expect(k("ArrowRight", { altKey: true })).toBeNull();
+    expect(k("ArrowRight", { metaKey: true })).toBeNull();
+    expect(k("ArrowRight", { shiftKey: true })).toBeNull();
+    expect(k("ArrowDown")).toBeNull();
   });
 });
