@@ -9839,3 +9839,7 @@ to Neon or deployed; not yet driven against a live Grok Bot routine. Spec:
 that a handed task still counted as today's own and still asked for a time; it now leaves the day
 (`dayReadiness`, both runtimes), the crown's loose work and Find time's holds. **Open (P11):** the
 task popover already says *Hand the pre-work to Nuvo*; two "hand" acts now sit one section apart.*
+
+*2026-11-18 — live: migration 96 applied to Neon after a clean drift check (backup branch
+`pre-handoffs-20261118`); API Worker deployed from master `2f11fd02`. Waiting on the first live Grok
+Bot round trip.*
