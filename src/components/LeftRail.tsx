@@ -8,7 +8,7 @@ import TaskComposer, { type TaskComposerHandle } from "./tasks/TaskComposer";
 import TaskActionsMenu, { useTrashTask } from "./tasks/TaskActionsMenu";
 import { TaskDateMenu, TaskMoveMenu, useRenameAct } from "./tasks/TaskMenus";
 import { placeBeside, useTaskListKeys, type TaskListKeyActs } from "./tasks/useTaskListKeys";
-import { claimKeys, keyOwner } from "./tasks/keyOwner";
+import { claimKeys, handKeysTo, keyOwner, onKeysHanded } from "./tasks/keyOwner";
 import { restoreFromTrashPatch } from "../lib/types";
 import { useVerticalDirectory } from "../hooks/useVertical";
 import { useTaskFilter } from "../hooks/useTaskFilter";
@@ -783,6 +783,48 @@ function LeftRail({
     setKeyCursor(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lightFirst, drawn]);
+  // ── Across the panes by keyboard: → into the grid, ← back (keyOwner) ─────
+  // Where the keys left from, so ← off the grid comes back to it.
+  const lastRailRef = useRef<{ kind: "tray" | "crown"; id: string } | null>(null);
+  const leaveRight = (from: { kind: "tray" | "crown"; id: string }, taskId: string | null) => {
+    lastRailRef.current = from;
+    setKeyCursor(false);
+    setSelectedId(null);
+    setCrownCursor(null);
+    handKeysTo("grid", taskId);
+  };
+  const drawnRef = useRef(drawn);
+  drawnRef.current = drawn;
+  useEffect(
+    () =>
+      onKeysHanded(({ to, taskId }) => {
+        if (to !== "rail") return;
+        const rows = drawnRef.current;
+        const last = lastRailRef.current;
+        // The task you left the grid from, when Today / Inbox shows it…
+        const own = taskId ? rows.find((t) => t.id === taskId) : undefined;
+        // …else back where you were…
+        if (!own && last?.kind === "crown") {
+          crownHasKeys.current = true;
+          setCrownCursor(last.id);
+          return;
+        }
+        const back = own ?? rows.find((t) => t.id === last?.id) ?? rows[0];
+        // …else the week's projects, when the list has nothing.
+        if (!back) {
+          crownHasKeys.current = true;
+          setCrownEntry((p) => ({ seq: (p?.seq ?? 0) + 1, at: "first" }));
+          return;
+        }
+        crownHasKeys.current = false;
+        setCrownCursor(null);
+        setTrayOpen(true);
+        setSelectedId(back.id);
+        setKeyCursor(true);
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
   useTaskListKeys({
     // …and only while the rail is the pane last pressed in (keyOwner): with a
     // block selected on the grid, j / ⌫ / e belong to the block.
@@ -843,6 +885,11 @@ function LeftRail({
       },
       extra: (e, targets) => {
         if (e.metaKey || e.ctrlKey || e.altKey) return false;
+        // → crosses into the grid, the pane to the rail's right.
+        if (!e.shiftKey && e.key === "ArrowRight" && keyCursor && selectedId) {
+          leaveRight({ kind: "tray", id: selectedId }, selectedId);
+          return true;
+        }
         // ↑ off the first row climbs into the week's projects (D-222).
         if (!e.shiftKey && (e.key === "ArrowUp" || e.key === "k") && keyCursor && selectedId && drawn[0]?.id === selectedId) {
           crownHasKeys.current = true;
@@ -1246,6 +1293,7 @@ function LeftRail({
               }
             },
             taskActs: rowActs,
+            onLeaveRight: (id, taskId) => leaveRight({ kind: "crown", id }, taskId),
             onLeaveDown: () => {
               // On down into Today / Inbox — opening the tray if it was folded.
               if (!drawn.length) return;

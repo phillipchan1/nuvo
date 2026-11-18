@@ -25,3 +25,29 @@ export function keyOwner(): KeyPane {
 export function claimKeys(pane: KeyPane): void {
   owner = pane;
 }
+
+/**
+ * **The keys crossing panes by keyboard** — → off a rail row into the grid, ←
+ * off the grid's first day back into the rail. The same claim a press makes,
+ * plus a word to the pane receiving it so it can light a row: `taskId` is the
+ * task the keys left from, so the other pane can land on that task's copy when
+ * it has one (a scheduled task is a row in the rail AND a block on the grid).
+ */
+export interface KeyHandoff {
+  to: KeyPane;
+  taskId?: string | null;
+}
+
+const handoffListeners = new Set<(h: KeyHandoff) => void>();
+
+export function handKeysTo(to: KeyPane, taskId?: string | null): void {
+  owner = to;
+  handoffListeners.forEach((fn) => fn({ to, taskId }));
+}
+
+export function onKeysHanded(fn: (h: KeyHandoff) => void): () => void {
+  handoffListeners.add(fn);
+  return () => {
+    handoffListeners.delete(fn);
+  };
+}

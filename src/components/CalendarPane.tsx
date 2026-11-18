@@ -51,7 +51,7 @@ import { announce } from "../lib/announce";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTaskListKeys } from "./tasks/useTaskListKeys";
-import { claimKeys, keyOwner } from "./tasks/keyOwner";
+import { claimKeys, handKeysTo, keyOwner, onKeysHanded } from "./tasks/keyOwner";
 import { useRenameAct } from "./tasks/TaskMenus";
 import { PLAN_EVENT_PREFIX, PLAN_GHOST_PREFIX, type PlanOverlay } from "./plan/planOverlay";
 import {
@@ -3040,6 +3040,34 @@ function CalendarPane({
     announce(`${act} is for tasks — this block is ${targets[0]?.kind === "slot" ? "a slot" : "an event"}`);
     return true;
   };
+  // → off a rail row hands the keys here: light that task's block when it's on
+  // screen, else where j would start. A hand-off back to the rail lets the
+  // grid's lift go, as a press in the rail does.
+  const handoffRef = useRef({ gridRows, homeId, visibleSpan, slotTasks });
+  handoffRef.current = { gridRows, homeId, visibleSpan, slotTasks };
+  useEffect(
+    () =>
+      onKeysHanded(({ to, taskId }) => {
+        if (to === "rail") return clearGridSelection();
+        const { gridRows: rowsNow, homeId: home, visibleSpan: span, slotTasks: held } = handoffRef.current;
+        // The task's own block — or the slot it sits in, which is where it's drawn.
+        const own = taskId
+          ? rowsNow.find(
+              (b) =>
+                b.end > span.start &&
+                b.start < span.end &&
+                (b.id === `task:${taskId}` ||
+                  (b.kind === "slot" && (held[b.refId] ?? []).some((t) => t.id === taskId))),
+            )
+          : undefined;
+        const b = own ?? rowsNow.find((x) => x.id === home);
+        selectBlock(b?.id ?? null);
+        // Through the latest rows, not `revealBlock` — this listener is bound once.
+        if (b) revealAt(b.id, b.start, b.end);
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
   useTaskListKeys<GridBlock>({
     enabled: () => gridKeysOn && keyOwner() === "grid",
     rows: gridRows,
@@ -3081,10 +3109,20 @@ function CalendarPane({
         // ← / → walk to the nearest block on the day beside — j/k's sideways
         // twin, so the cursor reaches Thursday without stepping through every
         // block between. Nothing lit yet: the first press lights home, as j does.
+        // ← off the first day on screen crosses into the rail, the pane to the
+        // grid's left (the previous week stays ⌘←); → off the last day pages on,
+        // since nothing sits to the grid's right.
         const side = besideForKey(e);
         if (side) {
           const from = gridCursor;
           const to = from ? blockBeside(gridRows, from, side) : homeId;
+          const toBlock = to ? blockById(to) : undefined;
+          if (side < 0 && (from ? !toBlock || toBlock.end <= visibleSpan.start : !to)) {
+            const leaving = from ? blockById(from) : undefined;
+            clearGridSelection();
+            handKeysTo("rail", leaving?.kind === "task" ? leaving.refId : null);
+            return true;
+          }
           if (to) {
             setGridCursor(to);
             revealBlock(to);

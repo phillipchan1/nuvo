@@ -106,6 +106,8 @@ export interface CrownKeys {
   taskActs: Pick<TaskListKeyActs<Task>, "open" | "complete" | "trash" | "date" | "move" | "rename" | "menu">;
   /** ↓ past the last row: the keys go on down to Today / Inbox */
   onLeaveDown: () => void;
+  /** → on a task row: the keys cross into the grid (`id` is the lit row) */
+  onLeaveRight?: (id: string, taskId: string | null) => void;
   /** the rail asks the crown to light a row (↑ off the top of the tray) */
   entry?: { seq: number; at: "first" | "last" } | null;
 }
@@ -312,7 +314,10 @@ export default function WeekPanel({
         switch (e.key) {
           case "ArrowRight":
           case "l":
-            if (k.kind === "task") return true;
+            if (k.kind === "task") {
+              keys?.onLeaveRight?.(k.id, k.task?.id ?? null);
+              return true;
+            }
             if (!r.canExpand) return true;
             if (!openIds.has(r.rock.id)) setExpanded(r, true);
             else {
