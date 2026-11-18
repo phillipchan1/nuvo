@@ -3671,7 +3671,7 @@ html .glass-grab {
    floats (P14), and never under the pointer's way. */
 .key-hint.key-hint-float {
   position: fixed;
-  z-index: 60;
+  z-index: 1000; /* above the popover whose row it describes */
   margin: 0;
   padding: 5px 8px;
   border-radius: var(--r-ctl);

@@ -79,12 +79,34 @@ export function KeyHint({ keys }: { keys: (string | string[])[] }) {
   // while floating — the float must follow its row.
   useLayoutEffect(() => {
     const row = anchor.current?.closest<HTMLElement>(ROW);
-    if (!row || row.getBoundingClientRect().width >= INLINE_MIN_WIDTH) return;
+    if (!row) return;
+    // Float when the row is narrow, OR when the inline hint pushed something
+    // past its edge. A popover's rows aren't clipped — they grow to fit, so the
+    // slot popover's row measured "wide" with the hint already in it, and the
+    // hint shoved the popover into a sideways scrollbar.
+    const inline = anchor.current?.nextElementSibling as HTMLElement | null;
+    const overflows = (() => {
+      let el: HTMLElement | null = inline?.parentElement ?? null;
+      for (let i = 0; el && i < 10; i++, el = el.parentElement) {
+        if (el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflowX !== "visible") return true;
+      }
+      return false;
+    })();
+    if (row.getBoundingClientRect().width >= INLINE_MIN_WIDTH && !overflows) return;
+    // The hint's own width, read while it is still inline, + the float's padding.
+    const w = (inline?.getBoundingClientRect().width ?? 260) + 18;
+    // Beside the thing the row lives in — a popover's edge, not its padding.
+    const frame = row.closest<HTMLElement>('[data-nested-surface], [role="dialog"]') ?? row;
     const place = () => {
       const r = row.getBoundingClientRect();
-      // beside the row, or tucked under it when the screen has no room right
-      const room = window.innerWidth - r.right > 300;
-      setFloat(room ? { left: r.right + 8, top: r.top + r.height / 2 } : { left: Math.max(8, r.right - 300), top: r.bottom + 14 });
+      const f = frame.getBoundingClientRect();
+      const mid = r.top + r.height / 2;
+      // Right of it, else left of it (a popover by the screen's right edge),
+      // else under the row as the last resort — never over the rows below
+      // when either side has room, never off the screen.
+      if (window.innerWidth - f.right >= w + 16) setFloat({ left: f.right + 8, top: mid });
+      else if (f.left >= w + 16) setFloat({ left: f.left - 8 - w, top: mid });
+      else setFloat({ left: Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)), top: r.bottom + 14 });
     };
     place();
     window.addEventListener("scroll", place, true);
