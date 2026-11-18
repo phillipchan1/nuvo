@@ -1,6 +1,6 @@
 # Hand-off — give a task to an agent you own
 
-Status: **built, driven locally end to end, not deployed** (2026-11-18 · D-250). Sits on [`mcp.md`](./mcp.md) (D-112): the
+Status: **live** (2026-11-18 · D-250) — migration 96 on Neon (backup branch `pre-handoffs-20261118`), API Worker `dbabc18c`. Not yet driven against a live Grok Bot routine. Sits on [`mcp.md`](./mcp.md) (D-112): the
 agent is a Full account token, and everything it does goes through the MCP server.
 
 ## 1 · The shape
