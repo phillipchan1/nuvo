@@ -275,7 +275,7 @@
       "file": "ios-release.yml",
       "job": "testflight",
       "id": "setup-rust",
-      "sha256": "f274e75081f595e0800fe82eb10922b20940356ea5dd1269fb9ff15d81e2171e"
+      "sha256": "de1ed959da1cea1375676bbb03f5a148f016d76dbcde5335539ce5f3301aba39"
     },
     {
       "file": "ios-release.yml",

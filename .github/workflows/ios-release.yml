@@ -95,6 +95,10 @@ jobs:
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: aarch64-apple-ios
+          # llvm-tools ships llvm-objcopy, which swift-rs (>= 1.0.9) needs under
+          # Xcode 27 to re-export the plugins' @_cdecl symbols (init_plugin_*);
+          # without it the app fails to link with "Undefined symbols".
+          components: llvm-tools
 
       - id: cache-rust
         name: Cache Rust build
