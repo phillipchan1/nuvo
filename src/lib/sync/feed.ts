@@ -4,7 +4,7 @@
  *
  * Supabase pushed every row over Realtime. The Worker has no socket, so the
  * client kept up by re-downloading: every stale query on every window focus,
- * every task / slot / label list once a minute, every task list after each of
+ * every task / slot / label list on a timer, every task list after each of
  * its own writes. From one open Mac that was ~1.5 GB of Neon data transfer a
  * day — almost all of it rows the device already had.
  *

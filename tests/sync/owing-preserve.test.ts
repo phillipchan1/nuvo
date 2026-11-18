@@ -177,5 +177,7 @@ describe("catchUpAfterOwingKnown", () => {
     expect(pred!(stale(["tasks", "inbox"]))).toBe(false);
     expect(pred!(stale(["settings"]))).toBe(true);
     expect(pred!(fresh(["settings"]))).toBe(false);
+    expect(pred!(stale(["event_domain_routing"]))).toBe(false);
+    expect(pred!(stale(["event_domain_routing", "keys"]))).toBe(false);
   });
 });

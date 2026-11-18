@@ -7,13 +7,13 @@
 // batch). Mirrors the lazy passive-grooming trigger.
 
 import { useEffect, useMemo, useRef } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
 import { useCalendarAccounts, useExternalEvents } from "./useCalendar";
+import { useEventRouting, useEventRoutingFetched } from "./useEventRouting";
 import { useSettings } from "./useSettings";
 import { calendarKey, eventCountsAsActual, eventKey } from "../lib/eventActuals";
 import { planningWeekStartISO } from "../lib/dates";
-import { feedStaleTime } from "../lib/sync/feed";
 
 const BATCH = 40;
 
@@ -31,32 +31,12 @@ export function useEventRouter() {
   const eventsQ = useExternalEvents(range.start, range.end);
   const accountsQ = useCalendarAccounts();
   const { settings } = useSettings();
-
-  // The set of event keys already judged (domain or null) — so we never re-route.
-  // MUST be complete: PostgREST caps an unbounded select at 1000 rows, and a set
-  // that silently drops keys makes already-routed events read as candidates
-  // forever — which loops this hook against the LLM for as long as the app is
-  // open. Page through with a stable order so every key is present.
-  const routedQ = useQuery({
-    queryKey: ["event_domain_routing", "keys"],
-    queryFn: async (): Promise<Set<string>> => {
-      const PAGE = 1000;
-      const keys = new Set<string>();
-      for (let from = 0; ; from += PAGE) {
-        const { data, error } = await supabase
-          .from("event_domain_routing")
-          .select("event_key")
-          .order("event_key")
-          .range(from, from + PAGE - 1);
-        if (error) throw error;
-        const rows = data ?? [];
-        for (const r of rows) keys.add(r.event_key as string);
-        if (rows.length < PAGE) break;
-      }
-      return keys;
-    },
-    staleTime: feedStaleTime(60_000),
-  });
+  const routing = useEventRouting();
+  const routingFetched = useEventRoutingFetched();
+  // Judged keys, including empty verdicts (AI said "none") so we never re-ask.
+  // Derived from the session map — a second paged select of the same table was
+  // 452 KB every staleness kick (D-249).
+  const routed = useMemo(() => new Set(Object.keys(routing)), [routing]);
 
   const inFlight = useRef(false);
   // Every key we've already spent a completion on this session. The routing
@@ -71,8 +51,7 @@ export function useEventRouter() {
 
   useEffect(() => {
     const events = eventsQ.data;
-    const routed = routedQ.data;
-    if (!events || !map || !routed || inFlight.current) return;
+    if (!events || !map || !routingFetched || inFlight.current) return;
 
     // Same filter the ledger applies — never spend a completion on time that
     // wouldn't be counted anyway.
@@ -114,5 +93,5 @@ export function useEventRouter() {
       .catch(() => {
         inFlight.current = false;
       });
-  }, [eventsQ.data, routedQ.data, map, hiddenIds, hiddenEvents, accountsQ.data, qc]);
+  }, [eventsQ.data, routed, routingFetched, map, hiddenIds, hiddenEvents, accountsQ.data, qc]);
 }

@@ -30,8 +30,8 @@
  * that window could still be skipped — no Worker write runs that long.
  *
  * Nothing here is cached by Hyperdrive: every statement calls a STABLE or
- * VOLATILE function (`now()` / `clock_timestamp()`), the same rule `rest.ts`
- * holds for the SPA's reads.
+ * VOLATILE function (`clock_timestamp()`). SPA list reads in `rest.ts` no
+ * longer call `now()` so Hyperdrive can cache them (D-249).
  */
 import type { Sql } from "./db.ts";
 
@@ -193,6 +193,9 @@ function oldFor(table: FeedTable, key: string, userId: string): Record<string, u
     return { task_id, label_id };
   }
   if (table === "user_settings") return { user_id: userId };
+  // Production's routing table has no `id` — the live-apply path keys the cache
+  // by event_key, so a DELETE that arrived as `{ id: key }` never painted.
+  if (table === "event_domain_routing") return { event_key: key };
   return { id: key };
 }
 

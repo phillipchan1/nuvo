@@ -22,6 +22,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { normalizeSettingsRow } from "../../hooks/useSettings";
 import { eventInRange, isStaleEventEcho, pendingCreateFor, swapCreatedEvent } from "../eventWriteback";
+import type { EventDomainRoutingMap } from "../eventActuals";
 import type { ExternalEvent } from "../types";
 import { putSlotInCaches } from "../../hooks/useSlots";
 import { putTaskInCaches } from "../../hooks/useTasks";
@@ -239,6 +240,53 @@ function applyEventRow(qc: QueryClient, change: LiveChange): boolean {
   return applyListRow(qc, "external_events", ["external_events"], change, [], [], eventInRange);
 }
 
+function applyRouting(qc: QueryClient, change: LiveChange): boolean {
+  const key = String((change.new ?? change.old)?.event_key ?? "");
+  if (!key) return false;
+  const inferred = change.new?.domain_id ? String(change.new.domain_id) : undefined;
+  const manual = change.new?.manual_domain_id ? String(change.new.manual_domain_id) : undefined;
+
+  let painted = false;
+  for (const [queryKey, data] of qc.getQueriesData<EventDomainRoutingMap>({ queryKey: ["event_domain_routing"] })) {
+    if (!data || typeof data !== "object" || Array.isArray(data) || data instanceof Set) continue;
+    painted = true;
+    if (change.eventType === "DELETE" || !change.new) {
+      if (!(key in data)) continue;
+      const next = { ...data };
+      delete next[key];
+      qc.setQueryData(queryKey, next);
+      continue;
+    }
+    qc.setQueryData(queryKey, {
+      ...data,
+      [key]: {
+        ...(inferred ? { inferredDomainId: inferred } : {}),
+        ...(manual ? { manualDomainId: manual } : {}),
+      },
+    });
+  }
+
+  for (const [queryKey, data] of qc.getQueriesData<Set<string>>({ queryKey: ["event_domain_routing", "keys"] })) {
+    if (!(data instanceof Set)) continue;
+    painted = true;
+    if (change.eventType === "DELETE" || !change.new) {
+      if (!data.has(key)) continue;
+      const next = new Set(data);
+      next.delete(key);
+      qc.setQueryData(queryKey, next);
+      continue;
+    }
+    if (data.has(key)) continue;
+    const next = new Set(data);
+    next.add(key);
+    qc.setQueryData(queryKey, next);
+  }
+
+  // A session that has not loaded the map yet has nothing to paint into; the
+  // caller refetches. An already-empty cache is still a hit — keep it.
+  return painted;
+}
+
 function applyTaskLabels(qc: QueryClient, change: LiveChange): boolean {
   const taskId = String((change.new ?? change.old)?.task_id ?? "");
   const labelId = String((change.new ?? change.old)?.label_id ?? "");
@@ -291,6 +339,8 @@ export function applyLiveChange(
       return applyListRow(qc, "record_comments", ["record_comments"], change, pending, delivered);
     case "external_events":
       return applyEventRow(qc, change);
+    case "event_domain_routing":
+      return applyRouting(qc, change);
     case "reminders":
       return applyListRow(qc, "reminders", ["reminders"], change, pending, delivered);
     case "task_labels":

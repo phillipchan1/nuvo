@@ -112,8 +112,8 @@ ok(routed?.eventType !== "DELETE" && routed?.new?.event_key === "gcal:standup", 
 await db.query(`DELETE FROM event_domain_routing WHERE user_id = $1 AND event_key = 'gcal:standup'`, [A]);
 next = delta(await syncChanges(sql, A, cursor));
 ok(
-  next.changes.some((c) => c.table === "event_domain_routing" && c.eventType === "DELETE"),
-  "…and its delete arrives as a DELETE",
+  next.changes.some((c) => c.table === "event_domain_routing" && c.eventType === "DELETE" && c.old?.event_key === "gcal:standup"),
+  "…and its delete arrives as a DELETE keyed by event_key",
 );
 
 // --- a cursor the log no longer covers, or from another database -----------

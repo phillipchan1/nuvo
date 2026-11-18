@@ -78,6 +78,9 @@ export const MINUTE_CRON = "* * * * *";
 
 /** cron expression (UTC) → job names. Same tick can run more than one. */
 export const CRON_BY_SCHEDULE: Record<string, readonly string[]> = {
+  // Calendar-dispatch must tick every minute (CronGate no-ops the quiet ones).
+  // Push-dispatch shares the trigger so we do not add a second Cloudflare cron;
+  // its listing is now a cheap EXISTS on enabled+subscribed accounts (D-249).
   "* * * * *": ["calendar-dispatch", "push-dispatch"],
   "5 7 * * *": ["rollover"],
   "5 8 * * *": ["rollover"],

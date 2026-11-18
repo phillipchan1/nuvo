@@ -5,6 +5,7 @@ import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-quer
 import { mirrorTask, supabase } from "../lib/supabase";
 import { holdFetchesBehindWrite, invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve, settleWrite } from "../lib/sync";
 import { feedStaleTime } from "../lib/sync/feed";
+import { fetchWithDelta } from "../lib/sync/rangeDelta";
 import { DEFAULT_DURATION_MINUTES, restoreFromTrashPatch, restingStatus, type Recurrence, type Slot, type Task, type TaskPriority, type TaskStatus } from "../lib/types";
 import { todayISO } from "../lib/dates";
 import { needsGrooming } from "../lib/grooming";
@@ -72,20 +73,36 @@ export function useInboxTasks() {
 
 /** All tasks for a given day (the Today list when date = today). */
 export function useDayTasks(dateISO: string) {
-  return useQuery({
+  return useQuery<Task[]>({
     queryKey: ["tasks", "day", dateISO],
-    queryFn: async (): Promise<Task[]> => {
-      const { data, error } = await supabase
-        .from("tasks")
-        .select(TASK_COLS)
-        .eq("do_date", dateISO)
-        .in("status", ["planned", "done"])
-        .is("parent_task_id", null)
-        .is("slot_id", null) // slot children show inside their slot, not here
-        .order("sort_order")
-        .order("created_at");
-      if (error) throw error;
-      return data as Task[];
+    queryFn: async ({ client, queryKey }): Promise<Task[]> => {
+      const search = new URLSearchParams();
+      search.set("select", TASK_COLS);
+      search.set("do_date", `eq.${dateISO}`);
+      search.set("status", "in.(planned,done)");
+      search.set("parent_task_id", "is.null");
+      search.set("slot_id", "is.null");
+      search.set("order", "sort_order.asc,created_at.asc");
+      return fetchWithDelta<Task>({
+        table: "tasks",
+        search,
+        cursorKey: `tasks:day:${dateISO}`,
+        identity: (row) => row.id,
+        prev: client.getQueryData<Task[]>(queryKey),
+        full: async () => {
+          const { data, error } = await supabase
+            .from("tasks")
+            .select(TASK_COLS)
+            .eq("do_date", dateISO)
+            .in("status", ["planned", "done"])
+            .is("parent_task_id", null)
+            .is("slot_id", null) // slot children show inside their slot, not here
+            .order("sort_order")
+            .order("created_at");
+          if (error) throw error;
+          return data as Task[];
+        },
+      });
     },
   });
 }
@@ -99,27 +116,45 @@ export const scheduledTasksKey = (rangeStartISO: string, rangeEndISO: string) =>
 export async function fetchScheduledTasksRange(
   rangeStartISO: string,
   rangeEndISO: string,
+  prev?: Task[],
 ): Promise<Task[]> {
-  const { data, error } = await supabase
-    .from("tasks")
-    .select(TASK_COLS)
-    .not("start_time", "is", null)
-    .in("status", ["planned", "done"])
-    .is("parent_task_id", null)
-    .gte("start_time", rangeStartISO)
-    .lt("start_time", rangeEndISO);
-  if (error) throw error;
-  return data as Task[];
+  const search = new URLSearchParams();
+  search.set("select", TASK_COLS);
+  search.append("start_time", "not.is.null");
+  search.append("start_time", `gte.${rangeStartISO}`);
+  search.append("start_time", `lt.${rangeEndISO}`);
+  search.append("status", "in.(planned,done)");
+  search.append("parent_task_id", "is.null");
+  return fetchWithDelta<Task>({
+    table: "tasks",
+    search,
+    cursorKey: `tasks:scheduled:${rangeStartISO}:${rangeEndISO}`,
+    identity: (row) => row.id,
+    prev,
+    full: async () => {
+      const { data, error } = await supabase
+        .from("tasks")
+        .select(TASK_COLS)
+        .not("start_time", "is", null)
+        .in("status", ["planned", "done"])
+        .is("parent_task_id", null)
+        .gte("start_time", rangeStartISO)
+        .lt("start_time", rangeEndISO);
+      if (error) throw error;
+      return data as Task[];
+    },
+  });
 }
 
 export function useScheduledTasks(rangeStartISO: string, rangeEndISO: string) {
-  return useQuery({
+  return useQuery<Task[]>({
     queryKey: scheduledTasksKey(rangeStartISO, rangeEndISO),
     // A scheduled task IS a time block, so this blanking on a range change was
     // half of the calendar emptying itself mid-swipe. See useExternalEvents.
     staleTime: feedStaleTime(CALENDAR_RANGE_STALE_MS),
     placeholderData: (prev) => prev,
-    queryFn: () => fetchScheduledTasksRange(rangeStartISO, rangeEndISO),
+    queryFn: ({ client, queryKey }) =>
+      fetchScheduledTasksRange(rangeStartISO, rangeEndISO, client.getQueryData<Task[]>(queryKey)),
   });
 }
 
@@ -136,27 +171,49 @@ export const plannedAnytimeKey = (rangeStartISO: string, rangeEndISO: string) =>
 export async function fetchPlannedAnytimeRange(
   rangeStartISO: string,
   rangeEndISO: string,
+  prev?: Task[],
 ): Promise<Task[]> {
-  const { data, error } = await supabase
-    .from("tasks")
-    .select(TASK_COLS)
-    .is("start_time", null)
-    .is("parent_task_id", null)
-    .is("slot_id", null) // slot children ride their slot, not the anytime row
-    .not("do_date", "is", null)
-    .in("status", ["planned"])
-    .gte("do_date", rangeStartISO.substring(0, 10))
-    .lt("do_date", rangeEndISO.substring(0, 10));
-  if (error) throw error;
-  return data as Task[];
+  const from = rangeStartISO.substring(0, 10);
+  const to = rangeEndISO.substring(0, 10);
+  const search = new URLSearchParams();
+  search.set("select", TASK_COLS);
+  search.append("start_time", "is.null");
+  search.append("parent_task_id", "is.null");
+  search.append("slot_id", "is.null");
+  search.append("do_date", "not.is.null");
+  search.append("do_date", `gte.${from}`);
+  search.append("do_date", `lt.${to}`);
+  search.append("status", "in.(planned)");
+  return fetchWithDelta<Task>({
+    table: "tasks",
+    search,
+    cursorKey: `tasks:anytime:${from}:${to}`,
+    identity: (row) => row.id,
+    prev,
+    full: async () => {
+      const { data, error } = await supabase
+        .from("tasks")
+        .select(TASK_COLS)
+        .is("start_time", null)
+        .is("parent_task_id", null)
+        .is("slot_id", null) // slot children ride their slot, not the anytime row
+        .not("do_date", "is", null)
+        .in("status", ["planned"])
+        .gte("do_date", from)
+        .lt("do_date", to);
+      if (error) throw error;
+      return data as Task[];
+    },
+  });
 }
 
 export function usePlannedAnytimeTasks(rangeStartISO: string, rangeEndISO: string) {
-  return useQuery({
+  return useQuery<Task[]>({
     queryKey: plannedAnytimeKey(rangeStartISO, rangeEndISO),
     staleTime: feedStaleTime(CALENDAR_RANGE_STALE_MS),
     placeholderData: (prev) => prev,
-    queryFn: () => fetchPlannedAnytimeRange(rangeStartISO, rangeEndISO),
+    queryFn: ({ client, queryKey }) =>
+      fetchPlannedAnytimeRange(rangeStartISO, rangeEndISO, client.getQueryData<Task[]>(queryKey)),
   });
 }
 
@@ -261,20 +318,35 @@ export function useTaskSteps(parentId: string | null) {
 
 /** Every task committed to a sprint (the Week pool), done included. */
 export function useSprintTasks(sprintId: string | null) {
-  return useQuery({
+  return useQuery<Task[]>({
     queryKey: ["tasks", "sprint", sprintId],
     enabled: Boolean(sprintId),
-    queryFn: async (): Promise<Task[]> => {
-      const { data, error } = await supabase
-        .from("tasks")
-        .select(TASK_COLS)
-        .eq("sprint_id", sprintId!)
-        .neq("status", "trashed")
-        .is("parent_task_id", null)
-        .order("sort_order")
-        .order("created_at");
-      if (error) throw error;
-      return data as Task[];
+    queryFn: async ({ client, queryKey }): Promise<Task[]> => {
+      const search = new URLSearchParams();
+      search.set("select", TASK_COLS);
+      search.set("sprint_id", `eq.${sprintId}`);
+      search.set("status", "neq.trashed");
+      search.set("parent_task_id", "is.null");
+      search.set("order", "sort_order.asc,created_at.asc");
+      return fetchWithDelta<Task>({
+        table: "tasks",
+        search,
+        cursorKey: `tasks:sprint:${sprintId}`,
+        identity: (row) => row.id,
+        prev: client.getQueryData<Task[]>(queryKey),
+        full: async () => {
+          const { data, error } = await supabase
+            .from("tasks")
+            .select(TASK_COLS)
+            .eq("sprint_id", sprintId!)
+            .neq("status", "trashed")
+            .is("parent_task_id", null)
+            .order("sort_order")
+            .order("created_at");
+          if (error) throw error;
+          return data as Task[];
+        },
+      });
     },
   });
 }

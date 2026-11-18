@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { resetIdbForTests } from "../../src/lib/sync/idb";
 import { enqueue } from "../../src/lib/sync/outbox";
 import {
+  PULL_INTERVAL_MS,
   pullSyncTables,
   refreshOwing,
   resetOwingForTests,
@@ -69,6 +70,10 @@ function newTask(id: string) {
 
 describe("pullSyncTables", () => {
   beforeEach(setup);
+
+  it("pulls on a five-minute timer, not every minute", () => {
+    expect(PULL_INTERVAL_MS).toBe(300_000);
+  });
 
   it("marks the surfaces another device could have changed", async () => {
     await refreshOwing();

@@ -44,7 +44,12 @@
     "enabled": true
   },
   // Workers Paid. UTC, matching today's pg_cron. Same `* * * * *` tick runs
-  // calendar-dispatch (Queue fan-out) and push-dispatch. Both no-op until CUTOVER_FLIPPED.
+  // calendar-dispatch (Queue fan-out) and push-dispatch. Both no-op until
+  // CUTOVER_FLIPPED. The minute trigger stays for calendar-dispatch: CronGate
+  // (D-239) already skips Neon on a quiet minute, and a 5–10 min calendar
+  // tick would delay Google/Graph/CalDAV. Push-dispatch shares the tick but
+  // now lists only enabled users with a subscription and omits hidden_events
+  // (D-249), so a quiet minute is a cheap EXISTS.
   "triggers": {
     "crons": [
       "* * * * *",

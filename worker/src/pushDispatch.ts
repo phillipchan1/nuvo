@@ -69,7 +69,6 @@ export interface PushDispatchResult {
 type SettingsRow = {
   user_id: string;
   reminder_prefs: unknown;
-  hidden_events: { key: string }[] | null;
   time_zone: string | null;
 };
 
@@ -91,23 +90,24 @@ export async function runPushDispatch(
     };
   }
 
-  // Only accounts with a device to notify. The rest can never receive a push,
-  // so reading their tasks, slots and two days of events every minute was pure
-  // Neon transfer (D-238).
+  // Only accounts that can actually be notified: reminders on AND at least one
+  // device. Listing used to pull `hidden_events` (tens of KB) for every user
+  // with a prefs blob, then load two days of events for people with no
+  // subscription at all (D-249). Hidden events load per user below.
   const only = opts.userIds;
   if (only && !only.length) return { ok: true, configured, accounts: 0, considered: 0, notified: 0, next: {} };
   const settingsRows = (only
     ? await sql`
-      SELECT s.user_id, s.reminder_prefs, s.hidden_events, s.time_zone
+      SELECT s.user_id, s.reminder_prefs, s.time_zone
       FROM user_settings s
-      WHERE s.reminder_prefs IS NOT NULL
+      WHERE (s.reminder_prefs->>'enabled') = 'true'
         AND s.user_id = ANY(${only})
         AND EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.user_id = s.user_id)
     `
     : await sql`
-      SELECT s.user_id, s.reminder_prefs, s.hidden_events, s.time_zone
+      SELECT s.user_id, s.reminder_prefs, s.time_zone
       FROM user_settings s
-      WHERE s.reminder_prefs IS NOT NULL
+      WHERE (s.reminder_prefs->>'enabled') = 'true'
         AND EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.user_id = s.user_id)
     `) as SettingsRow[];
 
@@ -206,7 +206,7 @@ async function dispatchForUser(
   // Date-only anchors (deadline, do_date) resolve in the user's zone (±14h):
   // a day of slack each side of the window — never every deadline ever set,
   // which filled LIMIT 500 and silently dropped the near ones.
-  const [tasks, slots, events, subscriptions, overrides] = await Promise.all([
+  const [tasks, slots, events, subscriptions, overrides, hiddenRow] = await Promise.all([
     sql`
       SELECT id, title, status, start_time, deadline, do_date
       FROM tasks
@@ -247,12 +247,18 @@ async function dispatchForUser(
       FROM reminders
       WHERE user_id = ${userId}
     `,
+    sql`
+      SELECT hidden_events
+      FROM user_settings
+      WHERE user_id = ${userId}
+    `,
   ]);
 
   const subs = subscriptions as unknown as PushSubscriptionRow[];
   if (!subs.length) return { considered, notified, next: null };
 
-  const hiddenKeys = new Set((row.hidden_events ?? []).map((h) => h.key));
+  const hiddenEvents = (hiddenRow[0] as { hidden_events: { key: string }[] | null } | undefined)?.hidden_events;
+  const hiddenKeys = new Set((hiddenEvents ?? []).map((h) => h.key));
   const anchors = buildReminderAnchors({
     tasks: tasks as never,
     slots: slots as never,

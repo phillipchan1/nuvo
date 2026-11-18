@@ -253,6 +253,88 @@ const stepId = crypto.randomUUID();
   ok(bad.error?.code === "42703", `unknown column → 42703 (${bad.error?.code})`);
   const unknownTable = await A.from("users").select("*");
   ok(unknownTable.error && unknownTable.status === 404, "tables outside the policy do not exist here");
+
+  const readAtRes = await call(`/api/rest/v1/tasks?select=id&id=eq.${taskId}`, {
+    headers: { Authorization: `Bearer ${a.token}` },
+  });
+  ok(readAtRes.ok && /^\d{4}-\d{2}-\d{2}T/.test(readAtRes.headers.get("x-read-at") ?? ""), "GET exposes X-Read-At");
+  ok(readAtRes.headers.get("x-nuvo-delta") == null, "a full GET is not a delta");
+}
+
+// --- delta reads: additive, owner-scoped, deletes via the identity set ------
+{
+  const since = "2020-01-01T00:00:00.000Z";
+  const deltaRes = await call(
+    `/api/rest/v1/tasks?select=id,title&id=eq.${taskId}&nuvo_since=${encodeURIComponent(since)}`,
+    { headers: { Authorization: `Bearer ${a.token}`, Prefer: "nuvo-delta" } },
+  );
+  ok(deltaRes.status === 200, `delta GET: ${deltaRes.status}`);
+  ok(deltaRes.headers.get("x-nuvo-delta") === "1", "delta GET sets X-Nuvo-Delta");
+  const delta = (await deltaRes.json()) as { updated?: { id: string; title: string }[]; ids?: string[]; read_at?: string; reset?: boolean };
+  ok(delta.reset !== true, "a small delta is not a reset");
+  ok(Array.isArray(delta.updated) && delta.updated.some((r) => r.id === taskId), "delta.updated carries the changed row");
+  ok(Array.isArray(delta.ids) && delta.ids.includes(taskId), "delta.ids includes the live identity");
+  ok(typeof delta.read_at === "string" && /^\d{4}-\d{2}-\d{2}T/.test(delta.read_at), "delta.read_at is an ISO timestamp");
+
+  const future = "2099-01-01T00:00:00.000Z";
+  const quietRes = await call(
+    `/api/rest/v1/tasks?select=id,title&id=eq.${taskId}&nuvo_since=${encodeURIComponent(future)}`,
+    { headers: { Authorization: `Bearer ${a.token}`, Prefer: "nuvo-delta" } },
+  );
+  const quiet = (await quietRes.json()) as { updated?: unknown[]; ids?: string[] };
+  ok(Array.isArray(quiet.updated) && quiet.updated.length === 0, "a cursor in the future updates nothing");
+  ok(Array.isArray(quiet.ids) && quiet.ids.includes(taskId), "…but still names every live id (delete detection)");
+
+  const ignored = await call(`/api/rest/v1/tasks?select=id&id=eq.${taskId}&nuvo_since=${encodeURIComponent(since)}`, {
+    headers: { Authorization: `Bearer ${a.token}` },
+  });
+  const ignoredBody = (await ignored.json()) as unknown;
+  ok(Array.isArray(ignoredBody), "without Prefer: nuvo-delta, nuvo_since is reserved and the body stays a PostgREST array");
+
+  const bDelta = await call(
+    `/api/rest/v1/tasks?select=id&id=eq.${taskId}&nuvo_since=${encodeURIComponent(since)}`,
+    { headers: { Authorization: `Bearer ${b.token}`, Prefer: "nuvo-delta" } },
+  );
+  const bBody = (await bDelta.json()) as { updated?: unknown[]; ids?: string[] };
+  ok(Array.isArray(bBody.ids) && bBody.ids.length === 0, "B's delta does not name A's task");
+  ok(Array.isArray(bBody.updated) && bBody.updated.length === 0, "B's delta does not carry A's row");
+
+  const missingSince = await call(`/api/rest/v1/tasks?select=id`, {
+    headers: { Authorization: `Bearer ${a.token}`, Prefer: "nuvo-delta" },
+  });
+  const missingBody = (await missingSince.json()) as { code?: string };
+  ok(missingBody.code === "PGRST100", `delta without nuvo_since is a 400 (${missingBody.code})`);
+
+  const evtAcct = await db.query<{ id: string }>(
+    `INSERT INTO calendar_accounts (user_id, provider, email, sync_direction)
+     VALUES ($1, 'google', 'delta-cal@example.test', 'read_only') RETURNING id`,
+    [a.id],
+  );
+  const evtId = crypto.randomUUID();
+  await db.query(
+    `INSERT INTO external_events (id, user_id, account_id, calendar_id, provider_event_id, title, start_at, end_at)
+     VALUES ($1, $2, $3, 'primary', 'evt-delta', 'Delta meeting', '2026-10-26T17:00:00Z', '2026-10-26T18:00:00Z')`,
+    [evtId, a.id, evtAcct.rows[0].id],
+  );
+  const evtDelta = await call(
+    `/api/rest/v1/external_events?select=id,title&id=eq.${evtId}&nuvo_since=${encodeURIComponent(since)}`,
+    { headers: { Authorization: `Bearer ${a.token}`, Prefer: "nuvo-delta" } },
+  );
+  const evtBody = (await evtDelta.json()) as { updated?: { id: string }[]; ids?: string[] };
+  ok(Array.isArray(evtBody.ids) && evtBody.ids.includes(evtId), "event delta names the live id");
+  ok(Array.isArray(evtBody.updated) && evtBody.updated.some((r) => r.id === evtId), "event delta carries last_synced_at rows");
+
+  await A.from("event_domain_routing").upsert(
+    { event_key: "acct:delta", domain_id: domainId, routed_at: "2026-10-26T17:00:00Z" },
+    { onConflict: "user_id,event_key" },
+  );
+  const routeDelta = await call(
+    `/api/rest/v1/event_domain_routing?select=event_key,domain_id&nuvo_since=${encodeURIComponent(since)}`,
+    { headers: { Authorization: `Bearer ${a.token}`, Prefer: "nuvo-delta" } },
+  );
+  const routeBody = (await routeDelta.json()) as { updated?: { event_key: string }[]; ids?: string[] };
+  ok(Array.isArray(routeBody.ids) && routeBody.ids.includes("acct:delta"), "routing delta identities by event_key");
+  ok(Array.isArray(routeBody.updated) && routeBody.updated.some((r) => r.event_key === "acct:delta"), "routing delta carries routed_at rows");
 }
 
 // --- B cannot see, change, delete, or point at A's rows ---------------------
@@ -497,12 +579,119 @@ frozen = false;
   ok(pre.status === 204 && ["prefer", "content-profile", "accept-profile", "authorization"].every((h) => allow.includes(h)), "preflight allows the builder's headers");
 }
 
-// --- Hyperdrive: no data read may be cacheable --------------------------------
+// --- Hyperdrive: row-body reads must be cacheable (no now()) ---------------
 {
-  const reads = sent.filter((t) => /^\s*(SELECT|WITH)\b/i.test(t) && !/pg_attribute|pg_index|pg_constraint/.test(t));
-  const cacheable = reads.filter((t) => !/\bnow\(\)/i.test(t));
-  ok(reads.length > 20, `recorded the route's reads (${reads.length})`);
-  ok(cacheable.length === 0, `every data read calls now(), so Hyperdrive will not cache it: ${cacheable[0]?.slice(0, 120) ?? ""}`);
+  const bodies = sent.filter((t) => /json_agg\(_r\)/.test(t) && !/\b(INSERT|UPDATE|DELETE)\b/i.test(t));
+  ok(bodies.length > 10, `recorded the route's row-body reads (${bodies.length})`);
+  ok(
+    bodies.every((t) => !/\bnow\(\)/i.test(t)),
+    `row-body reads omit now() so Hyperdrive can cache them: ${bodies.find((t) => /\bnow\(\)/i.test(t))?.slice(0, 120) ?? ""}`,
+  );
+}
+
+// --- transfer: full vs quiet-delta vs one-change, then extrapolate ----------
+{
+  const EVENT_N = 400;
+  const ROUTE_N = 200;
+  const TASK_N = 80;
+  const PROD = { events: 11_951, routing: 2_715, tasks: 783 };
+  const EVENT_SELECT =
+    "id,account_id,provider_event_id,calendar_id,title,start_at,end_at,all_day,location,busy,self_rsvp,recurring_event_id,last_synced_at";
+  const acct = await db.query<{ id: string }>(
+    `INSERT INTO calendar_accounts (user_id, provider, email, sync_direction)
+     VALUES ($1, 'google', 'xfer-cal@example.test', 'read_only') RETURNING id`,
+    [a.id],
+  );
+  const accountId = acct.rows[0].id;
+  await db.query(
+    `INSERT INTO external_events (user_id, account_id, calendar_id, provider_event_id, title, start_at, end_at, location, busy, self_rsvp)
+     SELECT $1, $2, 'primary', 'xfer-' || g, 'Weekly sync ' || g,
+            TIMESTAMPTZ '2026-09-01 09:00:00+00' + (g || ' hours')::interval,
+            TIMESTAMPTZ '2026-09-01 09:30:00+00' + (g || ' hours')::interval,
+            'Zoom', true, 'accepted'
+       FROM generate_series(1, $3) g`,
+    [a.id, accountId, EVENT_N],
+  );
+  const sprintId = crypto.randomUUID();
+  await db.query(`INSERT INTO sprints (id, user_id, week_start) VALUES ($1, $2, '2026-11-16')`, [sprintId, a.id]);
+  await db.query(
+    `INSERT INTO tasks (user_id, title, status, sprint_id, notes)
+     SELECT $1, 'Sprint work ' || g, 'planned', $2, 'notes for a lived-in task that is not tiny'
+       FROM generate_series(1, $3) g`,
+    [a.id, sprintId, TASK_N],
+  );
+  await db.query(
+    `INSERT INTO event_domain_routing (user_id, event_key, domain_id, routed_at)
+     SELECT $1, 'acct:xfer-' || g, $2, TIMESTAMPTZ '2026-09-01 00:00:00+00'
+       FROM generate_series(1, $3) g`,
+    [a.id, domainId, ROUTE_N],
+  );
+
+  const range = `start_at=lt.2026-12-01T00:00:00.000Z&end_at=gt.2026-08-01T00:00:00.000Z`;
+  const since = encodeURIComponent("2020-01-01T00:00:00.000Z");
+  const future = encodeURIComponent("2099-01-01T00:00:00.000Z");
+  const auth = { Authorization: `Bearer ${a.token}` };
+
+  async function bytesOf(path: string, prefer?: string): Promise<number> {
+    const res = await call(path, { headers: prefer ? { ...auth, Prefer: prefer } : auth });
+    const text = await res.text();
+    ok(res.ok, `transfer GET ${path.slice(0, 60)}: ${res.status}`);
+    return new TextEncoder().encode(text).length;
+  }
+
+  const eventFull = await bytesOf(`/api/rest/v1/external_events?select=${EVENT_SELECT}&${range}&order=start_at.asc,id.asc`);
+  const eventQuiet = await bytesOf(
+    `/api/rest/v1/external_events?select=${EVENT_SELECT}&${range}&nuvo_since=${future}`,
+    "nuvo-delta",
+  );
+  const eventWarm = await bytesOf(
+    `/api/rest/v1/external_events?select=${EVENT_SELECT}&${range}&nuvo_since=${since}`,
+    "nuvo-delta",
+  );
+  const routeFull = await bytesOf(`/api/rest/v1/event_domain_routing?select=event_key,domain_id,manual_domain_id&order=event_key.asc`);
+  const routeQuiet = await bytesOf(
+    `/api/rest/v1/event_domain_routing?select=event_key,domain_id,manual_domain_id&nuvo_since=${future}`,
+    "nuvo-delta",
+  );
+  const sprintFull = await bytesOf(
+    `/api/rest/v1/tasks?select=*,task_labels(label_id)&sprint_id=eq.${sprintId}&status=neq.trashed&parent_task_id=is.null`,
+  );
+  const sprintQuiet = await bytesOf(
+    `/api/rest/v1/tasks?select=*,task_labels(label_id)&sprint_id=eq.${sprintId}&status=neq.trashed&parent_task_id=is.null&nuvo_since=${future}`,
+    "nuvo-delta",
+  );
+
+  ok(eventQuiet < eventFull, `event quiet delta (${eventQuiet}) < full (${eventFull})`);
+  ok(eventWarm > eventQuiet, `event warm delta (${eventWarm}) carries rows`);
+  ok(routeQuiet < routeFull, `routing quiet delta (${routeQuiet}) < full (${routeFull})`);
+  ok(sprintQuiet < sprintFull, `sprint quiet delta (${sprintQuiet}) < full (${sprintFull})`);
+
+  const scale = (sample: number, n: number, prod: number) => Math.round((sample / n) * prod);
+  const report = {
+    events: {
+      sample: EVENT_N,
+      full: eventFull,
+      quietDelta: eventQuiet,
+      warmDelta: eventWarm,
+      prodFull: scale(eventFull, EVENT_N, PROD.events),
+      prodQuiet: scale(eventQuiet, EVENT_N, PROD.events),
+    },
+    routing: {
+      sample: ROUTE_N,
+      full: routeFull,
+      quietDelta: routeQuiet,
+      prodFull: scale(routeFull, ROUTE_N, PROD.routing),
+      prodQuiet: scale(routeQuiet, ROUTE_N, PROD.routing),
+    },
+    sprint: {
+      sample: TASK_N,
+      full: sprintFull,
+      quietDelta: sprintQuiet,
+      prodFull: scale(sprintFull, TASK_N, PROD.tasks),
+      prodQuiet: scale(sprintQuiet, TASK_N, PROD.tasks),
+    },
+  };
+  console.log("NUVO_TRANSFER_BYTES " + JSON.stringify(report));
 }
 
 restoreIo();

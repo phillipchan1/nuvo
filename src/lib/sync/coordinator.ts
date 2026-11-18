@@ -524,15 +524,22 @@ function takeDeferred(tables: Iterable<SyncTable>): (readonly string[])[] {
  * not owed. Owed tables stay on the optimistic cache until their drain.
  * Inactive queries are only marked stale (`refetchType: "active"` default)
  * so a background tab does not stampede.
+ *
+ * Roots a focus catch-up must not refetch even when the feed is down: the
+ * routing map is loaded once per session and painted from the feed / local
+ * edits; invalidating it re-downloaded thousands of rows on every focus (D-249).
  */
+const CATCH_UP_SKIP_ROOTS = new Set(["event_domain_routing"]);
+
 export function catchUpAfterOwingKnown(qc: QueryClient) {
   if (!owingReady) return;
   // With the change feed answering, the lists it covers are not refetched on a
   // clock: one small question says which of them moved (D-238). Everything else
-  // catches up exactly as before.
+  // catches up exactly as before, except the session-once map (D-249).
   const feed = activeFeed();
   qc.invalidateQueries({
     predicate: (query) => {
+      if (CATCH_UP_SKIP_ROOTS.has(String(query.queryKey[0] ?? ""))) return false;
       if (feed?.covers(query.queryKey)) return false;
       if (queryKeyOwesServer(query.queryKey)) return false;
       return query.isStale();
@@ -566,7 +573,9 @@ export function catchUpAfterOwingKnown(qc: QueryClient) {
  *
  * On the Worker path that round was ~1.4 MB of Neon transfer a minute, so with
  * the change feed installed the timer asks the feed instead (D-238) and this
- * invalidation only runs when the feed can't answer.
+ * invalidation only runs when the feed can't answer. The interval is five
+ * minutes (D-249): focus still polls the feed immediately, and a quiet Mac
+ * no longer asks Neon every minute.
  */
 const PULL_ROOTS = ["tasks", "slots", "labels", "recurrences", "sprint"] as const;
 
@@ -604,9 +613,9 @@ export function pullSyncTables(qc: QueryClient) {
 }
 
 /** How often an open, visible window re-reads the tables another device may
- *  have changed. Long enough to be cheap, short enough that "I moved it on my
- *  phone" is true on the Mac before the user goes looking for it. */
-export const PULL_INTERVAL_MS = 60_000;
+ *  have changed. Focus still polls the change feed immediately; this is the
+ *  backup for a Mac that never leaves the foreground (D-249). */
+export const PULL_INTERVAL_MS = 300_000;
 
 export interface SyncRunOptions {
   qc: QueryClient;
