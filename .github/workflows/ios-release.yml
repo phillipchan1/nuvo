@@ -70,7 +70,12 @@ jobs:
     concurrency:
       group: ios-testflight
       cancel-in-progress: true
-    runs-on: macos-latest
+    # The xcode-27 image, not macos-latest: macos-latest's default is Xcode 26.x
+    # (iOS 26.5 SDK), and App Store Connect warns (ITMS-90725) that from April
+    # 2027 uploads must be built with the iOS 27 SDK / Xcode 27. The image's
+    # default Xcode is used as-is — nothing here or in scripts/ios-*.sh pins an
+    # SDK version. Move back to macos-latest once its default Xcode is 27+.
+    runs-on: xcode-27
     timeout-minutes: 45
     steps:
       - id: checkout
