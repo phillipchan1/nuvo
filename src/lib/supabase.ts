@@ -183,3 +183,25 @@ export function mirrorTask(taskId: string) {
       if (delivered) invokeQuiet("task-mirror", { taskId, tz });
     });
 }
+
+/**
+ * A GET against `/rest/v1/<table>?…`, through the same `guardedFetch` seam the
+ * builder uses. The delta path (`Prefer: nuvo-delta`) is not a supabase-js
+ * verb — this is how the client asks for it without a second wire.
+ */
+export async function restRequest(pathAndQuery: string, init?: RequestInit): Promise<Response> {
+  const path = pathAndQuery.replace(/^\//, "");
+  const url = `${supabaseUrl.replace(/\/+$/, "")}/rest/v1/${path}`;
+  const headers = new Headers(init?.headers);
+  if (!headers.has("apikey")) headers.set("apikey", supabaseAnonKey);
+  if (!headers.has("Authorization")) {
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (token) headers.set("Authorization", `Bearer ${token}`);
+    } catch {
+      /* unauthenticated read will 401, same as the builder */
+    }
+  }
+  return guardedFetch(url, { method: "GET", ...init, headers });
+}

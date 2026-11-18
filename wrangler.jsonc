@@ -44,7 +44,14 @@
     "enabled": true
   },
   // Workers Paid. UTC, matching today's pg_cron. Same `* * * * *` tick runs
-  // calendar-dispatch (Queue fan-out) and push-dispatch. Both no-op until CUTOVER_FLIPPED.
+  // calendar-dispatch (Queue fan-out) and push-dispatch. Both no-op until
+  // CUTOVER_FLIPPED. The minute trigger stays for calendar-dispatch: a due
+  // poll must be claimed that minute, and a 5–10 min tick would delay
+  // Google/Graph/CalDAV. CronGate (D-239) answers first — a quiet minute
+  // (no due poll, no due reminder) is one DO call and zero Neon queries,
+  // including the push-dispatch EXISTS (D-249). Without a gate, push-dispatch
+  // runs at most every 5 minutes and skips entirely while nobody is
+  // subscribed.
   "triggers": {
     "crons": [
       "* * * * *",

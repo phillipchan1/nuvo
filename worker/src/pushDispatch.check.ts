@@ -423,6 +423,66 @@ ok((await nearClaims()) === 1, "gone-only: claim kept (no retry loop)");
   ok(posts.some((p) => p.url === "https://push.example.test/user-b"), "isolation: B's device still pushed");
 }
 
+// D-249: listing skips disabled / unsubscribed accounts and does not select hidden_events.
+{
+  const listing: string[] = [];
+  const wrap = (async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    const text = strings.join("?");
+    if (/FROM user_settings s/.test(text)) listing.push(text);
+    return sql(strings, ...(values as never[]));
+  }) as unknown as typeof sql;
+
+  await db.query(
+    `INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (id) DO NOTHING`,
+    ["aaaaaaaa-fffd-4000-8000-000000000001", A, "https://push.example.test/listing-a", keysA.p256dh, keysA.auth],
+  );
+  await db.query(
+    `UPDATE user_settings SET reminder_prefs = $2::jsonb, hidden_events = $3::jsonb WHERE user_id = $1`,
+    [A, JSON.stringify({ enabled: true, block_leads: [5] }), JSON.stringify([])],
+  );
+  await db.query(
+    `UPDATE user_settings SET reminder_prefs = $2::jsonb, hidden_events = $3::jsonb WHERE user_id = $1`,
+    [B, JSON.stringify({ enabled: false, block_leads: [5] }), JSON.stringify(Array.from({ length: 800 }, (_, i) => ({ key: `hidden-${i}` })))],
+  );
+  listing.length = 0;
+  const disabled = await runPushDispatch(wrap, env, { nowMs, fetchImpl: mockFetch });
+  ok(disabled.accounts === 1, `listing skips a disabled account (got ${disabled.accounts})`);
+  ok(listing.length >= 1 && !listing[0]!.includes("hidden_events"), "listing SQL does not select hidden_events");
+  ok(listing[0]!.includes("push_subscriptions"), "listing SQL requires a subscription");
+  ok(listing[0]!.includes("enabled"), "listing SQL requires reminders enabled");
+  const hiddenBlob = JSON.stringify(Array.from({ length: 800 }, (_, i) => ({ key: `hidden-${i}` })));
+  const listingBefore = JSON.stringify({
+    user_id: B,
+    reminder_prefs: { enabled: true, block_leads: [5] },
+    hidden_events: JSON.parse(hiddenBlob),
+    time_zone: "UTC",
+  }).length;
+  const listingAfter = JSON.stringify({
+    user_id: B,
+    reminder_prefs: { enabled: true, block_leads: [5] },
+    time_zone: "UTC",
+  }).length;
+  console.log(
+    "NUVO_PUSH_LISTING_BYTES " +
+      JSON.stringify({
+        listingRowBefore: listingBefore,
+        listingRowAfter: listingAfter,
+        unsubscribedEnabledUser: { beforeQueries: "settings+tasks+slots+events+subs", afterQueries: 0 },
+      }),
+  );
+
+  await db.query(
+    `UPDATE user_settings SET reminder_prefs = $2::jsonb WHERE user_id = $1`,
+    [B, JSON.stringify({ enabled: true, block_leads: [5] })],
+  );
+  await db.query(`DELETE FROM push_subscriptions WHERE user_id = $1`, [B]);
+  listing.length = 0;
+  const unsub = await runPushDispatch(wrap, env, { nowMs, fetchImpl: mockFetch });
+  ok(unsub.accounts === 1, `listing skips an enabled account with no device (got ${unsub.accounts})`);
+}
+
 const unauth = await app.request("http://localhost:8787/api/cron/push-dispatch", {
   method: "POST",
   headers: { Origin: "http://localhost:8787" },

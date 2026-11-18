@@ -9743,3 +9743,44 @@ span gesture proves too fiddly under a real afternoon.
 Guarded by `tests/unschedule.test.tsx`. When the QA catalog lands, QA-TASK-12's bar list reads
 **Unschedule** where it said **Inbox**.*
 
+**D-249 · 2026-11-18 · Cut Neon transfer: cacheable REST, deltas, a session routing map, a quieter desktop pull.**
+*(Follow-up to D-238 / D-239 / D-245. One lived-in desktop still moved 1–1.8 GB/day through Neon:
+calendar ranges ~0.5 GB, the routing map ~0.37 GB, sprint tasks ~0.14 GB, push-dispatch ~82 MB.
+Asked: cut that transfer and let compute suspend, without changing what a shipped iOS/desktop
+client sees.)*
+
+Not a Question Ledger row — this is the planner staying cheap enough to run. Strains nothing
+user-facing; the four no's do not apply.
+
+→ **REST reads no longer call `now()`, except for 90s after that user wrote.** Hyperdrive
+skipped every `json_agg` body because `rest.ts` selected `now() AS read_at` to bust the
+cache. Freshness is `X-Read-At` (Worker clock) and the change feed. Hyperdrive does not
+invalidate on writes (max_age ~60s + SWR ~15s), so a GET for an account that wrote in the
+last 90s appends `now() IS NOT NULL` and is uncacheable — otherwise a shipped client that
+refetches after a mutation would paint the pre-write list over optimistic state. Live as
+soon as the Worker deploys.
+
+→ **Additive `Prefer: nuvo-delta` + `nuvo_since`.** Old clients never send either, so they keep
+getting the PostgREST array. A new client gets `{ updated, ids, read_at }` (or `{ reset: true }`):
+rows newer than the cursor plus every live identity, so a delete is a missing id without a
+tombstone column. Events stamp `last_synced_at` on PATCH so a desktop retime appears. Unknown
+Prefer on an old Worker is 400; the client falls back for the session.
+
+→ **`event_domain_routing` is session-once.** `staleTime: Infinity`, painted by `applyLiveChange`
+(the feed used to miss it because `oldFor` sent `{ id: key }` and the table has no `id`). Empty
+verdicts stay in the map so the AI router does not re-ask, which retired the second paged
+`select=event_key` (452 KB). Focus/poll skip the root. Local upserts patch the cache; they no
+longer invalidate the whole table.
+
+→ **Desktop pull is five minutes.** Focus still asks the feed immediately. The `* * * * *`
+cron stays for calendar-dispatch (a due poll must be claimed that minute). CronGate answers
+first: a quiet minute is zero Neon queries — calendar-dispatch, CronGate itself (a Durable
+Object, not Postgres), and the push-dispatch EXISTS. Push-dispatch shares the trigger but
+lists only `enabled` users with a `push_subscriptions` row, and loads `hidden_events` per
+user rather than in the listing. Without a gate it runs at most every five minutes, and
+not at all while a previous listing found nobody to notify.
+
+*Status: standing. Client savings need a release; server savings (Hyperdrive with
+write-epoch bypass, push listing, quiet-minute 0 SQL, delta endpoint) go live with the
+Worker.*
+

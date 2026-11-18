@@ -158,4 +158,39 @@ describe("applyLiveChange", () => {
     const scheduled = qc.getQueryData<Task[]>(["tasks", "scheduled", RANGE_START, RANGE_END]);
     expect(scheduled?.[0].start_time).toBe("2026-08-18T22:00:00.000Z");
   });
+
+  it("paints event_domain_routing into the session map, including a delete", () => {
+    const qc = new QueryClient();
+    qc.setQueryData(["event_domain_routing"], {
+      "acct:stay": { inferredDomainId: "d1" },
+      "acct:gone": { inferredDomainId: "d2" },
+    });
+
+    expect(
+      applyLiveChange(qc, {
+        table: "event_domain_routing",
+        eventType: "UPDATE",
+        old: { event_key: "acct:new" },
+        new: { event_key: "acct:new", domain_id: "d3", manual_domain_id: null },
+      }),
+    ).toBe(true);
+    expect(qc.getQueryData(["event_domain_routing"])).toEqual({
+      "acct:stay": { inferredDomainId: "d1" },
+      "acct:gone": { inferredDomainId: "d2" },
+      "acct:new": { inferredDomainId: "d3" },
+    });
+
+    expect(
+      applyLiveChange(qc, {
+        table: "event_domain_routing",
+        eventType: "DELETE",
+        old: { event_key: "acct:gone" },
+        new: null,
+      }),
+    ).toBe(true);
+    expect(qc.getQueryData(["event_domain_routing"])).toEqual({
+      "acct:stay": { inferredDomainId: "d1" },
+      "acct:new": { inferredDomainId: "d3" },
+    });
+  });
 });

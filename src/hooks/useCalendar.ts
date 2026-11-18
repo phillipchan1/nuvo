@@ -11,6 +11,7 @@ import {
   type CalendarAccount,
   type CalendarProvider,
   type ExternalEvent,
+  type Task,
   type GoogleRawEvent,
   type HiddenEvent,
   type Label,
@@ -44,6 +45,7 @@ import {
 } from "./useTasks";
 import { fetchSlotsRange, fetchSlotTasks, slotsKey, slotTasksKey } from "./useSlots";
 import { feedStaleTime } from "../lib/sync/feed";
+import { fetchWithDelta } from "../lib/sync/rangeDelta";
 
 /**
  * How long a fetched calendar window counts as fresh.
@@ -136,31 +138,49 @@ export const externalEventsKey = (rangeStartISO: string, rangeEndISO: string) =>
 
 /** The paged read itself, outside the hook so a surface can warm a range it is
  *  about to need — see `useCalendarRangePrefetch`. */
+const EXTERNAL_EVENT_COLS =
+  "id, account_id, provider_event_id, calendar_id, title, start_at, end_at, all_day, location, busy, self_rsvp, recurring_event_id, last_synced_at";
+
 export async function fetchExternalEventsRange(
   rangeStartISO: string,
   rangeEndISO: string,
+  prev?: ExternalEvent[],
 ): Promise<ExternalEvent[]> {
   const PAGE = 1000;
-  const all: ExternalEvent[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
-      .from("external_events")
-      .select("id, account_id, provider_event_id, calendar_id, title, start_at, end_at, all_day, location, busy, self_rsvp, recurring_event_id, last_synced_at")
-      .lt("start_at", rangeEndISO)
-      .gt("end_at", rangeStartISO)
-      .order("start_at")
-      .order("id")
-      .range(from, from + PAGE - 1);
-    if (error) throw error;
-    const rows = (data ?? []) as ExternalEvent[];
-    all.push(...rows);
-    if (rows.length < PAGE) break;
-  }
-  return all;
+  const search = new URLSearchParams();
+  search.set("select", EXTERNAL_EVENT_COLS);
+  search.append("start_at", `lt.${rangeEndISO}`);
+  search.append("end_at", `gt.${rangeStartISO}`);
+  search.set("order", "start_at.asc,id.asc");
+  return fetchWithDelta<ExternalEvent>({
+    table: "external_events",
+    search,
+    cursorKey: `external_events:${rangeStartISO}:${rangeEndISO}`,
+    identity: (row) => row.id,
+    prev,
+    full: async () => {
+      const all: ExternalEvent[] = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from("external_events")
+          .select(EXTERNAL_EVENT_COLS)
+          .lt("start_at", rangeEndISO)
+          .gt("end_at", rangeStartISO)
+          .order("start_at")
+          .order("id")
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        const rows = (data ?? []) as ExternalEvent[];
+        all.push(...rows);
+        if (rows.length < PAGE) break;
+      }
+      return all;
+    },
+  });
 }
 
 export function useExternalEvents(rangeStartISO: string, rangeEndISO: string) {
-  return useQuery({
+  return useQuery<ExternalEvent[]>({
     queryKey: externalEventsKey(rangeStartISO, rangeEndISO),
     // See useSlots: an empty bound means "not yet", not "everything". Sending
     // it produced `start_at=lt.` with no value, which PostgREST 400s.
@@ -174,7 +194,8 @@ export function useExternalEvents(rangeStartISO: string, rangeEndISO: string) {
     // result usually already CONTAINS the day you swiped to: keeping it makes
     // the swipe correct immediately, not merely non-empty.
     placeholderData: (prev) => prev,
-    queryFn: () => fetchExternalEventsRange(rangeStartISO, rangeEndISO),
+    queryFn: ({ client, queryKey }) =>
+      fetchExternalEventsRange(rangeStartISO, rangeEndISO, client.getQueryData<ExternalEvent[]>(queryKey)),
   });
 }
 
@@ -259,17 +280,20 @@ export async function prefetchCalendarRange(qc: QueryClient, start: string, end:
   void qc.prefetchQuery({
     queryKey: externalEventsKey(start, end),
     staleTime,
-    queryFn: () => fetchExternalEventsRange(start, end),
+    queryFn: ({ client, queryKey }) =>
+      fetchExternalEventsRange(start, end, client.getQueryData<ExternalEvent[]>(queryKey)),
   });
   void qc.prefetchQuery({
     queryKey: scheduledTasksKey(start, end),
     staleTime,
-    queryFn: () => fetchScheduledTasksRange(start, end),
+    queryFn: ({ client, queryKey }) =>
+      fetchScheduledTasksRange(start, end, client.getQueryData<Task[]>(queryKey)),
   });
   void qc.prefetchQuery({
     queryKey: plannedAnytimeKey(start, end),
     staleTime,
-    queryFn: () => fetchPlannedAnytimeRange(start, end),
+    queryFn: ({ client, queryKey }) =>
+      fetchPlannedAnytimeRange(start, end, client.getQueryData<Task[]>(queryKey)),
   });
   await qc.prefetchQuery({
     queryKey: slotsKey(start, end),

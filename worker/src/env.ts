@@ -73,7 +73,7 @@ export interface Env {
   CUTOVER_FLIPPED?: string;
   /** Calendar-dispatch fan-out. Optional on preview; required for the cron scaffold. */
   CALENDAR_SYNC_QUEUE?: QueueBinding;
-  /** The minute cron's gate (cronGate.ts, D-239). Unset → the cron runs every minute, ungated. */
+  /** The minute cron's gate (cronGate.ts, D-239). Unset → calendar-dispatch still runs every minute; push-dispatch at most every 5. */
   CRON_GATE?: DurableObjectNamespaceLike;
   /** The feed's change marker (syncMarker.ts, D-245). Unset → every feed poll asks Neon, as before. */
   SYNC_MARKER?: DurableObjectNamespaceLike;

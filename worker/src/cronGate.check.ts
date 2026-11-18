@@ -22,7 +22,8 @@ import {
   nextFullRunAt,
 } from "./cronGate.ts";
 import { gatePokeFor } from "./gatePoke.ts";
-import { MINUTE_CRON, runMinuteTick } from "./cronJobs.ts";
+import { MINUTE_CRON, PUSH_UNGATED_EVERY_MINUTES, runMinuteTick, ungatedPushDue } from "./cronJobs.ts";
+import { markPushListingEmpty, resetWriteFreshnessForTests } from "./writeFreshness.ts";
 import { installPushFetchForTests, nextLookAt } from "./pushDispatch.ts";
 import { calendarSyncInterval, googleChannelsLive, nextSyncAt } from "./google/owned.ts";
 import type { Env } from "./env.ts";
@@ -271,7 +272,10 @@ for (let m = 1; m <= 14; m++) {
   quietStatements += t.statements;
   quietOpens += t.opened;
 }
-ok(quietStatements === 0 && quietOpens === 0, `14 quiet minutes: ${quietStatements} statements, ${quietOpens} opens`);
+ok(
+  quietStatements === 0 && quietOpens === 0,
+  `quiet minute: calendar-dispatch + CronGate + push-dispatch EXISTS = 0 Neon queries (${quietStatements} statements, ${quietOpens} opens over ${quietMinutes} minutes)`,
+);
 
 const fire = await tick(now0 + 16 * 60_000);
 ok(fire.statements > 0, "the reminder's minute runs push-dispatch");
@@ -319,11 +323,40 @@ const nextMinute = await tick(realNow + 61_000);
 ok(nextMinute.statements === 0, "the minute after a calendar wake is quiet");
 void bFire;
 
-// No gate bound: the old behaviour, every minute.
+// No gate bound: calendar still runs (a due poll cannot wait). Push-dispatch
+// does not query Neon every minute — only every 5th, and not at all while a
+// previous listing found nobody to notify.
+resetWriteFreshnessForTests();
 const ungated = { ...env, CRON_GATE: undefined };
+let offMs = now0 + 60 * 60_000;
+while (ungatedPushDue(offMs)) offMs += 60_000;
+let onMs = offMs + 60_000;
+while (!ungatedPushDue(onMs)) onMs += 60_000;
+ok(PUSH_UNGATED_EVERY_MINUTES === 5, "fail-open push-dispatch is every 5 minutes");
+
 statements = 0;
-await runMinuteTick(ungated, open, now0 + 60 * 60_000);
-ok(statements > 0, "no gate → runs ungated");
+const offOut = await runMinuteTick(ungated, open, offMs);
+ok(statements > 0, "fail-open still runs calendar-dispatch");
+ok(
+  offOut.find((r) => r.job === "push-dispatch")?.skipped === true &&
+    offOut.find((r) => r.job === "push-dispatch")?.reason === "ungated_interval",
+  "fail-open: a non-5th minute skips push-dispatch (no EXISTS)",
+);
+const calendarOnly = statements;
+
+statements = 0;
+const onOut = await runMinuteTick(ungated, open, onMs);
+ok(onOut.find((r) => r.job === "push-dispatch")?.skipped !== true, "fail-open: a 5th minute runs push-dispatch");
+ok(statements > calendarOnly, "fail-open 5th minute adds the listing query");
+
+markPushListingEmpty();
+statements = 0;
+const emptyOut = await runMinuteTick(ungated, open, onMs + 5 * 60_000);
+ok(
+  emptyOut.find((r) => r.job === "push-dispatch")?.reason === "no_subscribers",
+  "fail-open: cached empty listing skips even a 5th minute",
+);
+ok(statements === calendarOnly, "no_subscribers tick does not run the EXISTS");
 
 // Unflipped: neither the gate nor SQL is touched.
 const before = ns.calls;

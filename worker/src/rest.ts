@@ -38,6 +38,7 @@ import { rotateInboundToken, type Store } from "./store.ts";
 import { syncChanges, type FeedAnswer } from "./syncFeed.ts";
 import { credentialKey, markerCheck, markerProve, parseCursor } from "./syncMarker.ts";
 import { scheduleClose } from "./requestIo.ts";
+import { freshnessSql, noteUserWrites } from "./writeFreshness.ts";
 
 export const REST_PREFIX = "/api/rest/v1";
 
@@ -46,7 +47,7 @@ export const REST_CORS: Record<string, string> = {
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, prefer, accept, accept-profile, content-profile, range, x-supabase-api-version",
   "Access-Control-Allow-Methods": "GET, HEAD, POST, PATCH, DELETE, OPTIONS",
-  "Access-Control-Expose-Headers": "content-range, content-location",
+  "Access-Control-Expose-Headers": "content-range, content-location, x-read-at, x-nuvo-delta",
   // Every builder call carries Authorization, so every new URL is preflighted.
   // Let the browser keep the answer (Chromium caps this at two hours).
   "Access-Control-Max-Age": "86400",
@@ -331,7 +332,7 @@ interface SelectSpec {
 }
 
 const CMP_OPS = new Set<CmpOp>(["eq", "neq", "gt", "gte", "lt", "lte", "like", "ilike", "in", "is"]);
-const RESERVED_PARAMS = new Set(["select", "order", "limit", "offset", "on_conflict", "columns"]);
+const RESERVED_PARAMS = new Set(["select", "order", "limit", "offset", "on_conflict", "columns", "nuvo_since"]);
 const IDENT = /^[a-z_][a-z0-9_]*$/;
 
 function ident(name: string): string {
@@ -483,6 +484,9 @@ const KNOWN_PREFER = new Set([
   "count=exact",
   "count=planned",
   "count=estimated",
+  // Additive: shipped clients never send this. A new client that does gets
+  // only rows newer than `nuvo_since`, plus the identity set for deletes.
+  "nuvo-delta",
 ]);
 
 function preferences(header: string | undefined): Set<string> {
@@ -652,20 +656,27 @@ function orderSql(target: Target, orders: Order[]): string {
 }
 
 /**
- * Every data read here selects this. Hyperdrive never caches a query that calls
- * a STABLE or VOLATILE function (`now()` included, since its 2026-02 change),
- * so the refetch right after a write reads Neon, not a 60-second-old answer.
- * The catalog reads leave it out on purpose: those may cache.
- */
-const UNCACHED = "now() AS read_at";
-
-/**
  * Wrap a row source as the response body: an array, or the one object asked
  * for. A CTE, because INSERT/UPDATE/DELETE … RETURNING cannot be a subquery.
+ *
+ * Reads used to select `now() AS read_at` so Hyperdrive would not cache them
+ * (it skips STABLE/VOLATILE functions). That made every calendar range and
+ * task list a Neon round-trip, ~1 GB/day from one open Mac. Freshness now
+ * lives on the `X-Read-At` response header (Worker clock) and on the change
+ * feed / `nuvo-delta` path. Writes still stamp `updated_at = now()` in SQL.
+ *
+ * Hyperdrive does not invalidate on writes (max_age ~60s, SWR ~15s). A GET
+ * for a user who wrote in the last `WRITE_FRESH_MS` appends `now() IS NOT
+ * NULL` so that read cannot be served stale; every other REST list is
+ * cacheable. See writeFreshness.ts.
  */
 function bodySql(source: string, singular: boolean): string {
   const body = singular ? "(json_agg(_r) -> 0)::text" : "COALESCE(json_agg(_r), '[]'::json)::text";
-  return `WITH _r AS (${source}) SELECT ${body} AS body, count(*)::int AS n, ${UNCACHED} FROM _r`;
+  return `WITH _r AS (${source}) SELECT ${body} AS body, count(*)::int AS n FROM _r`;
+}
+
+function readAtNow(): string {
+  return new Date().toISOString();
 }
 
 async function run(sql: Sql, text: string, params: Params): Promise<{ body: string | null; n: number }> {
@@ -698,7 +709,7 @@ async function assertOwnedRefs(
     const params = new Params();
     const flat = target.table === "tasks" && col === "parent_task_id" ? ` AND r."parent_task_id" IS NULL` : "";
     const owned = await sql.unsafe<{ n: number }[]>(
-      `SELECT count(DISTINCT r.${q(ref.column)})::int AS n, ${UNCACHED} FROM public.${q(ref.table)} r
+      `SELECT count(DISTINCT r.${q(ref.column)})::int AS n FROM public.${q(ref.table)} r
         WHERE r."user_id" = ${params.typed(target.uid, "uuid")}
           AND r.${q(ref.column)}::text = ANY (${params.typed(literalArray(values), "text[]")})${flat}`,
       params.values as never[],
@@ -729,7 +740,7 @@ async function assertOwnedReminderTargets(sql: Sql, target: Target, rows: Record
     if (!table || typeof r.target_id !== "string") throw denied("target_id cannot be set for this target_kind");
     const params = new Params();
     const hit = await sql.unsafe(
-      `SELECT ${UNCACHED} FROM public.${q(table)} r WHERE r."id"::text = ${params.add(r.target_id)}
+      `SELECT 1 FROM public.${q(table)} r WHERE r."id"::text = ${params.add(r.target_id)}
           AND r."user_id" = ${params.typed(target.uid, "uuid")} LIMIT 1`,
       params.values as never[],
     );
@@ -873,20 +884,94 @@ function finish(
   const total = page.total ?? (wantsCount(req) && req.method !== "GET" && req.method !== "HEAD" ? result.n : null);
   const span = result.n ? `${page.offset}-${page.offset + result.n - 1}` : "*";
   const range = `${span}/${total ?? "*"}`;
-  if (!wantsRows) return restResponse(okStatus === 200 ? 204 : okStatus, null, { "Content-Range": range });
-  return restResponse(okStatus, req.method === "HEAD" ? null : result.body ?? (req.singular ? "null" : "[]"), {
-    "Content-Range": range,
-  });
+  const extra: Record<string, string> = { "Content-Range": range, "X-Read-At": readAtNow() };
+  if (!wantsRows) return restResponse(okStatus === 200 ? 204 : okStatus, null, extra);
+  return restResponse(okStatus, req.method === "HEAD" ? null : result.body ?? (req.singular ? "null" : "[]"), extra);
+}
+
+/** How many changed rows a delta will carry before it tells the client to refetch. */
+const DELTA_LIMIT = 1000;
+
+function identityColumn(target: Target): string {
+  if (target.table === "event_domain_routing") return "event_key";
+  if (target.info.columns.has("id")) return "id";
+  if (target.info.pk.length === 1) return target.info.pk[0];
+  throw bad("delta reads need a single identity column");
+}
+
+/** The column a delta uses as "this row moved". Prefer `updated_at`; events
+ *  have `last_synced_at` (and a retime stamps it); routing has `routed_at`. */
+function changeColumn(target: Target): string | null {
+  if (target.info.columns.has("updated_at")) return "updated_at";
+  if (target.info.columns.has("last_synced_at")) return "last_synced_at";
+  if (target.info.columns.has("routed_at")) return "routed_at";
+  return null;
+}
+
+/**
+ * Additive `Prefer: nuvo-delta` + `nuvo_since=<ISO>`. Old clients never send
+ * either, so they keep getting the full PostgREST array. A new client gets
+ * `{ updated, ids, read_at }`: only rows newer than the cursor, plus every
+ * identity still matching the filters (so a delete/move-out is a missing id,
+ * with no tombstone column).
+ */
+async function handleDeltaSelect(sql: Sql, cat: Catalog, req: RestRequest, uid: string): Promise<Response> {
+  const since = req.params.get("nuvo_since");
+  if (since == null || since === "") throw bad("nuvo_since is required for a delta read");
+  if (!/^\d{4}-\d{2}-\d{2}[T ]/.test(since)) throw bad("nuvo_since must be an ISO timestamp");
+  const target = requireTarget(cat, req.table, uid, "select");
+  const tsCol = changeColumn(target);
+  if (!tsCol) throw bad(`delta reads are not available on ${target.table}`);
+  const idCol = identityColumn(target);
+  requireColumn(target, idCol);
+  requireColumn(target, tsCol);
+  const spec = parseSelect(req.params.get("select"));
+  const conds = parseFilters(req.params);
+  const tsType = target.info.columns.get(tsCol)!;
+
+  const fresh = await freshnessSql(uid);
+  const idParams = new Params();
+  const idWhere = whereSql(target, conds, idParams) + fresh;
+  const upParams = new Params();
+  const upCols = [...columnList(target, spec), ...(await embedSql(target, spec, upParams, cat))];
+  if (!upCols.length) throw bad("select names no columns");
+  const upWhere =
+    `${whereSql(target, conds, upParams)} AND t.${q(tsCol)} > ${upParams.typed(since, tsType)}` + fresh;
+  const upSource =
+    `SELECT ${upCols.join(", ")} FROM public.${q(target.table)} t WHERE ${upWhere}` +
+    orderSql(target, parseOrder(req.params.get("order"))) +
+    ` LIMIT ${DELTA_LIMIT + 1}`;
+
+  const [idRows, upResult] = await Promise.all([
+    sql.unsafe<{ body: string }[]>(
+      `SELECT COALESCE(json_agg(t.${q(idCol)} ORDER BY t.${q(idCol)}), '[]'::json)::text AS body
+         FROM public.${q(target.table)} t WHERE ${idWhere}`,
+      idParams.values as never[],
+    ),
+    run(sql, bodySql(upSource, false), upParams),
+  ]);
+
+  const readAt = readAtNow();
+  const headers = { "X-Read-At": readAt, "X-Nuvo-Delta": "1", "Content-Range": "*/*" };
+  if (upResult.n > DELTA_LIMIT) {
+    return restResponse(200, JSON.stringify({ reset: true, read_at: readAt }), headers);
+  }
+  const updated = healJsonbBody(target.table, upResult.body) ?? "[]";
+  const ids = idRows[0]?.body ?? "[]";
+  const body = `{"updated":${updated},"ids":${ids},"read_at":${JSON.stringify(readAt)}}`;
+  return restResponse(200, req.method === "HEAD" ? null : body, headers);
 }
 
 async function handleSelect(sql: Sql, cat: Catalog, req: RestRequest, uid: string): Promise<Response> {
+  if (req.prefer.has("nuvo-delta")) return handleDeltaSelect(sql, cat, req, uid);
   const target = requireTarget(cat, req.table, uid, "select");
   const params = new Params();
   const spec = parseSelect(req.params.get("select"));
   const cols = [...columnList(target, spec), ...(await embedSql(target, spec, params, cat))];
   if (!cols.length) throw bad("select names no columns");
   const conds = parseFilters(req.params);
-  const where = whereSql(target, conds, params);
+  const fresh = await freshnessSql(uid);
+  const where = whereSql(target, conds, params) + fresh;
   const limit = parseCount(req.params.get("limit"), "limit");
   const offset = parseCount(req.params.get("offset"), "offset");
   const source =
@@ -900,7 +985,7 @@ async function handleSelect(sql: Sql, cat: Catalog, req: RestRequest, uid: strin
     // Its own params: a statement may not carry a parameter it never reads.
     const countParams = new Params();
     const rows = await sql.unsafe<{ n: number }[]>(
-      `SELECT count(*)::int AS n, ${UNCACHED} FROM public.${q(target.table)} t WHERE ${whereSql(target, conds, countParams)}`,
+      `SELECT count(*)::int AS n FROM public.${q(target.table)} t WHERE ${whereSql(target, conds, countParams)}${fresh}`,
       countParams.values as never[],
     );
     total = Number(rows[0]?.n ?? 0);
@@ -988,7 +1073,9 @@ async function handleInsert(sql: Sql, cat: Catalog, req: RestRequest, uid: strin
     }
   }
   text += ` RETURNING ${returningSql(target, spec)}`;
-  return finish(req, await run(sql, bodySql(text, req.singular), params), 201);
+  const result = await run(sql, bodySql(text, req.singular), params);
+  noteUserWrites({ users: [uid] });
+  return finish(req, result, 201);
 }
 
 /** Stamps are clamped to now (a fast clock cannot win forever) and an
@@ -1045,13 +1132,19 @@ async function handleUpdate(sql: Sql, cat: Catalog, req: RestRequest, uid: strin
     c === "field_ts" ? `"field_ts" = COALESCE(t."field_ts", '{}'::jsonb) || COALESCE(r."field_ts", '{}'::jsonb)` : `${q(c)} = r.${q(c)}`,
   );
   if (target.info.columns.has("updated_at") && !cols.includes("updated_at")) sets.push(`"updated_at" = now()`);
+  // Events have no updated_at: a desktop retime must still move the delta cursor.
+  if (target.table === "external_events" && target.info.columns.has("last_synced_at") && !cols.includes("last_synced_at")) {
+    sets.push(`"last_synced_at" = now()`);
+  }
   const record = params.typed(JSON.stringify(row), "jsonb");
   const text =
     `UPDATE public.${q(target.table)} AS t SET ${sets.join(", ")}
        FROM jsonb_populate_record(NULL::public.${q(target.table)}, ${record}) r
       WHERE ${whereSql(target, conds, params)}
       RETURNING ${returningSql(target, spec)}`;
-  return finish(req, await run(sql, bodySql(text, req.singular), params), 200);
+  const result = await run(sql, bodySql(text, req.singular), params);
+  noteUserWrites({ users: [uid] });
+  return finish(req, result, 200);
 }
 
 async function handleDelete(sql: Sql, cat: Catalog, req: RestRequest, uid: string): Promise<Response> {
@@ -1063,7 +1156,9 @@ async function handleDelete(sql: Sql, cat: Catalog, req: RestRequest, uid: strin
   const text =
     `DELETE FROM public.${q(target.table)} AS t WHERE ${whereSql(target, conds, params)}
       RETURNING ${returningSql(target, spec)}`;
-  return finish(req, await run(sql, bodySql(text, req.singular), params), 200);
+  const result = await run(sql, bodySql(text, req.singular), params);
+  noteUserWrites({ users: [uid] });
+  return finish(req, result, 200);
 }
 
 // ---------------------------------------------------------------------------
@@ -1153,6 +1248,7 @@ async function applyPatchRpc(store: Store, cat: Catalog, args: Record<string, un
         WHERE ${whereSql(target, matchConds, up)}`,
       up.values as never[],
     );
+    noteUserWrites({ users: [store.userId] });
     return rpcJson({ applied, rejected, matched: 1 });
   });
 }
@@ -1216,7 +1312,7 @@ async function contactsRpc(store: Store, cat: Catalog, args: Record<string, unkn
   const like = params.add(`%${search}%`);
   const exact = params.add(search);
   const text =
-    `SELECT COALESCE(json_agg(_r), '[]'::json)::text AS body, count(*)::int AS n, ${UNCACHED} FROM (
+    `SELECT COALESCE(json_agg(_r), '[]'::json)::text AS body, count(*)::int AS n FROM (
        SELECT a.email,
               COALESCE(mode() WITHIN GROUP (ORDER BY nullif(lower(a.display_name), a.email)), a.email) AS display_name,
               max(a.freq) AS freq,
