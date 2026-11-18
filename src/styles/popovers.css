@@ -1064,3 +1064,24 @@ html.spotlight-window .tap-bloom::before { content: none; }
   .capture-door .task-composer-menu,
   .k-spotlight-done .k-spotlight-ok { animation: none; }
 }
+
+/* The slot popover in two columns (SLOT_WIDE_W): the work inside the block on
+   the left, its facts as a property column on the right — the record's own
+   layout, at popover scale. One hairline between, none doubled at the top. */
+.slot-pop-cols {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  border-top: 1px solid var(--line-1);
+}
+.slot-pop-main { flex: 1 1 auto; min-width: 0; }
+.slot-pop-main > .insp-sec:first-child { border-top: 0; }
+.slot-pop-side {
+  flex: none;
+  width: 252px;
+  border-left: 1px solid var(--line-1);
+  background: var(--panel);
+}
+.slot-pop-side > .insp-row:first-child { border-top: 0; }
+/* a property's values wrap under its icon rather than overflow the column */
+.slot-pop-side .insp-row { flex-wrap: wrap; row-gap: 2px; }

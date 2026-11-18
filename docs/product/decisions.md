@@ -9843,3 +9843,33 @@ task popover already says *Hand the pre-work to Nuvo*; two "hand" acts now sit o
 *2026-11-18 — live: migration 96 applied to Neon after a clean drift check (backup branch
 `pre-handoffs-20261118`); API Worker deployed from master `2f11fd02`. Waiting on the first live Grok
 Bot round trip.*
+
+---
+
+**D-251 · 2026-11-18 · A slot's popover reads in two columns: the work inside it, then its facts.**
+
+A slot is time that will hold several things — its tasks are why it exists — yet its popover was
+the 352px inspector with the facts first: six rows of when, repeat, project, domain and reminder,
+and the tasks squeezed into what was left at the bottom (where the key hint then ran out of room,
+D-220).
+
+→ **Where there is room beside the block (≥640px on one side), the popover is two columns**
+(`SLOT_WIDE_W`): the masthead and footer span it; the tasks ("Inside" — the one task list, its keys,
+its add box) take the wide left column; the facts become a property column on the right (252px),
+their values wrapping under their icon. It is the record modal's own layout — tasks left,
+properties right — at popover scale, so a slot reads as a small project for a block of time. The
+choice is made once per opening from the block's place, so it never flips while you work in it.
+
+→ **Without the room it stays the single column** it was. The phone keeps its sheet. The task
+slide-out still unfolds beside the popover, and the key hint floats outside the popover's edge,
+never over its columns.
+
+**Anchor.** No new ledger row; it serves **D2** (*what's already decided?* — the slot's work is
+what you open it to see) and the Schedule's own act. Strains **P14** a little: a 640px float covers
+more of the week, which is why it only appears where it fits. Four no's: no pool, no name, no data
+dependence, nothing tuned to one account.
+
+*Status: built 2026-11-18 — `SlotPopover` (`SlideOver.tsx`), `.slot-pop-*` in `popovers.css`. Driven
+on a local test account at 1600px (two columns, beside the block, the hint outside it) and at the
+default ~1024px (single column). Not yet released.*
+

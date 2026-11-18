@@ -96,7 +96,7 @@ export function KeyHint({ keys }: { keys: (string | string[])[] }) {
     // The hint's own width, read while it is still inline, + the float's padding.
     const w = (inline?.getBoundingClientRect().width ?? 260) + 18;
     // Beside the thing the row lives in — a popover's edge, not its padding.
-    const frame = row.closest<HTMLElement>('[data-nested-surface], [role="dialog"]') ?? row;
+    const frame = row.closest<HTMLElement>('[data-nested-surface], [role="dialog"], [data-block-popover]') ?? row;
     const place = () => {
       const r = row.getBoundingClientRect();
       const f = frame.getBoundingClientRect();

@@ -2259,6 +2259,11 @@ const TASK_SLIDE_W = INSPECTOR_W;
 /** Floor for the slide-out on a narrow window — below this it stops giving way
  *  and simply overhangs, rather than shrinking into an unreadable strip. */
 const TASK_SLIDE_MIN_W = 300;
+/** Two columns when there's room beside the block: the work inside it wide on
+ *  the left (why a slot exists — "time that will hold several things"), its
+ *  facts as a property column on the right, the way a project's record lays
+ *  out its tasks and its properties. Without the room it stays one column. */
+export const SLOT_WIDE_W = 640;
 
 export function SlotPopover({
   slot,
@@ -2426,6 +2431,14 @@ export function SlotPopover({
     return () => document.removeEventListener("mousedown", onDown);
   }, [onClose, onCloseTask, openTask]);
 
+  // Two columns only where they fit beside the block — decided once per opening
+  // (from the block's place), so the layout never flips while you work in it.
+  const wide = useMemo(() => {
+    const vw = window.innerWidth;
+    return Math.max(vw - anchor.right, anchor.left) - 24 >= SLOT_WIDE_W;
+  }, [anchor]);
+  const colW = wide ? SLOT_WIDE_W : SLOT_POP_W;
+
   // Placement is computed for the slot column *alone* — the task slide-out is
   // never part of the flip math. So opening a task can't change where the slot
   // sits, and closing it can't change it back.
@@ -2433,7 +2446,7 @@ export function SlotPopover({
     anchorEl,
     anchorRect: anchor,
     popRef: shellRef,
-    width: SLOT_POP_W,
+    width: colW,
     gap: 10,
     align: "top",
     holdHeight: Boolean(openTask),
@@ -2446,7 +2459,7 @@ export function SlotPopover({
   // one pixel — the earlier version pinned `left` always, so on a left-flipped
   // popover the whole panel lurched sideways as the pane opened.
   const colLeft = pos.left;
-  const colRight = pos.left + SLOT_POP_W;
+  const colRight = pos.left + colW;
   const roomRight = pos.viewportWidth - 8 - colRight;
   const roomLeft = colLeft - 8;
   const paneSide: "right" | "left" = roomRight >= roomLeft ? "right" : "left";
@@ -2545,6 +2558,135 @@ export function SlotPopover({
     ...vertical.domains.map((d) => ({ value: d.id, label: d.name, icon: <Dot color={d.color} /> })),
   ];
 
+  // The block's facts and the work inside it — one column stacked, or two
+  // side by side (`wide`): the same parts either way.
+  const facts = (
+    <>
+          <PopRow icon="calendar" label="When">
+            <PopDate label="Date" value={slot.do_date} onChange={setDate}>
+              {format(new Date(slot.do_date + "T12:00:00"), "EEE MMM d")}
+            </PopDate>
+            <TimePicker value={startHHMM} onSelect={setTime} ariaLabel="Start time" />
+            <PopPick
+              label="Duration"
+              value={String(slot.duration_minutes)}
+              options={durationOptions(slot.duration_minutes, SLOT_DURATIONS)}
+              onChange={(v) =>
+                slotMutations.updateSlot({
+                  id: slot.id,
+                  patch: { duration_minutes: Number(v) },
+                })
+              }
+            >
+              {fmtDuration(slot.duration_minutes)}
+            </PopPick>
+          </PopRow>
+
+          <PopRow icon="repeat" label="Repeat">
+            <RepeatControl
+              variant="value"
+              anchorISO={slot.do_date}
+              value={recurrence ? ruleOf(recurrence) : null}
+              onChange={applyRepeat}
+            />
+          </PopRow>
+
+          {/* Project drives the colour and the inheritance; a bare domain
+              makes this a standing slot the weekly plan routes work into
+              (docs/standing-slots.md). Only ever one affinity, never two. */}
+          <PopRow icon="folder" label="For">
+            <PopPick
+              label="Project"
+              value={slot.project_id ?? ""}
+              options={projectOptions}
+              onChange={setProject}
+              empty={!project}
+              lead={project ? <Dot color={domain?.color ?? "var(--faint)"} /> : undefined}
+            >
+              {project?.name ?? "No project"}
+            </PopPick>
+            {!slot.project_id && (
+              <PopPick
+                label="Domain"
+                value={slot.domain_id ?? ""}
+                options={domainOptions}
+                onChange={setDomain}
+                empty={!slot.domain_id}
+                lead={slot.domain_id ? <Dot color={domain?.color ?? "var(--faint)"} /> : undefined}
+              >
+                {slot.domain_id ? (domain?.name ?? "Domain") : "No domain"}
+              </PopPick>
+            )}
+            {slot.domain_id && !slot.project_id && recurrence && (
+              <span className="insp-hint" title="A standing slot — the weekly plan routes this domain's work here.">
+                Standing
+              </span>
+            )}
+          </PopRow>
+
+          <PopRow icon="bell" label="Remind" top>
+            <ReminderSelect block className="min-w-0 flex-1" target={{ targetKind: "slot", targetId: slot.id }} />
+          </PopRow>
+
+    </>
+  );
+  const inside = (
+    <>
+          {/* The work inside it — the reason the block exists. */}
+          <PopSection label="Inside" aside={totalMins > 0 ? `${fmtDuration(totalMins)} of tasks` : undefined}>
+            {/* The app's one task list: TaskRow, the shared keys, the shared
+                add box. Rows drag to reorder, onto the calendar (FullCalendar's
+                Draggable on this column reads data-task-drag), or onto the rail
+                to go back to the inbox. */}
+            <div className="-mx-1.5 min-h-0 px-1.5">
+              <TaskListView
+                tasks={ordered}
+                context={{ slot: { id: slot.id, do_date: slot.do_date, project_id: slot.project_id, domain_id: slot.domain_id } }}
+                contextLabel={{ name: slot.title.trim() || derivedTitle, color: "var(--slot)" }}
+                keyboard={!openTask}
+                onOpen={(t) => onOpenTask(t)}
+                flush
+                whenShown
+                composerRef={addRef}
+                composerPlaceholder="Add a task"
+                emptyHint="Nothing inside"
+                dragData={() => ({})}
+                dropZones={{
+                  at: (x, y) => {
+                    const under = document.elementFromPoint(x, y) as HTMLElement | null;
+                    const onRail = Boolean(under?.closest("[data-rail-drop]"));
+                    document.querySelector<HTMLElement>("[data-rail-drop]")?.classList.toggle("rail-drop-active", onRail);
+                    return onRail ? "inbox" : null;
+                  },
+                  drop: (_zone, t) => {
+                    document.querySelector<HTMLElement>("[data-rail-drop]")?.classList.remove("rail-drop-active");
+                    taskMutations.backToInbox(t, { undo: "toast" });
+                  },
+                  label: () => "↩ Back to inbox",
+                }}
+                rowAction={(t) => (
+                  <button
+                    type="button"
+                    aria-label={`Take “${t.title}” out of the slot`}
+                    title="Out of this slot — it keeps its day"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      taskMutations.removeFromSlot(t, { undo: "toast" });
+                    }}
+                    className="k-btn shrink-0 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
+                    data-kind="ghost"
+                    data-size="xs"
+                    data-icon=""
+                  >
+                    <Icon name="close" size={12} />
+                  </button>
+                )}
+              />
+            </div>
+          </PopSection>
+    </>
+  );
+
   return createPortal(
     <div
       ref={shellRef}
@@ -2556,14 +2698,14 @@ export function SlotPopover({
         ...(paneSide === "right"
           ? { left: colLeft }
           : { right: Math.max(0, pos.viewportWidth - colRight) }),
-        width: SLOT_POP_W + paneW,
+        width: colW + paneW,
         maxHeight: Math.min(560, pos.maxHeight),
         flexDirection: paneSide === "left" ? "row-reverse" : "row",
         ["--pop-origin" as string]: pos.side === "right" ? "top left" : "top right",
       }}
     >
       {/* Slot column — fixed width; position is owned by the shell, not this pane */}
-      <div ref={slotColRef} className="flex min-h-0 shrink-0 flex-col" style={{ width: SLOT_POP_W }}>
+      <div ref={slotColRef} className="flex min-h-0 shrink-0 flex-col" data-wide={wide || undefined} style={{ width: colW }}>
         {/* Head — the block's name, then ONE line of when and how full. */}
         <PopMast
           dot={domain?.color ?? slot.color ?? "var(--slot)"}
@@ -2634,126 +2776,17 @@ export function SlotPopover({
           />
         </PopMast>
 
-        <PopBody>
-          <PopRow icon="calendar" label="When">
-            <PopDate label="Date" value={slot.do_date} onChange={setDate}>
-              {format(new Date(slot.do_date + "T12:00:00"), "EEE MMM d")}
-            </PopDate>
-            <TimePicker value={startHHMM} onSelect={setTime} ariaLabel="Start time" />
-            <PopPick
-              label="Duration"
-              value={String(slot.duration_minutes)}
-              options={durationOptions(slot.duration_minutes, SLOT_DURATIONS)}
-              onChange={(v) =>
-                slotMutations.updateSlot({
-                  id: slot.id,
-                  patch: { duration_minutes: Number(v) },
-                })
-              }
-            >
-              {fmtDuration(slot.duration_minutes)}
-            </PopPick>
-          </PopRow>
-
-          <PopRow icon="repeat" label="Repeat">
-            <RepeatControl
-              variant="value"
-              anchorISO={slot.do_date}
-              value={recurrence ? ruleOf(recurrence) : null}
-              onChange={applyRepeat}
-            />
-          </PopRow>
-
-          {/* Project drives the colour and the inheritance; a bare domain
-              makes this a standing slot the weekly plan routes work into
-              (docs/standing-slots.md). Only ever one affinity, never two. */}
-          <PopRow icon="folder" label="For">
-            <PopPick
-              label="Project"
-              value={slot.project_id ?? ""}
-              options={projectOptions}
-              onChange={setProject}
-              empty={!project}
-              lead={project ? <Dot color={domain?.color ?? "var(--faint)"} /> : undefined}
-            >
-              {project?.name ?? "No project"}
-            </PopPick>
-            {!slot.project_id && (
-              <PopPick
-                label="Domain"
-                value={slot.domain_id ?? ""}
-                options={domainOptions}
-                onChange={setDomain}
-                empty={!slot.domain_id}
-                lead={slot.domain_id ? <Dot color={domain?.color ?? "var(--faint)"} /> : undefined}
-              >
-                {slot.domain_id ? (domain?.name ?? "Domain") : "No domain"}
-              </PopPick>
-            )}
-            {slot.domain_id && !slot.project_id && recurrence && (
-              <span className="insp-hint" title="A standing slot — the weekly plan routes this domain's work here.">
-                Standing
-              </span>
-            )}
-          </PopRow>
-
-          <PopRow icon="bell" label="Remind" top>
-            <ReminderSelect block className="min-w-0 flex-1" target={{ targetKind: "slot", targetId: slot.id }} />
-          </PopRow>
-
-          {/* The work inside it — the reason the block exists. */}
-          <PopSection label="Inside" aside={totalMins > 0 ? `${fmtDuration(totalMins)} of tasks` : undefined}>
-            {/* The app's one task list: TaskRow, the shared keys, the shared
-                add box. Rows drag to reorder, onto the calendar (FullCalendar's
-                Draggable on this column reads data-task-drag), or onto the rail
-                to go back to the inbox. */}
-            <div className="-mx-1.5 min-h-0 px-1.5">
-              <TaskListView
-                tasks={ordered}
-                context={{ slot: { id: slot.id, do_date: slot.do_date, project_id: slot.project_id, domain_id: slot.domain_id } }}
-                contextLabel={{ name: slot.title.trim() || derivedTitle, color: "var(--slot)" }}
-                keyboard={!openTask}
-                onOpen={(t) => onOpenTask(t)}
-                flush
-                whenShown
-                composerRef={addRef}
-                composerPlaceholder="Add a task"
-                emptyHint="Nothing inside"
-                dragData={() => ({})}
-                dropZones={{
-                  at: (x, y) => {
-                    const under = document.elementFromPoint(x, y) as HTMLElement | null;
-                    const onRail = Boolean(under?.closest("[data-rail-drop]"));
-                    document.querySelector<HTMLElement>("[data-rail-drop]")?.classList.toggle("rail-drop-active", onRail);
-                    return onRail ? "inbox" : null;
-                  },
-                  drop: (_zone, t) => {
-                    document.querySelector<HTMLElement>("[data-rail-drop]")?.classList.remove("rail-drop-active");
-                    taskMutations.backToInbox(t, { undo: "toast" });
-                  },
-                  label: () => "↩ Back to inbox",
-                }}
-                rowAction={(t) => (
-                  <button
-                    type="button"
-                    aria-label={`Take “${t.title}” out of the slot`}
-                    title="Out of this slot — it keeps its day"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      taskMutations.removeFromSlot(t, { undo: "toast" });
-                    }}
-                    className="k-btn shrink-0 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
-                    data-kind="ghost"
-                    data-size="xs"
-                    data-icon=""
-                  >
-                    <Icon name="close" size={12} />
-                  </button>
-                )}
-              />
-            </div>
-          </PopSection>
-        </PopBody>
+        {wide ? (
+          <div className="slot-pop-cols">
+            <div className="insp-body slot-pop-main">{inside}</div>
+            <div className="insp-body slot-pop-side" aria-label="Slot details">{facts}</div>
+          </div>
+        ) : (
+          <PopBody>
+            {facts}
+            {inside}
+          </PopBody>
+        )}
 
         {deferring && (
           <div className="insp-ask">
