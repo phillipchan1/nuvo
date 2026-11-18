@@ -25,6 +25,7 @@ import { Icon, type IconName } from "./Icon";
 import { PaneHeader, TextInput } from "./form";
 import { Button, SectionHeader, Segmented, Switch } from "./kit";
 import { HANDOFF_AGENTS_QK, ringDoorbell, setDoorbell } from "../hooks/useHandoff";
+import { at as clockAt } from "./mobile/dayPlan";
 
 interface Connection {
   id: string;
@@ -365,12 +366,48 @@ export function AppsDevicesPane() {
 /** A Full account token can be an agent you hand tasks to (D-250): the switch,
  *  and an optional doorbell that wakes it — a URL and a key (sealed on the
  *  server; never shown again). */
+const hostOf = (raw: string) => {
+  try {
+    return new URL(raw).host;
+  } catch {
+    return raw;
+  }
+};
+
+/** "6:39am" today, "Nov 18, 6:39am" before — said once, in the clock vocabulary. */
+const whenShort = (d: Date) => {
+  const t = clockAt(d);
+  return d.toDateString() === new Date().toDateString() ? t : `${d.toLocaleDateString([], { month: "short", day: "numeric" })}, ${t}`;
+};
+
 function HandoffControls({ c }: { c: Connection }) {
   const qc = useQueryClient();
   const [url, setUrl] = useState(c.doorbell_url ?? "");
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
+  // what the Ring button just heard, ahead of any real hand-off
+  const [tested, setTested] = useState<{ at: Date; error: string | null } | null>(null);
   const hasKey = c.doorbell_key_version != null;
+  const savedUrl = c.doorbell_url ?? "";
+  const dirty = url.trim() !== savedUrl || key.trim() !== "";
+  // The last real ring, from the hand-offs (rang_at · ring_error) — proof the doorbell works.
+  const { data: lastRing } = useQuery({
+    queryKey: ["doorbell-last", c.id],
+    enabled: Boolean(c.takes_handoffs && savedUrl),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("handoffs")
+        .select("rang_at, ring_error, created_at")
+        .eq("connection_id", c.id)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      if (error) return null;
+      const rows = (data ?? []) as { rang_at: string | null; ring_error: string | null; created_at: string }[];
+      const r = rows.find((x) => x.rang_at || x.ring_error);
+      return r ? { at: new Date(r.rang_at ?? r.created_at), error: r.rang_at ? null : r.ring_error } : null;
+    },
+  });
+  const heard = tested && (!lastRing || tested.at > lastRing.at) ? tested : lastRing ?? null;
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: QK });
@@ -399,6 +436,7 @@ function HandoffControls({ c }: { c: Connection }) {
     setBusy(true);
     try {
       const out = await ringDoorbell(c.id);
+      setTested({ at: new Date(), error: out.rang ? null : String(out.error ?? "no answer") });
       if (out.rang) toast.success(`Rang ${c.name}`);
       else toast.error(`Didn't ring: ${String(out.error ?? "no answer")}`);
     } catch (e) {
@@ -433,9 +471,23 @@ function HandoffControls({ c }: { c: Connection }) {
             type="password"
             autoComplete="off"
           />
+          {savedUrl && !dirty && (
+            <p className="set-note flex items-center gap-1.5" data-doorbell-state={heard?.error ? "failed" : heard ? "rang" : "set"}>
+              <Icon name="check" size={14} />
+              <span>
+                {!hasKey
+                  ? `Doorbell set for ${hostOf(savedUrl)} — no key`
+                  : heard?.error
+                    ? `Doorbell set — last ring failed ${whenShort(heard.at)}: ${heard.error}`
+                    : heard
+                      ? `Doorbell set — last rang ${whenShort(heard.at)}`
+                      : `Doorbell set — not rung yet`}
+              </span>
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
-            <Button kind="secondary" className="tap" disabled={busy} onClick={() => void save()}>
-              Save doorbell
+            <Button kind="secondary" className="tap" disabled={busy || !dirty} onClick={() => void save()}>
+              {savedUrl && !dirty ? "Saved" : "Save doorbell"}
             </Button>
             {c.doorbell_url && (
               <Button kind="ghost" className="tap" disabled={busy} onClick={() => void ring()}>
