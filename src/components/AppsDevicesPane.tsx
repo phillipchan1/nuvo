@@ -22,7 +22,8 @@ import { supabase, supabaseAnonKey, supabaseUrl } from "../lib/supabase";
 import { randomUrlSafeToken as mintToken, sha256Hex } from "../lib/webcrypto";
 import { Icon, type IconName } from "./Icon";
 import { PaneHeader, TextInput } from "./form";
-import { Button, SectionHeader, Segmented } from "./kit";
+import { Button, SectionHeader, Segmented, Switch } from "./kit";
+import { HANDOFF_AGENTS_QK, ringDoorbell, setDoorbell } from "../hooks/useHandoff";
 
 interface Connection {
   id: string;
@@ -33,6 +34,10 @@ interface Connection {
   created_at: string;
   last_used_at: string | null;
   revoked_at: string | null;
+  /** hand-off (D-250) — absent until migration 96 reaches the database */
+  takes_handoffs?: boolean;
+  doorbell_url?: string | null;
+  doorbell_key_version?: number | null;
 }
 
 const QK = ["connections"] as const;
@@ -131,10 +136,14 @@ export function AppsDevicesPane() {
   const { data: connections = [], isLoading } = useQuery({
     queryKey: QK,
     queryFn: async (): Promise<Connection[]> => {
-      const { data, error } = await supabase
+      const base = "id, app, name, scopes, last_four, created_at, last_used_at, revoked_at";
+      const withHandoff = await supabase
         .from("connections")
-        .select("id, app, name, scopes, last_four, created_at, last_used_at, revoked_at")
+        .select(`${base}, takes_handoffs, doorbell_url, doorbell_key_version`)
         .order("created_at", { ascending: false });
+      if (!withHandoff.error) return (withHandoff.data ?? []) as Connection[];
+      // A database migration 96 hasn't reached: the list without hand-off.
+      const { data, error } = await supabase.from("connections").select(base).order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as Connection[];
     },
@@ -218,6 +227,7 @@ export function AppsDevicesPane() {
                     Revoke
                   </Button>
                 </div>
+                {meta.label === "Full account" && c.takes_handoffs !== undefined && <HandoffControls c={c} />}
               </div>
             );
           })}
@@ -342,6 +352,93 @@ export function AppsDevicesPane() {
             })}
           </div>
         </details>
+      )}
+    </div>
+  );
+}
+
+/** A Full account token can be an agent you hand tasks to (D-250): the switch,
+ *  and an optional doorbell that wakes it — a URL and a key (sealed on the
+ *  server; never shown again). */
+function HandoffControls({ c }: { c: Connection }) {
+  const qc = useQueryClient();
+  const [url, setUrl] = useState(c.doorbell_url ?? "");
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const hasKey = c.doorbell_key_version != null;
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: QK });
+    qc.invalidateQueries({ queryKey: HANDOFF_AGENTS_QK });
+  };
+  const toggle = async (next: boolean) => {
+    const { error } = await supabase.from("connections").update({ takes_handoffs: next }).eq("id", c.id);
+    if (error) toast.error(error.message);
+    else toast.success(next ? `You can hand tasks to ${c.name}` : `${c.name} no longer takes hand-offs`);
+    refresh();
+  };
+  const save = async () => {
+    setBusy(true);
+    try {
+      await setDoorbell(c.id, url.trim(), key.trim() ? key.trim() : url.trim() ? null : "");
+      setKey("");
+      toast.success(url.trim() ? "Doorbell saved" : "Doorbell removed");
+      refresh();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const ring = async () => {
+    setBusy(true);
+    try {
+      const out = await ringDoorbell(c.id);
+      if (out.rang) toast.success(`Rang ${c.name}`);
+      else toast.error(`Didn't ring: ${String(out.error ?? "no answer")}`);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="grid w-full basis-full gap-2 pt-2">
+      <label className="flex min-h-[44px] items-center justify-between gap-3">
+        <span className="text-body">Takes hand-offs</span>
+        <Switch checked={Boolean(c.takes_handoffs)} onChange={(v) => void toggle(v)} label={`${c.name} takes hand-offs`} />
+      </label>
+      {c.takes_handoffs && (
+        <>
+          <p className="set-note">
+            A doorbell wakes {c.name} the moment you hand it a task. Without one, it finds the work on its next check.
+          </p>
+          <TextInput
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="Doorbell URL (optional) — https://…"
+            aria-label={`${c.name} doorbell URL`}
+          />
+          <TextInput
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder={hasKey ? "Key saved — paste a new one to replace it" : "Doorbell key (the Bearer value)"}
+            aria-label={`${c.name} doorbell key`}
+            type="password"
+            autoComplete="off"
+          />
+          <div className="flex flex-wrap gap-2">
+            <Button kind="secondary" className="tap" disabled={busy} onClick={() => void save()}>
+              Save doorbell
+            </Button>
+            {c.doorbell_url && (
+              <Button kind="ghost" className="tap" disabled={busy} onClick={() => void ring()}>
+                Ring
+              </Button>
+            )}
+          </div>
+        </>
       )}
     </div>
   );

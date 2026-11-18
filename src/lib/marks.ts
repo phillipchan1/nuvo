@@ -176,7 +176,7 @@ export interface DayRead extends DayReadiness {
 }
 
 const ownToday = (t: Task) =>
-  t.status !== "trashed" && (t.status === "done" || !(t.recurrence_id != null && (t.roll_count ?? 0) > 0));
+  t.status !== "trashed" && !t.handed_to && (t.status === "done" || !(t.recurrence_id != null && (t.roll_count ?? 0) > 0));
 
 /** Timed first, by the clock; untimed after (code-point order — a locale
  *  collation would sort a sentinel ahead of the digits). */
@@ -193,6 +193,7 @@ export function readDay(today: readonly Task[], workEndMins: number): DayRead {
       completedAt: t.completed_at,
       rollCount: t.roll_count ?? 0,
       recurrenceId: t.recurrence_id ?? null,
+      handedTo: t.handed_to ?? null,
     })),
   );
   const tasks = today

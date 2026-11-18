@@ -11,6 +11,7 @@ import { pressable } from "../lib/a11y";
 import { motionMs, motionOff } from "../lib/motion";
 import { at, span } from "./mobile/dayPlan";
 import { Button, Chip, Dot, IconButton, TaskCheck } from "./kit";
+import { agentName, useHandoffAgents } from "../hooks/useHandoff";
 
 // The task row — ONE row, wherever a task appears, on both shells (D-111).
 //
@@ -710,6 +711,8 @@ const TaskRow = forwardRef<TaskRowHandle, {
           </span>
         )}
 
+        {task.handed_to && <HandoffMark agentId={task.handed_to} done={done} />}
+
         {offer ??
           ((showState || showTime || task.recurrence_id) && (
           <span className="task-row-meta">
@@ -737,6 +740,20 @@ const TaskRow = forwardRef<TaskRowHandle, {
     </div>
   );
 });
+
+/** Who has this task (D-250): "With Grok Bot" while it's out, "Done by Grok
+ *  Bot" once the agent finished it. Its own component so the agents query is
+ *  only subscribed by rows that were handed off. */
+function HandoffMark({ agentId, done }: { agentId: string; done: boolean }) {
+  const { data: agents } = useHandoffAgents();
+  const who = agentName(agents, agentId);
+  const text = done ? `Done by ${who}` : `With ${who}`;
+  return (
+    <span className="task-row-meta" data-handoff="">
+      <span title={done ? `${who} finished this` : `Handed to ${who} — it isn't on your clock`}>{text}</span>
+    </span>
+  );
+}
 
 export interface DraftRow {
   /** The step the keys are on — it says why and shows its acts. */

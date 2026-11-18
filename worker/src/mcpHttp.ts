@@ -6,13 +6,21 @@ import {
   type JsonRpcRequest,
   type JsonRpcResponse,
 } from "../../supabase/functions/_shared/mcp.ts";
+import {
+  GET_HANDOFF,
+  HANDOFF_TOOLS,
+  LIST_HANDOFFS,
+  REPORT_HANDOFF,
+} from "../../supabase/functions/_shared/handoff.ts";
 import { buildSnapshot, executeOwnedTool, resolveTz } from "./agentExec.ts";
+import { getAgent, getHandoffBrief, listHandoffsFor, reportHandoff } from "./handoff.ts";
 import { OPEN_CORS, json } from "./cors.ts";
 import { hasScope, resolveConnection, SCOPE_ACCOUNT, tokenFrom, touchConnection } from "./connections.ts";
 import { requestIo, type AppEnv } from "./session.ts";
 import { bootstrapUser, makeStore } from "./store.ts";
 
-const TOOLS = mcpToolsFromDefs();
+// The chat's vocabulary, plus the hand-off tools only an agent has (D-250).
+const TOOLS = [...mcpToolsFromDefs(), ...HANDOFF_TOOLS];
 const RATE_LIMIT_PER_MIN = 120;
 const MCP_CORS = {
   ...OPEN_CORS,
@@ -85,6 +93,16 @@ export async function handleMcp(c: Context<AppEnv>): Promise<Response> {
     return handleMcpMethod(msg, TOOLS, async (name, args) => {
       await touchConnection(io.sql, conn.id);
       const tz = resolveTz(args.timezone);
+      if (name === LIST_HANDOFFS || name === GET_HANDOFF || name === REPORT_HANDOFF) {
+        const agent = await getAgent(store, conn.id);
+        if (!agent?.takes_handoffs) {
+          return "This token doesn't take hand-offs. The operator can switch on \"Takes hand-offs\" for it in Settings → Apps & devices.";
+        }
+        const me = { id: agent.id, name: agent.name };
+        if (name === LIST_HANDOFFS) return listHandoffsFor(store, c.env, me.id);
+        if (name === GET_HANDOFF) return getHandoffBrief(store, c.env, me, args.task_id);
+        return reportHandoff(store, me, args);
+      }
       if (name === GET_SNAPSHOT_NAME) {
         const ctx = await buildSnapshot(
           store,

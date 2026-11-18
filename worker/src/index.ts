@@ -46,6 +46,7 @@ import { handleInboundEmail } from "./inboundHttp.ts";
 import { inboundMailDomain } from "../../supabase/functions/_shared/inboundEmail.ts";
 import { handleInboundMail, type InboundMailMessage } from "./inboundMail.ts";
 import { handleMcp } from "./mcpHttp.ts";
+import { handleHandoff } from "./handoffHttp.ts";
 import { scheduleClose } from "./requestIo.ts";
 import { handleGithubActivity } from "./githubActivity.ts";
 import { handleRest, REST_CORS, REST_PREFIX } from "./rest.ts";
@@ -540,6 +541,7 @@ app.all("/api/github-activity", (c) => handleGithubActivity(c));
 app.all("/functions/v1/github-activity", (c) => handleGithubActivity(c));
 app.all("/api/agent", (c) => refuseIfFrozen(c) ?? handleAgent(c));
 app.all("/api/mcp", (c) => refuseIfFrozen(c) ?? handleMcp(c));
+app.all("/api/handoff", (c) => handleHandoff(c));
 app.all("/api/day", (c) => handleDay(c));
 app.all("/api/capture", (c) => refuseIfFrozen(c) ?? handleCapture(c));
 app.all("/api/inbound-email", (c) => handleInboundEmail(c));
@@ -576,6 +578,7 @@ app.post("/functions/v1/delete-account", async (c) => {
 
 app.all("/functions/v1/agent", (c) => refuseIfFrozen(c) ?? handleAgent(c));
 app.all("/functions/v1/mcp", (c) => refuseIfFrozen(c) ?? handleMcp(c));
+app.all("/functions/v1/handoff", (c) => handleHandoff(c));
 app.all("/functions/v1/day", (c) => handleDay(c));
 app.all("/functions/v1/capture", (c) => refuseIfFrozen(c) ?? handleCapture(c));
 app.all("/functions/v1/inbound-email", (c) => handleInboundEmail(c));

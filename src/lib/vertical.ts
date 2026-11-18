@@ -8,6 +8,7 @@
 // stored anywhere — they derive from completed blocks, because a task IS a
 // block and done tasks are the time ledger.
 
+import { isHandedOff } from "../../supabase/functions/_shared/planningRules.ts";
 import { differenceInCalendarDays, startOfWeek, subDays } from "date-fns";
 import type { Energy } from "./energy";
 import {
@@ -381,7 +382,9 @@ export function toVTask(t: Task, currentSprintId: string | null, today: string):
     slotId: t.slot_id,
     createdAt: t.created_at ?? null,
     completedAt: t.completed_at,
-    assignee: t.assignee ?? "me",
+    // Derived, never stored: "agent" while a hand-off has it (D-250). The
+    // column of the same name (migration 4) was never written by anything.
+    assignee: isHandedOff(t) ? "agent" : "me",
     rollCount: t.roll_count ?? 0,
     preworkReady: Boolean(t.prework_at && t.prework),
   };
@@ -840,10 +843,11 @@ export const backlogTasks = (d: VerticalData) =>
 export const projectSprintCount = (d: VerticalData, projectId: string) =>
   d.tasks.filter((t) => t.projectId === projectId && t.sprint).length;
 
-/** Total committed minutes (undone sprint tasks) — the load. */
+/** Total committed minutes (undone sprint tasks) — the load. A task an agent
+ *  has (D-250) is not the operator's hour, so it isn't load. */
 export function sprintLoadMins(d: VerticalData): number {
   return sprintTasks(d)
-    .filter((t) => t.status !== "done")
+    .filter((t) => t.status !== "done" && t.assignee !== "agent")
     .reduce((sum, t) => sum + (t.durationMins || 0), 0);
 }
 
@@ -858,7 +862,7 @@ export function sprintMinsByDomain(d: VerticalData): { domain: Domain; mins: num
     .map((domain) => ({
       domain,
       mins: sprintTasks(d)
-        .filter((t) => t.status !== "done" && t.domainId === domain.id)
+        .filter((t) => t.status !== "done" && t.assignee !== "agent" && t.domainId === domain.id)
         .reduce((sum, t) => sum + (t.durationMins || 0), 0),
     }))
     .filter((x) => x.mins > 0);

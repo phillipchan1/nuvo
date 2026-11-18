@@ -932,3 +932,39 @@ BEGIN
   END LOOP;
 END;
 $$;
+
+-- ──────────────────────────────────────────────────────────────────────────
+-- Hand-off (D-250, docs/handoff.md). MANUAL MIGRATION: apply to Neon by hand,
+-- after `npm run check:schema-drift --migration` on this block. Idempotent.
+-- A Full account token that takes hand-offs is an agent; tasks.handed_to says
+-- who a task is with; handoffs is one row per attempt (read-only over REST).
+ALTER TABLE public.connections ADD COLUMN IF NOT EXISTS takes_handoffs boolean NOT NULL DEFAULT false;
+ALTER TABLE public.connections ADD COLUMN IF NOT EXISTS doorbell_url text;
+ALTER TABLE public.connections ADD COLUMN IF NOT EXISTS doorbell_key_enc bytea;
+ALTER TABLE public.connections ADD COLUMN IF NOT EXISTS doorbell_key_iv bytea;
+ALTER TABLE public.connections ADD COLUMN IF NOT EXISTS doorbell_key_version integer;
+
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS handed_to uuid
+  REFERENCES public.connections (id) ON DELETE SET NULL;
+
+CREATE TABLE IF NOT EXISTS public.handoffs (
+  id uuid DEFAULT gen_random_uuid() NOT NULL,
+  user_id uuid NOT NULL,
+  task_id uuid NOT NULL,
+  connection_id uuid NOT NULL,
+  note text DEFAULT ''::text NOT NULL,
+  outcome text DEFAULT 'open'::text NOT NULL,
+  agent_note text DEFAULT ''::text NOT NULL,
+  rang_at timestamp with time zone,
+  ring_error text,
+  created_at timestamp with time zone DEFAULT now() NOT NULL,
+  closed_at timestamp with time zone,
+  CONSTRAINT handoffs_pkey PRIMARY KEY (id),
+  CONSTRAINT handoffs_outcome_check CHECK (outcome IN ('open', 'done', 'back', 'recalled')),
+  CONSTRAINT handoffs_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT handoffs_task_id_fkey FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  CONSTRAINT handoffs_connection_id_fkey FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS handoffs_open_by_connection_idx ON public.handoffs (connection_id) WHERE outcome = 'open';
+CREATE INDEX IF NOT EXISTS handoffs_task_idx ON public.handoffs (task_id);
+CREATE INDEX IF NOT EXISTS handoffs_user_idx ON public.handoffs (user_id);

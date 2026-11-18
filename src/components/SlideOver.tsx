@@ -1,3 +1,4 @@
+import { agentName, useHandoffAgents, useTaskHandoffs } from "../hooks/useHandoff";
 import { cancelNotifiesGuests } from "../lib/eventActs";
 import { applySlotRepeat, deleteSlotScoped } from "../lib/taskActs";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -816,6 +817,8 @@ export function TaskPopover({
           </PopSection>
 
           <PopSection label="Notes">{notesField}</PopSection>
+
+          <HandoffReplies task={task} />
 
           <PopSection label={ASSISTANT_NAME} icon="sparkles">
             {prework}
@@ -2819,3 +2822,26 @@ export function SlotPopover({
 
 /** The lengths a slot is offered — a block that holds several things. */
 const SLOT_DURATIONS = [30, 45, 60, 90, 120, 180, 240, 360, 480] as const;
+
+/** What an agent said back about this task (D-250) — done or handed back,
+ *  with its note. Absent unless the task was ever handed off. */
+function HandoffReplies({ task }: { task: Task }) {
+  const { data: agents = [] } = useHandoffAgents();
+  // After "back" the task has no handed_to — that's when the agent's note matters most.
+  const { data: history = [] } = useTaskHandoffs(task.id, Boolean(task.handed_to) || agents.length > 0);
+  const replies = history.filter((h) => h.outcome !== "open" && h.agent_note).slice(0, 2);
+  if (!replies.length) return null;
+  const word: Record<string, string> = { done: "Done", back: "Handed back", recalled: "Taken back" };
+  return (
+    <PopSection label="Hand-off">
+      {replies.map((h) => (
+        <p key={h.id} className="text-body" data-selectable="">
+          <span className="text-muted">
+            {word[h.outcome] ?? h.outcome} · {agentName(agents, h.connection_id)}:{" "}
+          </span>
+          {h.agent_note}
+        </p>
+      ))}
+    </PopSection>
+  );
+}
