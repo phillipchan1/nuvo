@@ -713,6 +713,9 @@ export interface DayTask {
   completedAt: string | null;
   rollCount: number;
   recurrenceId: string | null;
+  /** an agent's task (D-250) — handed off, open or done by it — isn't the
+   *  operator's day */
+  handedTo?: string | null;
 }
 
 export interface DayReadiness {
@@ -731,7 +734,10 @@ export interface DayReadiness {
  *  nothing to finish is not a win). */
 export function dayReadiness(tasks: readonly DayTask[]): DayReadiness {
   const own = tasks.filter(
-    (t) => t.status !== "trashed" && (isCompleteStatus(t.status) || !(t.recurrenceId != null && t.rollCount > 0)),
+    (t) =>
+      t.status !== "trashed" &&
+      !t.handedTo &&
+      (isCompleteStatus(t.status) || !(t.recurrenceId != null && t.rollCount > 0)),
   );
   const done = own.filter((t) => isCompleteStatus(t.status));
   const closed = own.length > 0 && done.length === own.length;
@@ -748,4 +754,12 @@ export function fitsCapacity(demandMins: number, capacityMins: number): "under" 
   if (capacityMins <= 0) return demandMins > 0 ? "over" : "under";
   const r = demandMins / capacityMins;
   return r > 1 ? "over" : r >= FITS_LOW ? "fits" : "under";
+}
+
+/** Is this task with an agent right now (D-250)? A handed task is no longer
+ *  the operator's hour, so it leaves the week's demand — on both runtimes.
+ *  Done work isn't "with" anyone; `handed_to` stays on it only so the row can
+ *  say who finished it. */
+export function isHandedOff(task: { handed_to?: string | null; status?: string | null }): boolean {
+  return Boolean(task.handed_to) && task.status !== "done" && task.status !== "trashed";
 }

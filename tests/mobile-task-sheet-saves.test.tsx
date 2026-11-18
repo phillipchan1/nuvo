@@ -22,6 +22,8 @@ vi.mock("../src/hooks/useSlots", () => ({
 }));
 vi.mock("../src/hooks/useTasks", () => ({ useScheduledTasks: () => ({ data: [] }) }));
 vi.mock("../src/components/ReminderSelect", () => ({ default: () => null }));
+// The hand-off section has its own queries (D-250); this suite is about saves.
+vi.mock("../src/components/mobile/MobileHandoff", () => ({ MobileHandoff: () => null }));
 // The steps list stands in as one blur-only add box — what TaskSteps' composer
 // (submitOnBlur) and a step mid-rename both are.
 const stepSaved = vi.fn();

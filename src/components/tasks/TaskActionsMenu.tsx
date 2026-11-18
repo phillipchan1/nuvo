@@ -34,6 +34,9 @@ import { useOptionalUndoStack } from "../../hooks/useUndoStack";
 import { fixedCssPx } from "../../hooks/useUiScale";
 import { useUnschedule } from "../../hooks/useUnschedule";
 import { isUnschedulable } from "../../lib/unschedule";
+import { Input } from "../kit";
+import { agentName, useHandoffActs, useHandoffAgents, type HandoffAgent } from "../../hooks/useHandoff";
+import { isHandedOff } from "../../../supabase/functions/_shared/handoff";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 const TRIAGE_UNDO = { undo: "toast" as const };
@@ -195,6 +198,11 @@ export default function TaskActionsMenu({
   }, [x, y, deleteMode]);
 
   const unschedule = useUnschedule(mutations);
+  // Hand-off (D-250): offered only for agents this account has added.
+  const { data: agents = [] } = useHandoffAgents();
+  const handoff = useHandoffActs();
+  const [handingTo, setHandingTo] = useState<HandoffAgent | null>(null);
+  const [handNote, setHandNote] = useState("");
   const many = group && group.length > 1 ? group : null;
   const done = task.status === "done";
   const inWeek = Boolean(task.sprint_id && task.sprint_id === vertical.sprint?.id);
@@ -321,6 +329,30 @@ export default function TaskActionsMenu({
       ]
     : [];
 
+  // With an agent: one way back. Not with one: one item per agent. A step,
+  // a done task and an account with no agents get nothing.
+  function handItems(): Item[] {
+    if (many || task.parent_task_id || task.status === "trashed") return [];
+    if (isHandedOff(task)) {
+      const who = agentName(agents, task.handed_to);
+      const agent = agents.find((a) => a.id === task.handed_to) ?? null;
+      return [
+        { kind: "sep" },
+        { kind: "action", label: `Take back from ${who}`, icon: "back", action: () => { void handoff.recall(task, agent); onClose(); } },
+      ];
+    }
+    if (done || !agents.length) return [];
+    return [
+      { kind: "sep" },
+      ...agents.map((a) => ({
+        kind: "action" as const,
+        label: `Hand to ${a.name}…`,
+        icon: "user" as const,
+        action: () => { setHandNote(""); setHandingTo(a); },
+      })),
+    ];
+  }
+
   const items: Item[] = many
     ? groupItems
     : deleteMode && recurring
@@ -381,6 +413,7 @@ export default function TaskActionsMenu({
       icon: "week",
       action: () => { commitToWeek(task); onClose(); },
     },
+    ...handItems(),
     ...(onDuplicate || onToEvent || onLabel ? [{ kind: "sep" as const }] : []),
     ...(onDuplicate ? [{ kind: "action" as const, label: "Duplicate", icon: "copy" as const, action: () => { onDuplicate(); onClose(); } }] : []),
     ...(onToEvent ? [{ kind: "action" as const, label: onToEvent.label, icon: "calendar" as const, action: onToEvent.action }] : []),
@@ -406,13 +439,20 @@ export default function TaskActionsMenu({
   ];
 
   const actions = items.filter((i): i is Extract<Item, { kind: "action" }> => i.kind === "action");
-  const live = useRef({ actions, lit, deleteMode, recurring, many });
-  live.current = { actions, lit, deleteMode, recurring, many };
+  const live = useRef({ actions, lit, deleteMode, recurring, many, handing: Boolean(handingTo) });
+  live.current = { actions, lit, deleteMode, recurring, many, handing: Boolean(handingTo) };
   useEffect(() => setLit(-1), [deleteMode]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const { actions, lit, deleteMode, recurring, many } = live.current;
+      const { actions, lit, deleteMode, recurring, many, handing } = live.current;
+      if (handing) {
+        if (e.key === "Escape") {
+          e.stopImmediatePropagation();
+          setHandingTo(null);
+        }
+        return;
+      }
       if (e.key === "Escape") {
         e.stopImmediatePropagation();
         if (deleteMode && !startInDelete) setDeleteMode(false);
@@ -493,7 +533,30 @@ export default function TaskActionsMenu({
       {/* Whose menu this is — on a narrow calendar block it's the only place
           the full title shows, and every calendar menu already led with it. */}
       <div className="k-mtitle">{many ? `${many.length} tasks` : task.title}</div>
-      {items.map((item, i) => {
+      {handingTo ? (
+        <form
+          className="px-2 pb-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handoff.hand(task, handingTo, handNote);
+            onClose();
+          }}
+        >
+          <Input
+            autoFocus
+            size="sm"
+            value={handNote}
+            onChange={(e) => setHandNote(e.target.value)}
+            placeholder={`A line for ${handingTo.name}`}
+            aria-label={`Note for ${handingTo.name}`}
+            trailing={<Kbd keys={["↵"]} />}
+          />
+          <button type="submit" className="k-mi mt-1" data-lit="">
+            <PopIcon name="user" />
+            <span className="k-mi-label">Hand to {handingTo.name}</span>
+          </button>
+        </form>
+      ) : items.map((item, i) => {
         if (item.kind === "sep") {
           // Leading, trailing and doubled rules come from optional items.
           const prev = items[i - 1];

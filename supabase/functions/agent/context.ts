@@ -45,7 +45,7 @@ import {
 import { describeRule, nextOccurrenceDate, type RecurrenceRule } from "../_shared/recurrence.ts";
 
 const TASK_COLS =
-  "id, title, status, do_date, start_time, duration_minutes, deadline, priority, notes, roll_count, completed_at, recurrence_id";
+  "id, title, status, do_date, start_time, duration_minutes, deadline, priority, notes, roll_count, completed_at, recurrence_id, handed_to";
 
 
 export async function buildContext(
@@ -370,6 +370,7 @@ export async function buildContext(
           completedAt: (t.completed_at as string | null) ?? null,
           rollCount: (t.roll_count as number | null) ?? 0,
           recurrenceId: (t.recurrence_id as string | null) ?? null,
+          handedTo: (t.handed_to as string | null) ?? null,
         })),
       ),
       movingInitiativeIds: movingInitiativeIds(

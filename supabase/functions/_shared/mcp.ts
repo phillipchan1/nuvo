@@ -109,7 +109,8 @@ const INSTRUCTIONS =
   "Writes go through the named tools — never invent ids. " +
   "Cancel, decline, and permanent delete require a confirm_token from a previous call; " +
   "propose first, then spend the token on a later call. " +
-  "Staging an invite is not sending it.";
+  "Staging an invite is not sending it. " +
+  "If the operator hands you tasks (list_handoffs), answer every one with report_handoff: done or back, with a note.";
 
 /** Keys a client might send to impersonate. The account is the token, never these. */
 const ACTOR_KEYS = new Set(["user_id", "userId", "actingUserId", "acting_user_id"]);

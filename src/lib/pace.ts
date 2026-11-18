@@ -50,8 +50,9 @@ export interface ProjectPace {
 
 export function projectPace(d: VerticalData, p: Project, now: Date): ProjectPace {
   const ts = tasksOf(d, p.id);
+  // Work an agent has (D-250) isn't the operator's hour: it leaves demand.
   const remainingMins = ts
-    .filter((t) => t.status !== "done")
+    .filter((t) => t.status !== "done" && t.assignee !== "agent")
     .reduce((sum, t) => sum + (t.durationMins || 0), 0);
   const remainingHours = Math.round((remainingMins / 60) * 10) / 10;
 

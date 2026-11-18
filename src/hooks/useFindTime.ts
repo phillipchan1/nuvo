@@ -27,6 +27,7 @@ import { parseDateISO, toDateISO, todayISO } from "../lib/dates";
 import { isPlacedInWeek } from "../lib/priorities";
 import { alternativesFor, asBusyBlock, composeWeek, slotsAsBusy, type ComposeInput, type Placement } from "../lib/compose";
 import { isEventHidden } from "../lib/now";
+import { isHandedOff } from "../../supabase/functions/_shared/planningRules.ts";
 import type { Task } from "../lib/types";
 import type { BusyItem } from "../lib/offerChoices";
 
@@ -92,6 +93,8 @@ export function useLooseWork(weekStartISO: string) {
       for (const t of allTasks) {
         if (t.project_id !== projectId) continue;
         if (t.status === "done" || t.status === "trashed") continue;
+        // An agent has it (D-250): it needs no time from you, so it is neither.
+        if (isHandedOff(t)) continue;
         if (!isPlacedInWeek(t.id, t.slot_id, weekBlockTaskIds, weekSlotIds)) {
           loose.push(t);
           continue;
@@ -285,7 +288,8 @@ export function useWeekComposer(now: Date, forWeekISO?: string | null) {
 export function useTodayHolds(tasks: readonly Task[], now: Date, forWeekISO?: string | null): Map<string, Placement> {
   const { compose, today, laterDays } = useWeekComposer(now, forWeekISO);
   return useMemo(() => {
-    const pool = tasks.slice(0, HOLDS_CAP);
+    // An agent's task (D-250) takes no hold — the hour isn't yours to give it.
+    const pool = tasks.filter((t) => !isHandedOff(t)).slice(0, HOLDS_CAP);
     if (!pool.length) return new Map<string, Placement>();
     // Today first: the task is already dated today, so today is where a hold
     // belongs when it fits.

@@ -92,6 +92,11 @@ export interface Task {
   recurrence_date: string | null; // the occurrence's date, 'YYYY-MM-DD'
   recurrence_overridden: boolean; // a THIS-scope edit pinned this occurrence
   task_labels?: { label_id: string }[];
+  /** The agent (a Full account token that takes hand-offs) this task was handed
+   *  to (D-250). Kept after the agent finishes it, so the row says "Done by".
+   *  Written only by /api/handoff and the agent — never by the outbox. Absent
+   *  until migration 96 reaches the database. */
+  handed_to?: string | null;
 }
 
 /**

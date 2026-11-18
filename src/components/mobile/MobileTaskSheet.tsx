@@ -26,6 +26,7 @@ import { RepeatControl } from "../RecurrencePicker";
 import ReminderSelect from "../ReminderSelect";
 import TaskNotes from "../TaskNotes";
 import TaskSteps from "../TaskSteps";
+import { MobileHandoff } from "./MobileHandoff";
 import Sheet, { flushFocus } from "./Sheet";
 import { at, span } from "./dayPlan";
 import { useSettings } from "../../hooks/useSettings";
@@ -598,6 +599,8 @@ export default function MobileTaskSheet({
               </div>
             </SheetSection>
           )}
+
+          <MobileHandoff task={task} onDone={close} />
 
           <SheetSection>
             <RowList>

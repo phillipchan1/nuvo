@@ -9784,3 +9784,58 @@ not at all while a previous listing found nobody to notify.
 write-epoch bypass, push listing, quiet-minute 0 SQL, delta endpoint) go live with the
 Worker.*
 
+**D-250 · 2026-11-17 · Hand a task to an agent you own: one act, one brief, two answers back.**
+
+Origin ⓟ: *"some of these tasks i want to send to Grokbot to do… right click a task and send to
+grokbot"*, then: *"it's like a connector you add in settings, and then it's agents you can
+delegate tasks to… that whole bidirectional setup handles the completion, incompletion."*
+
+**What the agents can actually take in (researched 2026-11-17, secondhand, no vendor docs).**
+Grok Bot is the only one with an inbound trigger: a routine webhook
+(`api2.cursor.sh/automations/webhook/<routine>`, `Authorization: Bearer crsr_…`). Its body is
+reported as unreliable and a 200 can still mean nothing ran, so it is a **doorbell**, never the
+payload. Muse, Claude Duet and dots have no webhook; all four can be MCP clients, and Muse and Duet
+check their connectors on a schedule. No agent has a share-sheet or URL-scheme intake. So the one
+shape that serves all of them is **pull over MCP, plus a doorbell where one exists** — and Nuvo
+already speaks MCP to an agent the operator owns (D-112).
+
+→ **The agent is a Full account token that takes hand-offs.** Settings → **Apps & devices**: a
+Full account token gets a switch, **Takes hand-offs**, and an optional **doorbell** (URL + key; the
+key is sealed like every other provider secret and never read back). No new settings section, no
+"agents" or "connector" word (P11 — D-112 already chose *Apps & devices*). The token is the agent's
+identity: each agent sees only the tasks handed to *it*.
+
+→ **The act is *Hand to <name>*.** On a task's right-click menu and the phone's task sheet. It
+asks for one optional line ("use the Q3 numbers"); ↵ hands off with or without it. The task is
+marked **With <name>**, its clock time comes off (the day stays — it is no longer your hour), and
+it stops counting toward the week's demand. **Take back** undoes it. *Delegate* was refused because
+it is already an energy bucket (`lib/energy.ts`); *Send* already means "out to a person" (invites);
+*Ask* is the old chat's verb and reads as a question, not a job.
+
+→ **The brief is everything about the task, assembled once** (`buildHandoffBrief`, pure): the task
+and its steps, your line, its project (outcome, the other open and done work), its domain, deadline,
+how often it has rolled, earlier hand-offs and why they came back, and how to answer.
+
+→ **Two answers back, over MCP.** `report_handoff(done)` completes the task — it reads **Done by
+<name>** with the agent's note. `report_handoff(back)` returns it to you as it was, the note kept on
+the hand-off. Nothing else about the task is the agent's to change through this door (it still has
+the full tool list, as before).
+
+**Anchor.** Opens **D10** (new, Daily: *can something else do this so I don't have to?*). Strains
+**P12** (single-player): the agent updates state. Mitigated by what D-112 already established — the
+agent is a tool the operator owns, holding the operator's own token; nothing is shared, assigned or
+permissioned, and the task never stops being yours. Strains **P3**: an agent closing your task.
+Mitigated by the visible *Done by* mark, the agent's note, and undo. **P16** — the act appears only
+for agents the account has added; a fresh account sees nothing and loses nothing. No new pool: a
+handed task stays where it was, with a mark. **N-22** holds: one generic mechanism, driven against
+Grok Bot first; no agents wall on the site until a second one has been driven.
+
+*Status: built 2026-11-17 on `claude/agent-handoff` — migration 96, `_shared/handoff.ts`,
+`worker/src/handoffHttp.ts`, the MCP tools, the menu and sheet acts, Apps & devices. Not yet applied
+to Neon or deployed; not yet driven against a live Grok Bot routine. Spec:
+[`handoff.md`](../handoff.md).*
+
+*2026-11-18 — driven locally end to end (hand → back with a note → hand → done). The drive found
+that a handed task still counted as today's own and still asked for a time; it now leaves the day
+(`dayReadiness`, both runtimes), the crown's loose work and Find time's holds. **Open (P11):** the
+task popover already says *Hand the pre-work to Nuvo*; two "hand" acts now sit one section apart.*

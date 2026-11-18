@@ -79,7 +79,8 @@ const ALL: readonly Op[] = ["select", "insert", "update", "delete"];
 const PLANNER: Policy = { owner: "user_id", ops: ALL };
 
 export const REST_TABLES: Readonly<Record<string, Policy>> = {
-  tasks: PLANNER,
+  // `handed_to` is the hand-off's (D-250): only /api/handoff and the agent write it.
+  tasks: { ...PLANNER, guarded: ["handed_to"] },
   domains: PLANNER,
   projects: PLANNER,
   initiatives: PLANNER,
@@ -112,10 +113,17 @@ export const REST_TABLES: Readonly<Record<string, Policy>> = {
   connections: {
     owner: "user_id",
     ops: ["select", "insert", "update"],
-    read: ["id", "user_id", "app", "name", "scopes", "last_four", "created_at", "updated_at", "last_used_at", "revoked_at"],
+    read: [
+      "id", "user_id", "app", "name", "scopes", "last_four", "created_at", "updated_at", "last_used_at", "revoked_at",
+      // hand-off (D-250): the doorbell's key is sealed and never read back; its
+      // version says whether one is set.
+      "takes_handoffs", "doorbell_url", "doorbell_key_version",
+    ],
     insert: ["id", "app", "name", "scopes", "token_hash", "last_four", "created_at"],
-    update: ["name", "revoked_at"],
+    update: ["name", "revoked_at", "takes_handoffs"],
   },
+  // One row per hand-off attempt. Written only by /api/handoff and the MCP tools.
+  handoffs: { owner: "user_id", ops: ["select"] },
   activity_sources: {
     owner: "user_id",
     ops: ["select"],
