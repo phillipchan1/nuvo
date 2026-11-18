@@ -139,7 +139,7 @@ export default function SittingHarness() {
   const [log, setLog] = useState<string[]>([]);
   const say = (line: string) => setLog((l) => [line, ...l].slice(0, 8));
 
-  // "Can't get to this…" reads its cost from the query cache, not from props —
+  // Unschedule… reads its cost from the query cache, not from props —
   // so the fixtures are mirrored there, and a fixture store stands in for the
   // vertical. Right-click the seeded sitting to read the card.
   useEffect(() => {

@@ -177,6 +177,6 @@ describe("freeing just one block", () => {
     expect(calls.project).toEqual([]);
     expect(calls.removed).toEqual(["s1"]);
     expect(calls.task).toEqual([{ id: "a", patch: RELEASED }]);
-    expect(calls.undo[0].label).toMatch(/^Freed .+ — 1 task loose again$/);
+    expect(calls.undo[0].label).toMatch(/^Unscheduled .+ — 1 task back to the project$/);
   });
 });

@@ -2760,10 +2760,10 @@ export function SlotPopover({
 
         <PopFooter>
           <PopGrow />
-          {/* Project time's own way out — Delete only removes the block. */}
+          {/* Unschedule (D-248): project time's way off — Delete only removes the block. */}
           {slot.project_id && (
             <PopFootAct expanded={deferring} onClick={() => setDeferring((v) => !v)}>
-              Can’t get to this…
+              Unschedule…
             </PopFootAct>
           )}
           <SlotDeleteButton

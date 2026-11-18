@@ -1,4 +1,4 @@
-// DeferPanel — "I can't get to this." The deferrals, opened by you.
+// DeferPanel — Unschedule, for project time (D-248). The deferrals, opened by you.
 //
 // The Week's Plan row has offered these acts since D-060, but only as the
 // remedy to a problem the app noticed (loose work). A project whose work was all
@@ -48,7 +48,7 @@ export function DeferPanel({
     ...(slot
       ? [
           {
-            label: "Free just this block",
+            label: "Just this block",
             title: slotPhrase
               ? `Takes ${slotPhrase} off the calendar. The project stays on the week and this work goes loose.`
               : "Takes this block off the calendar. The project stays on the week.",
@@ -77,7 +77,7 @@ export function DeferPanel({
       why={
         phrase
           ? slot
-            ? "Moving it or taking it off the week clears all of that — the work stays in the project. Freeing this block clears only it."
+            ? "Moving it or taking it off the week clears all of that — the work stays in the project. Just this block clears only it."
             : "Moving it or taking it off the week clears that — the work stays in the project."
           : undefined
       }

@@ -692,7 +692,7 @@ html:root .rail-tab:focus-visible { outline: none; color: var(--ink); box-shadow
 .rail-pick-fields { display: flex; gap: 6px; }
 .rail-pick-fields > .k-field { flex: 1 1 0; }
 
-/* ── DeferCard — "can't get to this", on a block ──────────────────────── */
+/* ── DeferCard — Unschedule… on project time, on a block ──────────────────────── */
 .defer-card { width: 300px; }
 .defer-card-head {
   display: flex;

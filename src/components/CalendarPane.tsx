@@ -5007,32 +5007,30 @@ function CalendarPane({
             }}>
               Duplicate
             </EventMenuItem>
-            {/* Unschedule (D-248): the work inside goes back, a one-off slot
-                comes off. Inside a selection it takes the whole selection. */}
+            {/* Unschedule (D-248) — ONE item for every slot. Alone, project time
+                opens the card (just this block · the project to next week · off
+                the week), because deleting the block used to leave the project
+                on the week and its work stranded. Inside a selection it is the
+                plain act over all of it — the project-wide choices are one
+                project's, never a group's. */}
             {(() => {
               const lit = litForMenu(`slot:${slot.id}`);
               const n = lit ? lit.filter((b) => b.kind !== "event").length : 1;
+              const asks = !lit && Boolean(slot.project_id);
               return (
-                <EventMenuItem shortcut={["U"]} onClick={() => {
+                <EventMenuItem shortcut={asks ? undefined : ["U"]} onClick={() => {
                   setSlotMenu(null);
+                  if (asks) {
+                    setDeferOffer({ x: slotMenu.x, y: slotMenu.y, slot });
+                    return;
+                  }
                   const own = blockById(`slot:${slot.id}`);
                   unscheduleBlocks(lit ?? (own ? [own] : []));
                 }}>
-                  {n > 1 ? `Unschedule ${n}` : "Unschedule"}
+                  {n > 1 ? `Unschedule ${n}` : asks ? "Unschedule…" : "Unschedule"}
                 </EventMenuItem>
               );
             })()}
-            {/* Project time has a fourth act, and it isn't Delete: deleting the
-                block left the project on the week and its work stranded on the
-                day. The card says what each way out clears before you press. */}
-            {slot.project_id && (
-              <EventMenuItem onClick={() => {
-                setDeferOffer({ x: slotMenu.x, y: slotMenu.y, slot });
-                setSlotMenu(null);
-              }}>
-                Can’t get to this…
-              </EventMenuItem>
-            )}
             <MenuSeparator />
             <EventMenuItem danger onClick={() => {
               const el = slotMenu.el;

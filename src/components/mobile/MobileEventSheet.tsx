@@ -1354,7 +1354,7 @@ function MobileSlotSheet({
                   <SlotDeferPanel slot={slot} onDone={closeFlushing} />
                 </div>
               ) : (
-                <ActionRow icon="arrow-right" label="Can’t get to this…" onClick={() => setDeferring(true)} />
+                <ActionRow icon="arrow-right" label="Unschedule…" onClick={() => setDeferring(true)} />
               ))}
           </RowList>
         </SheetSection>

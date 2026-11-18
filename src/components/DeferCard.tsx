@@ -1,4 +1,4 @@
-// DeferCard — the Schedule's frame for "can't get to this".
+// DeferCard — the Schedule's frame for Unschedule… on project time (D-248).
 //
 // A project sitting on the grid could be opened, duplicated or deleted, and
 // deleting it left the project on the week with its work stranded on the day.

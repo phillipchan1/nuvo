@@ -9716,9 +9716,17 @@ the backlog, as before. Degrades on an empty account to the single-block menu (P
 holds only in the builder's account (P16) — though the operator's own screenshot was mostly
 meetings, which is exactly why the toast counts them.
 
-**Not done, on purpose.** Events (above). A **project sitting** keeps *Can't get to this…*
-(D-150) beside Unschedule — that act also takes the project off the week, which Unschedule
-doesn't. A
+→ **Project time: one item, not two.** *Can't get to this…* (D-150) sat beside Unschedule on a
+project block, and its first act — *Free just this block* — was the same write. Two names for one
+act is the P11 failure this decision exists to fix. So a project block's menu has ONE item,
+**Unschedule…**, which opens the same card: **Just this block** · *Move it to next week* · *Take it
+off this week*. The ellipsis is the tell that it asks; a plain slot's **Unschedule** doesn't. Inside
+a selection it is the plain act over the whole selection — moving a project to next week is one
+project's decision, never a group's. The slot inspector and the phone's block sheet say
+**Unschedule…** too, and the block's toast reads *Unscheduled Thu 2–4pm — 3 tasks back to the
+project*. The Week's Plan row keeps its own two acts: it is a project, not a block.
+
+**Not done, on purpose.** Events (above). A
 selection on the **phone's calendar**: the phone reaches the act through Tasks → Today → hold →
 **Unschedule**. A "clear from now" gesture that needs no selection — worth its own pass if the
 span gesture proves too fiddly under a real afternoon.

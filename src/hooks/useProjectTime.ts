@@ -224,8 +224,9 @@ export function useDeferProject() {
       const when = `${format(start, "EEE")} ${span(start, new Date(start.getTime() + slot.duration_minutes * 60_000))}`;
       const n = cost.tasks.length;
       recordUndo({
-        label: n ? `Freed ${when} — ${n} task${n === 1 ? "" : "s"} loose again` : `Freed ${when}`,
-        shortLabel: "Freed the block",
+        // One word with every other way off the calendar (D-248).
+        label: n ? `Unscheduled ${when} — ${n} task${n === 1 ? "" : "s"} back to the project` : `Unscheduled ${when}`,
+        shortLabel: "Unscheduled",
         tier: "toast",
         undo: restore,
       });
