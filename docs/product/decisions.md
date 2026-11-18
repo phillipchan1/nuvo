@@ -9752,9 +9752,13 @@ client sees.)*
 Not a Question Ledger row — this is the planner staying cheap enough to run. Strains nothing
 user-facing; the four no's do not apply.
 
-→ **REST reads no longer call `now()`.** Hyperdrive skipped every `json_agg` body because
-`rest.ts` selected `now() AS read_at` to bust the cache. Freshness is `X-Read-At` (Worker clock)
-and the change feed. Shipped clients ignore the header. Live as soon as the Worker deploys.
+→ **REST reads no longer call `now()`, except for 90s after that user wrote.** Hyperdrive
+skipped every `json_agg` body because `rest.ts` selected `now() AS read_at` to bust the
+cache. Freshness is `X-Read-At` (Worker clock) and the change feed. Hyperdrive does not
+invalidate on writes (max_age ~60s + SWR ~15s), so a GET for an account that wrote in the
+last 90s appends `now() IS NOT NULL` and is uncacheable — otherwise a shipped client that
+refetches after a mutation would paint the pre-write list over optimistic state. Live as
+soon as the Worker deploys.
 
 → **Additive `Prefer: nuvo-delta` + `nuvo_since`.** Old clients never send either, so they keep
 getting the PostgREST array. A new client gets `{ updated, ids, read_at }` (or `{ reset: true }`):
@@ -9769,10 +9773,14 @@ verdicts stay in the map so the AI router does not re-ask, which retired the sec
 longer invalidate the whole table.
 
 → **Desktop pull is five minutes.** Focus still asks the feed immediately. The `* * * * *`
-cron stays for calendar-dispatch (CronGate already no-ops a quiet minute). Push-dispatch shares
-that trigger but lists only `enabled` users with a `push_subscriptions` row, and loads
-`hidden_events` per user rather than in the listing.
+cron stays for calendar-dispatch (a due poll must be claimed that minute). CronGate answers
+first: a quiet minute is zero Neon queries — calendar-dispatch, CronGate itself (a Durable
+Object, not Postgres), and the push-dispatch EXISTS. Push-dispatch shares the trigger but
+lists only `enabled` users with a `push_subscriptions` row, and loads `hidden_events` per
+user rather than in the listing. Without a gate it runs at most every five minutes, and
+not at all while a previous listing found nobody to notify.
 
-*Status: standing. Client savings need a release; server savings (Hyperdrive, push listing,
-delta endpoint) go live with the Worker.*
+*Status: standing. Client savings need a release; server savings (Hyperdrive with
+write-epoch bypass, push listing, quiet-minute 0 SQL, delta endpoint) go live with the
+Worker.*
 

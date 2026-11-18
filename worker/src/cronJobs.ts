@@ -43,6 +43,7 @@ import { runGoogleSync } from "./google/sync.ts";
 import { WRITE_FROZEN_MESSAGE, writeFrozen } from "./maintenance.ts";
 import { requestIo, requireStore, type AppEnv } from "./session.ts";
 import { runPushDispatch } from "./pushDispatch.ts";
+import { markPushListingEmpty, pushListingIsEmpty } from "./writeFreshness.ts";
 import { readJson } from "./http.ts";
 import { rolloverUserTasks } from "./rollover.ts";
 
@@ -76,11 +77,22 @@ export interface CronResult {
 
 export const MINUTE_CRON = "* * * * *";
 
+/** Fail-open backstop: without CronGate, push-dispatch must not query Neon every minute. */
+export const PUSH_UNGATED_EVERY_MINUTES = 5;
+
+export function ungatedPushDue(nowMs: number): boolean {
+  return Math.floor(nowMs / 60_000) % PUSH_UNGATED_EVERY_MINUTES === 0;
+}
+
 /** cron expression (UTC) → job names. Same tick can run more than one. */
 export const CRON_BY_SCHEDULE: Record<string, readonly string[]> = {
-  // Calendar-dispatch must tick every minute (CronGate no-ops the quiet ones).
-  // Push-dispatch shares the trigger so we do not add a second Cloudflare cron;
-  // its listing is now a cheap EXISTS on enabled+subscribed accounts (D-249).
+  // Calendar-dispatch must tick every minute so a due Google/Graph/CalDAV
+  // poll is claimed on that minute. CronGate answers first: a quiet minute
+  // (nothing due, nothing dirty) is one DO fetch and zero Neon queries —
+  // calendar-dispatch, the listing EXISTS, all of it (D-239 / D-249).
+  // Push-dispatch shares the trigger so we do not add a second Cloudflare
+  // cron. Without a gate it runs at most every PUSH_UNGATED_EVERY_MINUTES,
+  // and not at all while a previous listing found nobody to notify.
   "* * * * *": ["calendar-dispatch", "push-dispatch"],
   "5 7 * * *": ["rollover"],
   "5 8 * * *": ["rollover"],
@@ -303,8 +315,10 @@ export async function runCronJob(job: string, env: Env, sql: Sql | null): Promis
  * quiet minute returns without opening SQL — Neon is never touched, so its
  * compute can suspend. Otherwise runs calendar-dispatch and / or
  * push-dispatch for exactly what the gate says is due, then reports when each
- * next needs a look. No gate (binding unset, DO error) → both jobs run
- * ungated, as before. `openDb` is called at most once, and only when a job runs.
+ * next needs a look. No gate (binding unset, DO error) → calendar-dispatch
+ * still runs (a due poll cannot wait); push-dispatch runs at most every
+ * PUSH_UNGATED_EVERY_MINUTES, and not at all while a listing found nobody
+ * to notify. `openDb` is called at most once, and only when a job runs.
  */
 export async function runMinuteTick(
   env: Env,
@@ -369,7 +383,9 @@ export async function runMinuteTick(
     out.push({ job: "calendar-dispatch", status: 200, skipped: true, reason: "gate" });
   }
 
-  if (!plan || plan.push) {
+  const emptyCached = !plan && (await pushListingIsEmpty());
+  const wantPush = plan ? Boolean(plan.push) : !emptyCached && ungatedPushDue(nowMs);
+  if (wantPush) {
     try {
       const s = db();
       if (!s) {
@@ -378,6 +394,7 @@ export async function runMinuteTick(
         const scope = plan?.push ?? "all";
         const result = await runPushDispatch(s, env, scope === "all" ? { nowMs } : { nowMs, userIds: scope });
         if (plan) report.push = { scope, next: result.next };
+        if (result.accounts === 0) markPushListingEmpty();
         out.push({ job: "push-dispatch", status: 200, stay_on_supabase: false });
       }
     } catch (err) {
@@ -385,7 +402,8 @@ export async function runMinuteTick(
       out.push({ job: "push-dispatch", status: 500, ok: false, reason: "error" });
     }
   } else {
-    out.push({ job: "push-dispatch", status: 200, skipped: true, reason: "gate" });
+    const reason = plan ? "gate" : emptyCached ? "no_subscribers" : "ungated_interval";
+    out.push({ job: "push-dispatch", status: 200, skipped: true, reason });
   }
 
   // A failed job reports nothing: its lease makes the gate try it next minute.

@@ -23,6 +23,7 @@ import { applyIsolationSchema } from "./isolationDb.ts";
 import { makePgliteSql } from "./pgliteSql.ts";
 import { installRequestIoForTests } from "./requestIo.ts";
 import { resetRestCatalogForTests } from "./rest.ts";
+import { HYPERDRIVE_BYPASS, resetWriteFreshnessForTests } from "./writeFreshness.ts";
 import { updateAccount } from "./calendar/store.ts";
 import { workerRoute } from "../../src/lib/workerRoute.ts";
 import app from "./index.ts";
@@ -579,14 +580,76 @@ frozen = false;
   ok(pre.status === 204 && ["prefer", "content-profile", "accept-profile", "authorization"].every((h) => allow.includes(h)), "preflight allows the builder's headers");
 }
 
-// --- Hyperdrive: row-body reads must be cacheable (no now()) ---------------
+// --- Hyperdrive: cacheable until this user writes; write-then-read is fresh --
 {
-  const bodies = sent.filter((t) => /json_agg\(_r\)/.test(t) && !/\b(INSERT|UPDATE|DELETE)\b/i.test(t));
-  ok(bodies.length > 10, `recorded the route's row-body reads (${bodies.length})`);
+  resetWriteFreshnessForTests();
+  const created = await A.from("tasks").insert({ title: "hyperdrive-raw" }).select("id,title").single();
+  ok(!created.error && created.data?.id, `hyperdrive: insert a row (${created.error?.message ?? "ok"})`);
+  const hyperId = created.data!.id as string;
+  // The insert stamped a write epoch. Drop it so the next GET is the cacheable shape.
+  resetWriteFreshnessForTests();
+
+  const hyperCache = new Map<string, unknown>();
+  const lastBodySql = () =>
+    [...sent].reverse().find((t) => /json_agg\(_r\)/.test(t) && !/\b(INSERT|UPDATE|DELETE)\b/i.test(t)) ?? "";
+  Object.assign(sql, {
+    unsafe: (text: string, params?: unknown[]) => {
+      sent.push(text);
+      const mutating = /\b(INSERT|UPDATE|DELETE)\b/i.test(text);
+      const volatile = /\bnow\s*\(/i.test(text);
+      const key = !mutating && !volatile ? `${text}\0${JSON.stringify(params ?? [])}` : null;
+      if (key && hyperCache.has(key)) return Promise.resolve(hyperCache.get(key));
+      const result = rawUnsafe(text, params);
+      if (key) {
+        return Promise.resolve(result).then((rows) => {
+          hyperCache.set(key, rows);
+          return rows;
+        });
+      }
+      return result;
+    },
+  });
+
+  const first = await A.from("tasks").select("id,title").eq("id", hyperId);
+  ok(first.data?.[0]?.title === "hyperdrive-raw", "hyperdrive: cacheable GET sees the row");
+  ok(!/\bnow\s*\(/i.test(lastBodySql()), `cacheable GET omits now() so Hyperdrive can cache it`);
+
+  // A write that bypasses REST (what Hyperdrive itself does not invalidate).
+  await db.query(`UPDATE tasks SET title = 'stale-if-cached' WHERE id = $1`, [hyperId]);
+  const stale = await A.from("tasks").select("id,title").eq("id", hyperId);
   ok(
-    bodies.every((t) => !/\bnow\(\)/i.test(t)),
-    `row-body reads omit now() so Hyperdrive can cache them: ${bodies.find((t) => /\bnow\(\)/i.test(t))?.slice(0, 120) ?? ""}`,
+    stale.data?.[0]?.title === "hyperdrive-raw",
+    `HYPERDRIVE path serves the cached pre-write list (${stale.data?.[0]?.title})`,
   );
+
+  const patched = await A.from("tasks").update({ title: "hyperdrive-fresh" }).eq("id", hyperId);
+  ok(!patched.error, `hyperdrive: PATCH ${patched.error?.message ?? "ok"}`);
+  const fresh = await A.from("tasks").select("id,title").eq("id", hyperId);
+  ok(
+    fresh.data?.[0]?.title === "hyperdrive-fresh",
+    `write-then-read through the HYPERDRIVE path returns the new row (got ${String(fresh.data?.[0]?.title)})`,
+  );
+  ok(
+    lastBodySql().includes(HYPERDRIVE_BYPASS),
+    "post-write GET appends now() IS NOT NULL so Hyperdrive will not cache it",
+  );
+
+  const bBefore = sent.length;
+  await B.from("tasks").select("id").limit(1);
+  const bSql = sent.slice(bBefore).find((t) => /json_agg\(_r\)/.test(t) && !/\b(INSERT|UPDATE|DELETE)\b/i.test(t)) ?? "";
+  ok(!/\bnow\s*\(/i.test(bSql), "another user's GET stays cacheable after A's write");
+
+  Object.assign(sql, {
+    unsafe: (text: string, params?: unknown[]) => {
+      sent.push(text);
+      return rawUnsafe(text, params);
+    },
+  });
+  resetWriteFreshnessForTests();
+  const aged = await A.from("tasks").select("id,title").eq("id", hyperId);
+  const agedSql = lastBodySql();
+  ok(aged.data?.[0]?.title === "hyperdrive-fresh", "committed title survives once the bypass drops");
+  ok(!/\bnow\s*\(/i.test(agedSql), "GET with no recent write is cacheable again");
 }
 
 // --- transfer: full vs quiet-delta vs one-change, then extrapolate ----------

@@ -47,6 +47,7 @@
  */
 import { raceTimeout } from "./db.ts";
 import type { Env } from "./env.ts";
+import { persistWriteFreshness } from "./writeFreshness.ts";
 
 /** No proof is trusted longer than this — the backstop for a writer that forgot to poke. */
 export const PROOF_TTL_MS = 3 * 60 * 60_000;
@@ -447,6 +448,10 @@ export async function markerProve(env: Env, input: ProveInput): Promise<void> {
  */
 export async function markerPoke(env: Env, poke: MarkerPoke): Promise<void> {
   if (!poke.all && !poke.users?.length && !poke.dropCreds?.length) return;
+  // Always stamp the write epoch, even when the Durable Object is unbound —
+  // REST GETs in this colo must not be served from Hyperdrive's pre-write
+  // cache (D-249). dropCreds-only pokes are sign-outs, not row writes.
+  if (poke.all || poke.users?.length) await persistWriteFreshness(poke);
   if (!env.SYNC_MARKER) return;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {

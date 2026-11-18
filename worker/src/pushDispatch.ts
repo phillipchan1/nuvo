@@ -94,6 +94,8 @@ export async function runPushDispatch(
   // device. Listing used to pull `hidden_events` (tens of KB) for every user
   // with a prefs blob, then load two days of events for people with no
   // subscription at all (D-249). Hidden events load per user below.
+  // The minute cron must not reach this SELECT on a quiet minute: CronGate
+  // skips it, and the fail-open path runs it at most every 5 minutes.
   const only = opts.userIds;
   if (only && !only.length) return { ok: true, configured, accounts: 0, considered: 0, notified: 0, next: {} };
   const settingsRows = (only

@@ -38,6 +38,7 @@ import { rotateInboundToken, type Store } from "./store.ts";
 import { syncChanges, type FeedAnswer } from "./syncFeed.ts";
 import { credentialKey, markerCheck, markerProve, parseCursor } from "./syncMarker.ts";
 import { scheduleClose } from "./requestIo.ts";
+import { freshnessSql, noteUserWrites } from "./writeFreshness.ts";
 
 export const REST_PREFIX = "/api/rest/v1";
 
@@ -663,6 +664,11 @@ function orderSql(target: Target, orders: Order[]): string {
  * task list a Neon round-trip, ~1 GB/day from one open Mac. Freshness now
  * lives on the `X-Read-At` response header (Worker clock) and on the change
  * feed / `nuvo-delta` path. Writes still stamp `updated_at = now()` in SQL.
+ *
+ * Hyperdrive does not invalidate on writes (max_age ~60s, SWR ~15s). A GET
+ * for a user who wrote in the last `WRITE_FRESH_MS` appends `now() IS NOT
+ * NULL` so that read cannot be served stale; every other REST list is
+ * cacheable. See writeFreshness.ts.
  */
 function bodySql(source: string, singular: boolean): string {
   const body = singular ? "(json_agg(_r) -> 0)::text" : "COALESCE(json_agg(_r), '[]'::json)::text";
@@ -923,13 +929,14 @@ async function handleDeltaSelect(sql: Sql, cat: Catalog, req: RestRequest, uid: 
   const conds = parseFilters(req.params);
   const tsType = target.info.columns.get(tsCol)!;
 
+  const fresh = await freshnessSql(uid);
   const idParams = new Params();
-  const idWhere = whereSql(target, conds, idParams);
+  const idWhere = whereSql(target, conds, idParams) + fresh;
   const upParams = new Params();
   const upCols = [...columnList(target, spec), ...(await embedSql(target, spec, upParams, cat))];
   if (!upCols.length) throw bad("select names no columns");
   const upWhere =
-    `${whereSql(target, conds, upParams)} AND t.${q(tsCol)} > ${upParams.typed(since, tsType)}`;
+    `${whereSql(target, conds, upParams)} AND t.${q(tsCol)} > ${upParams.typed(since, tsType)}` + fresh;
   const upSource =
     `SELECT ${upCols.join(", ")} FROM public.${q(target.table)} t WHERE ${upWhere}` +
     orderSql(target, parseOrder(req.params.get("order"))) +
@@ -963,7 +970,8 @@ async function handleSelect(sql: Sql, cat: Catalog, req: RestRequest, uid: strin
   const cols = [...columnList(target, spec), ...(await embedSql(target, spec, params, cat))];
   if (!cols.length) throw bad("select names no columns");
   const conds = parseFilters(req.params);
-  const where = whereSql(target, conds, params);
+  const fresh = await freshnessSql(uid);
+  const where = whereSql(target, conds, params) + fresh;
   const limit = parseCount(req.params.get("limit"), "limit");
   const offset = parseCount(req.params.get("offset"), "offset");
   const source =
@@ -977,7 +985,7 @@ async function handleSelect(sql: Sql, cat: Catalog, req: RestRequest, uid: strin
     // Its own params: a statement may not carry a parameter it never reads.
     const countParams = new Params();
     const rows = await sql.unsafe<{ n: number }[]>(
-      `SELECT count(*)::int AS n FROM public.${q(target.table)} t WHERE ${whereSql(target, conds, countParams)}`,
+      `SELECT count(*)::int AS n FROM public.${q(target.table)} t WHERE ${whereSql(target, conds, countParams)}${fresh}`,
       countParams.values as never[],
     );
     total = Number(rows[0]?.n ?? 0);
@@ -1065,7 +1073,9 @@ async function handleInsert(sql: Sql, cat: Catalog, req: RestRequest, uid: strin
     }
   }
   text += ` RETURNING ${returningSql(target, spec)}`;
-  return finish(req, await run(sql, bodySql(text, req.singular), params), 201);
+  const result = await run(sql, bodySql(text, req.singular), params);
+  noteUserWrites({ users: [uid] });
+  return finish(req, result, 201);
 }
 
 /** Stamps are clamped to now (a fast clock cannot win forever) and an
@@ -1132,7 +1142,9 @@ async function handleUpdate(sql: Sql, cat: Catalog, req: RestRequest, uid: strin
        FROM jsonb_populate_record(NULL::public.${q(target.table)}, ${record}) r
       WHERE ${whereSql(target, conds, params)}
       RETURNING ${returningSql(target, spec)}`;
-  return finish(req, await run(sql, bodySql(text, req.singular), params), 200);
+  const result = await run(sql, bodySql(text, req.singular), params);
+  noteUserWrites({ users: [uid] });
+  return finish(req, result, 200);
 }
 
 async function handleDelete(sql: Sql, cat: Catalog, req: RestRequest, uid: string): Promise<Response> {
@@ -1144,7 +1156,9 @@ async function handleDelete(sql: Sql, cat: Catalog, req: RestRequest, uid: strin
   const text =
     `DELETE FROM public.${q(target.table)} AS t WHERE ${whereSql(target, conds, params)}
       RETURNING ${returningSql(target, spec)}`;
-  return finish(req, await run(sql, bodySql(text, req.singular), params), 200);
+  const result = await run(sql, bodySql(text, req.singular), params);
+  noteUserWrites({ users: [uid] });
+  return finish(req, result, 200);
 }
 
 // ---------------------------------------------------------------------------
@@ -1234,6 +1248,7 @@ async function applyPatchRpc(store: Store, cat: Catalog, args: Record<string, un
         WHERE ${whereSql(target, matchConds, up)}`,
       up.values as never[],
     );
+    noteUserWrites({ users: [store.userId] });
     return rpcJson({ applied, rejected, matched: 1 });
   });
 }
