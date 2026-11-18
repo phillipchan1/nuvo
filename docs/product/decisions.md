@@ -9657,7 +9657,14 @@ channels hear about real changes by push, so the poll is their backstop; an ICS 
 min staler than before. Strains **P7** slightly for feed subscriptions. No ledger row (cost), no
 user-facing name, no schema change.
 
-*Status: built 2026-11-17 on `ship/status-lines`. Pinned in `worker/src/cronGate.check.ts` ("The shared
+*Status: **shipped 2026-11-17** — PR #176, Worker version 2748a30f. **And the real culprit:** with it
+live Neon still never suspended, and `pg_stat_activity` showed a connection querying `user_settings` one
+second after every minute. It was the **`nuvo-preview` Worker** (the cutover rehearsal, last deployed Nov
+12, before D-239): `env.preview` had no `triggers`, so it inherited the minute cron and ran production's
+reminder and calendar jobs a second time against production Neon (its `DATABASE_URL`) with no gate.
+`env.preview.triggers.crons` is now `[]` (deployed as preview 6fdf2654; `wrangler triggers deploy` with an
+empty list did not remove them, a full `wrangler deploy --env preview` did). A preview must never
+inherit crons while it reads production. Built on `ship/status-lines`. Pinned in `worker/src/cronGate.check.ts` ("The shared
 wake clock": every phase of a 30-min account lands on :00/:30 within 15–45 min; once aligned it stays
 30 min even when pulled 5 min early or run 90 s late; short intervals sit on the 10-min grid past the
 next look; the full run lands on a wake minute inside the cap).*

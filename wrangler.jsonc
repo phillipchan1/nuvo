@@ -100,6 +100,11 @@
       // Empty array, not omitted — wrangler inherits top-level routes
       // otherwise and a preview deploy would steal api.nuvo.day.
       "routes": [],
+      // Empty, not omitted — wrangler inherits top-level crons otherwise. The
+      // preview reads production Neon (DATABASE_URL), so an inherited minute
+      // cron ran production's reminder and calendar jobs a second time, with
+      // no gate, and on its own kept Neon awake every minute (D-247).
+      "triggers": { "crons": [] },
       // Not inherited from the top level.
       "send_email": [
         { "name": "EMAIL", "allowed_sender_addresses": ["noreply@inbox.nuvo.day"] }
