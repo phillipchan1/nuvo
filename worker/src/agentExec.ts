@@ -40,6 +40,7 @@ import {
   listOwned,
   listTaskLabels,
   updateOwned,
+  updateSlot,
   type PlannerTable,
   type Store,
 } from "./store.ts";
@@ -424,17 +425,19 @@ export async function executeOwnedTool(
     case "create_slot":
       return createSlot(store, args, zone);
     case "reschedule_slot":
+      return rescheduleSlot(store, args, zone, false);
     case "update_slot":
-      return patchRow(store, "slots", args.id, {
-        title: args.title,
-        project_id: args.project_id,
-        domain_id: args.domain_id,
-      });
-    case "delete_slot":
-      // toolDefs name the block `slot_id`; `id` is the older spelling.
-      return removeRow(store, "slots", args.slot_id ?? args.id);
+      // Worker-only alias (not in toolDefs): the block's own fields, and its
+      // time when one is given.
+      return rescheduleSlot(store, args, zone, true);
+    case "delete_slot": {
+      // toolDefs name the block `slot_id` (or slot_title + date); `id` is the older spelling.
+      const found = await resolveSlotArg(store, args, zone, true);
+      if ("error" in found) return found.error;
+      return removeRow(store, "slots", found.slot.id);
+    }
     case "add_to_slot":
-      return patchRow(store, "tasks", args.task_id ?? args.id, { slot_id: args.slot_id });
+      return addToSlot(store, args, zone);
     case "add_step":
       return createRow(store, "tasks", {
         title: args.title ?? "Untitled",
@@ -777,22 +780,29 @@ async function createTask(store: Store, args: Record<string, unknown>, zone: str
   return rows[0] ? JSON.stringify(rows[0]) : FORBIDDEN_FK;
 }
 
-// ── Slots: one block of time that owns several tasks ────────────────────────
-// toolDefs.ts gives create_slot `start_local` (+ duration_minutes, tasks,
-// task_ids). The port read `do_date` / `start_time`, which no caller sends, so
-// insertOwned refused the row and every MCP create_slot answered "not found".
-// This is the edge executor's create_slot (supabase/functions/agent/tools.ts)
-// on the Worker's store: local start read in the caller's zone, a stated length
-// or one sized to the work inside, then the work placed inside it.
-
 interface SlotTaskInput {
   title: string;
   duration_minutes?: number;
   notes?: string;
 }
 
-function normalizeSlotTasks(raw: unknown): SlotTaskInput[] {
-  if (!Array.isArray(raw)) return [];
+type SlotRow = Record<string, unknown> & { id: string };
+
+/** The longest block (or piece inside one) a tool may set: one day. Past it a
+ *  length is a mistake, and past int4 it was a Postgres 500. */
+export const MAX_SLOT_MINUTES = 1440;
+const SLOT_MINUTES_ERROR = `duration_minutes must be a whole number of minutes from 1 to ${MAX_SLOT_MINUTES}`;
+
+/** A slot length: a positive number up to a day, rounded; undefined when it isn't one. */
+function slotMinutes(value: unknown): number | undefined {
+  const mins = positiveMinutes(value);
+  return mins !== undefined && mins <= MAX_SLOT_MINUTES ? mins : undefined;
+}
+
+/** The new work a slot tool names. A piece with an unreadable length is an error, not a guess. */
+function normalizeSlotTasks(raw: unknown): SlotTaskInput[] | { error: string } {
+  if (raw == null) return [];
+  if (!Array.isArray(raw)) return { error: badArg("tasks must be a list of { title, duration_minutes? }") };
   const out: SlotTaskInput[] = [];
   for (const item of raw) {
     if (typeof item === "string" && item.trim()) {
@@ -801,56 +811,96 @@ function normalizeSlotTasks(raw: unknown): SlotTaskInput[] {
       const rec = item as Record<string, unknown>;
       const title = String(rec.title ?? "").trim();
       if (!title) continue;
-      out.push({
-        title,
-        duration_minutes: positiveMinutes(rec.duration_minutes),
-        notes: typeof rec.notes === "string" ? rec.notes : undefined,
-      });
+      let duration: number | undefined;
+      if (rec.duration_minutes != null) {
+        duration = slotMinutes(rec.duration_minutes);
+        if (duration === undefined) return { error: badArg(SLOT_MINUTES_ERROR) };
+      }
+      out.push({ title, duration_minutes: duration, notes: typeof rec.notes === "string" ? rec.notes : undefined });
     }
   }
   return out;
 }
 
-async function createSlot(store: Store, args: Record<string, unknown>, zone: string): Promise<string> {
-  const title = String(args.title ?? "").trim();
-  if (!title) return badArg("A slot needs a title — name the through-line of the work inside it");
-  const startTime = startInstant(args.start_local ?? args.start_time, zone);
-  if (!startTime) return badArg("start_local must be local 'YYYY-MM-DDTHH:MM' (24h)");
-
-  const newTasks = normalizeSlotTasks(args.tasks);
-  const taskIds = Array.isArray(args.task_ids) ? args.task_ids.filter((v): v is string => typeof v === "string" && v.length > 0) : [];
-
-  let duration: number;
-  if (args.duration_minutes != null) {
-    const mins = positiveMinutes(args.duration_minutes);
-    if (mins === undefined) return badArg("duration_minutes must be a positive number");
-    duration = mins;
-  } else {
-    duration = sizeSlotToCount(newTasks.length + taskIds.length);
-  }
-
-  const projectId = asId(args.project_id);
-  const domainId = asId(args.domain_id);
-  for (const v of [projectId, domainId]) if (v && !UUID_RE.test(v)) return FORBIDDEN_FK;
-  // Every task named must be this owner's and live before anything is written.
-  for (const id of taskIds) {
+/** Ids from `task_ids` (plus a single legacy id). Every one must be this owner's
+ *  live task — checked before anything is written. */
+async function ownedTaskIds(
+  store: Store,
+  raw: unknown,
+  legacy: unknown = undefined,
+): Promise<string[] | { error: string }> {
+  if (raw != null && !Array.isArray(raw)) return { error: badArg("task_ids must be a list of task ids") };
+  const ids = (Array.isArray(raw) ? raw : []).filter((v): v is string => typeof v === "string" && v.length > 0);
+  const one = asId(legacy);
+  if (one && !ids.includes(one)) ids.push(one);
+  for (const id of ids) {
     const row = UUID_RE.test(id) ? await getOwned(store, "tasks", id) : null;
-    if (!row || row.status === "trashed") return MISSING;
+    if (!row || row.status === "trashed") return { error: MISSING };
   }
+  return ids;
+}
 
-  const doDate = localDateISO(startTime, zone);
-  const slot = await insertOwned(store, "slots", {
-    title,
-    do_date: doDate,
-    start_time: startTime,
-    duration_minutes: duration,
-    project_id: projectId,
-    domain_id: domainId,
-  });
-  if (!slot) return FORBIDDEN_FK;
-  const slotId = String(slot.id);
+/**
+ * The block a slot tool names: `slot_id` (or the older `id` where that never
+ * meant something else), else `slot_title` (+ `date` for one occurrence). A
+ * malformed id is missing — never a Postgres uuid error. More than one title
+ * match is a question back, never a pick.
+ */
+async function resolveSlotArg(
+  store: Store,
+  args: Record<string, unknown>,
+  zone: string,
+  legacyId: boolean,
+): Promise<{ slot: SlotRow } | { error: string }> {
+  const id = asId(args.slot_id) ?? (legacyId ? asId(args.id) : null);
+  if (id) {
+    const row = UUID_RE.test(id) ? await getOwned(store, "slots", id) : null;
+    return row ? { slot: row as SlotRow } : { error: MISSING };
+  }
+  const title = typeof args.slot_title === "string" ? args.slot_title.trim() : "";
+  if (!title) return { error: badArg("Provide slot_id or slot_title") };
+  let date: string | null = null;
+  if (args.date != null && args.date !== "") {
+    date = isoDate(args.date);
+    if (!date) return { error: badArg("date must be YYYY-MM-DD") };
+  }
+  const needle = title.toLowerCase();
+  const rows = (await listOwned(store, "slots"))
+    .filter((r) => String(r.title ?? "").toLowerCase().includes(needle))
+    .filter((r) => !date || dayOf(r.do_date) === date)
+    .sort((a, b) => String(a.start_time ?? "").localeCompare(String(b.start_time ?? "")));
+  if (!rows.length) return { error: badArg(`No block matching "${title}"${date ? ` on ${date}` : ""}`) };
+  if (rows.length === 1) return { slot: rows[0] as SlotRow };
+  const series = new Set(rows.map((r) => r.recurrence_id ?? null));
+  if (series.size === 1 && rows[0].recurrence_id) {
+    const today = todayIn(zone);
+    const upcoming = rows.map((r) => dayOf(r.do_date)).filter((d) => d >= today).slice(0, 6);
+    return {
+      error: badArg(`"${rows[0].title}" repeats — say which one: pass date (YYYY-MM-DD) or slot_id. Upcoming: ${upcoming.join(", ") || "none"}.`),
+    };
+  }
+  return {
+    error: badArg(
+      `Multiple blocks match "${title}": ${rows.slice(0, 5).map((r) => `"${r.title}" (${dayOf(r.do_date)})`).join(", ")}. Use slot_id.`,
+    ),
+  };
+}
 
-  // Inside a block a task has the block's day and no time of its own.
+/** A date column as YYYY-MM-DD, whether the driver hands back a string or a Date. */
+function dayOf(value: unknown): string {
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value ?? "").slice(0, 10);
+}
+
+/** Put work inside a block: existing tasks move in, new ones are created in it.
+ *  Inside a block a task has the block's day and no time of its own. */
+async function fillSlot(
+  store: Store,
+  slotId: string,
+  doDate: string,
+  newTasks: SlotTaskInput[],
+  taskIds: string[],
+): Promise<{ id: string; title: string }[]> {
   const placed: { id: string; title: string }[] = [];
   const inside = (): TaskPatch => ({
     slot_id: slotId,
@@ -872,6 +922,51 @@ async function createSlot(store: Store, args: Record<string, unknown>, zone: str
     });
     if (w) placed.push({ id: String(w.id), title: String(w.title ?? "") });
   }
+  return placed;
+}
+
+// ── Slots: one block of time that owns several tasks ────────────────────────
+// toolDefs.ts gives create_slot `start_local` (+ duration_minutes, tasks,
+// task_ids). The port read `do_date` / `start_time`, which no caller sends, so
+// insertOwned refused the row and every MCP create_slot answered "not found".
+// This is the edge executor's create_slot (supabase/functions/agent/tools.ts)
+// on the Worker's store: local start read in the caller's zone, a stated length
+// or one sized to the work inside, then the work placed inside it.
+async function createSlot(store: Store, args: Record<string, unknown>, zone: string): Promise<string> {
+  const title = String(args.title ?? "").trim();
+  if (!title) return badArg("A slot needs a title — name the through-line of the work inside it");
+  const startTime = startInstant(args.start_local ?? args.start_time, zone);
+  if (!startTime) return badArg("start_local must be local 'YYYY-MM-DDTHH:MM' (24h)");
+
+  const newTasks = normalizeSlotTasks(args.tasks);
+  if ("error" in newTasks) return newTasks.error;
+
+  let duration: number | undefined;
+  if (args.duration_minutes != null) {
+    duration = slotMinutes(args.duration_minutes);
+    if (duration === undefined) return badArg(SLOT_MINUTES_ERROR);
+  }
+
+  const projectId = asId(args.project_id);
+  const domainId = asId(args.domain_id);
+  for (const v of [projectId, domainId]) if (v && !UUID_RE.test(v)) return FORBIDDEN_FK;
+  // Every task named must be this owner's and live before anything is written.
+  const taskIds = await ownedTaskIds(store, args.task_ids);
+  if ("error" in taskIds) return taskIds.error;
+  duration ??= sizeSlotToCount(newTasks.length + taskIds.length);
+
+  const doDate = localDateISO(startTime, zone);
+  const slot = await insertOwned(store, "slots", {
+    title,
+    do_date: doDate,
+    start_time: startTime,
+    duration_minutes: duration,
+    project_id: projectId,
+    domain_id: domainId,
+  });
+  if (!slot) return FORBIDDEN_FK;
+  const slotId = String(slot.id);
+  const placed = await fillSlot(store, slotId, doDate, newTasks, taskIds);
 
   return JSON.stringify({
     id: slotId,
@@ -881,6 +976,99 @@ async function createSlot(store: Store, args: Record<string, unknown>, zone: str
     do_date: doDate,
     tasks: placed,
   });
+}
+
+// add_to_slot: toolDefs send slot_id | slot_title (+ date), task_ids[] and
+// tasks[]. The port read one `task_id` / `id` and only linked it.
+async function addToSlot(store: Store, args: Record<string, unknown>, zone: string): Promise<string> {
+  const found = await resolveSlotArg(store, args, zone, false);
+  if ("error" in found) return found.error;
+  const newTasks = normalizeSlotTasks(args.tasks);
+  if ("error" in newTasks) return newTasks.error;
+  // `task_id` / `id` were the port's single-task spelling; still honoured.
+  const taskIds = await ownedTaskIds(store, args.task_ids, args.task_id ?? args.id);
+  if ("error" in taskIds) return taskIds.error;
+  if (!newTasks.length && !taskIds.length) return badArg("Nothing to add — pass tasks or task_ids");
+  const slot = found.slot;
+  const placed = await fillSlot(store, slot.id, dayOf(slot.do_date), newTasks, taskIds);
+  return JSON.stringify({ id: slot.id, added: placed });
+}
+
+// reschedule_slot: toolDefs send slot_id | slot_title (+ date), start_local
+// and/or duration_minutes. The port patched only title/project/domain, so a
+// block could never move. The work inside travels with it: its children carry
+// no time of their own, but they carry the block's day.
+async function rescheduleSlot(
+  store: Store,
+  args: Record<string, unknown>,
+  zone: string,
+  withFields: boolean,
+): Promise<string> {
+  const found = await resolveSlotArg(store, args, zone, true);
+  if ("error" in found) return found.error;
+  const slot = found.slot;
+
+  const rawStart = args.start_local ?? args.start_time;
+  let startTime: string | null = null;
+  if (rawStart != null && rawStart !== "") {
+    startTime = startInstant(rawStart, zone);
+    if (!startTime) return badArg("start_local must be local 'YYYY-MM-DDTHH:MM' (24h)");
+  }
+  let duration: number | null = null;
+  if (args.duration_minutes != null) {
+    const mins = slotMinutes(args.duration_minutes);
+    if (mins === undefined) return badArg(SLOT_MINUTES_ERROR);
+    duration = mins;
+  }
+
+  // update_slot's own fields, validated (shape + ownership) before any write.
+  const fields: Record<string, unknown> = {};
+  if (withFields) {
+    if (typeof args.title === "string" && args.title.trim()) fields.title = args.title.trim();
+    for (const k of ["project_id", "domain_id"] as const) {
+      if (args[k] === undefined) continue;
+      const v = args[k] === null || args[k] === "" ? null : asId(args[k]);
+      if (v && !UUID_RE.test(v)) return FORBIDDEN_FK;
+      fields[k] = v;
+    }
+    if (!(await assertOwnedFks(store, "slots", fields))) return FORBIDDEN_FK;
+  }
+  if (!startTime && duration == null && !Object.keys(fields).length) {
+    return badArg(withFields ? "Nothing to change — pass start_local, duration_minutes, title, project_id or domain_id" : "Nothing to change — pass start_local or duration_minutes");
+  }
+
+  let row: Record<string, unknown> = slot;
+  if (startTime || duration != null) {
+    const doDate = startTime ? localDateISO(startTime, zone) : null;
+    const moved = await store.sql`
+      UPDATE slots
+      SET
+        start_time = COALESCE(${startTime}::timestamptz, start_time),
+        do_date = COALESCE(${doDate}::date, do_date),
+        duration_minutes = COALESCE(${duration}::integer, duration_minutes),
+        recurrence_overridden = CASE WHEN recurrence_id IS NOT NULL THEN true ELSE recurrence_overridden END,
+        updated_at = now()
+      WHERE id = ${slot.id}
+        AND user_id = ${store.userId}
+      RETURNING *
+    `;
+    if (!moved[0]) return MISSING;
+    row = moved[0];
+    if (doDate && doDate !== dayOf(slot.do_date)) {
+      await store.sql`
+        UPDATE tasks
+        SET do_date = ${doDate}::date, updated_at = now()
+        WHERE slot_id = ${slot.id}
+          AND user_id = ${store.userId}
+      `;
+    }
+  }
+  if (Object.keys(fields).length) {
+    const updated = await updateSlot(store, slot.id, fields);
+    if (!updated) return FORBIDDEN_FK;
+    row = updated;
+  }
+  return JSON.stringify(row);
 }
 
 /** update_task: the task's own attributes. Placement is plan/schedule_task. */

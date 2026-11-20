@@ -144,6 +144,122 @@ const text = (reply as { result?: { content?: { text?: string }[] } }).result?.c
 ok(!/not found/.test(text) && typeof JSON.parse(text).id === "string", `MCP tools/call create_slot answers with the slot (got ${text.slice(0, 80)})`);
 ok((await slotCount()) === before + 1, "…and wrote exactly one slot");
 
+// ── add_to_slot / reschedule_slot / update_slot / caps / malformed ids ──────
+// The port read `id` / `task_id` / do_date / start_time where toolDefs send
+// slot_id (or slot_title + date), task_ids[], tasks[] and start_local, so
+// add_to_slot linked nothing it was asked to, reschedule_slot could never move
+// a block, a malformed slot_id threw a Postgres uuid error, and an int4-sized
+// length was a 500.
+const slotCountOf = async (id: string) => Number((await db.query<{ c: number }>(`SELECT count(*)::int AS c FROM tasks WHERE slot_id = $1`, [id])).rows[0].c);
+out = await run("create_slot", { title: "Hold block", start_local: "2026-11-24T10:00", duration_minutes: 60 });
+const holdId = String(out.id);
+
+// add_to_slot by slot_id with task_ids[] and tasks[].
+const c1 = await task(ME, "Add me one", "planned");
+const c2 = await task(ME, "Add me two");
+out = await run("add_to_slot", { slot_id: holdId, task_ids: [c1, c2], tasks: [{ title: "Brand new piece", duration_minutes: 20 }] });
+ok(Array.isArray(out.added) && (out.added as unknown[]).length === 3, `add_to_slot {slot_id, task_ids, tasks} places all three (got ${JSON.stringify(out).slice(0, 120)})`);
+for (const id of [c1, c2]) {
+  const t = await trow(id);
+  ok(t.slot_id === holdId && t.start_time === null && t.do_date === "2026-11-24" && t.status === "planned", `"${t.title}" moved into the block, untimed`);
+}
+ok((await slotCountOf(holdId)) === 3, "three tasks now sit in the block");
+// By title (+ date).
+const c3 = await task(ME, "Add by title");
+out = await run("add_to_slot", { slot_title: "hold block", date: "2026-11-24", task_ids: [c3] });
+ok(out.id === holdId && (await trow(c3)).slot_id === holdId, "add_to_slot resolves slot_title + date");
+// The port's single task_id still works.
+const c4 = await task(ME, "Legacy single");
+out = await run("add_to_slot", { slot_id: holdId, task_id: c4 });
+ok((await trow(c4)).slot_id === holdId, "the older single task_id is still honoured");
+// Refusals: foreign task, foreign slot, nothing to add, malformed slot id, bad piece length — none write.
+const theirs2 = await task(OTHER, "Their other task");
+const before2 = await slotCountOf(holdId);
+ok((await executeOwnedTool(me, "add_to_slot", { slot_id: holdId, task_ids: [theirs2] })) === NOT_FOUND, "add_to_slot: another owner's task reads as missing");
+ok((await trow(theirs2)).slot_id === null, "…and is untouched");
+const theirSlot2 = uid();
+await db.query(`INSERT INTO slots (id, user_id, title, do_date, start_time, duration_minutes) VALUES ($1, $2, 'Their block', '2026-11-24', '2026-11-24T18:00:00Z', 30)`, [theirSlot2, OTHER]);
+const c5 = await task(ME, "Not into theirs");
+ok((await executeOwnedTool(me, "add_to_slot", { slot_id: theirSlot2, task_ids: [c5] })) === NOT_FOUND && (await trow(c5)).slot_id === null, "add_to_slot: another owner's slot reads as missing");
+out = await run("add_to_slot", { slot_id: holdId });
+ok(typeof out.error === "string" && /Nothing to add/.test(String(out.error)), "add_to_slot with nothing is a clear error");
+ok((await executeOwnedTool(me, "add_to_slot", { slot_id: "not-a-uuid", task_ids: [c5] })) === NOT_FOUND, "add_to_slot: a malformed slot_id is missing, not a throw");
+out = await run("add_to_slot", { slot_id: holdId, tasks: [{ title: "Huge", duration_minutes: 1e12 }] });
+ok(typeof out.error === "string" && /1440/.test(String(out.error)), "add_to_slot: a piece over a day is a clean error");
+ok((await slotCountOf(holdId)) === before2, "no add_to_slot refusal wrote anything");
+
+// reschedule_slot: start_local in the caller's zone moves the block; children's day travels.
+out = await run("reschedule_slot", { slot_id: holdId, start_local: "2026-11-25T14:30" });
+s = await slot(holdId);
+ok(s?.start_time === "2026-11-25T22:30Z" && s?.do_date === "2026-11-25", `reschedule_slot moves the block to 2:30pm LA on the 25th (got ${s?.start_time} ${s?.do_date})`);
+ok(s?.duration_minutes === 60, "…keeping its length");
+ok((await trow(c1)).do_date === "2026-11-25" && (await trow(c4)).do_date === "2026-11-25", "…and its tasks move to the new day");
+out = await run("reschedule_slot", { slot_id: holdId, start_local: "2026-11-25T09:00" }, "America/New_York");
+ok((await slot(holdId))?.start_time === "2026-11-25T14:00Z", "the caller's zone reads the wall time");
+out = await run("reschedule_slot", { slot_id: holdId, duration_minutes: 90 });
+s = await slot(holdId);
+ok(s?.duration_minutes === 90 && s?.start_time === "2026-11-25T14:00Z", "duration only resizes, start untouched");
+out = await run("reschedule_slot", { slot_title: "Hold block", start_local: "2026-11-25T16:00", duration_minutes: 45 });
+s = await slot(holdId);
+ok(s?.start_time === "2026-11-26T00:00Z" && s?.do_date === "2026-11-25" && s?.duration_minutes === 45, "reschedule by slot_title: 4pm LA stays on the 25th");
+// The port's `id` spelling still resolves.
+out = await run("reschedule_slot", { id: holdId, start_local: "2026-11-25T08:00" });
+ok((await slot(holdId))?.start_time === "2026-11-25T16:00Z", "the older `id` still moves the block");
+// A repeating occurrence moved on its own is pinned.
+const recSlot = uid();
+const recId = uid();
+await db.query(`INSERT INTO recurrences (id, user_id, kind, freq, anchor_date, title, duration_minutes) VALUES ($1, $2, 'slot', 'weekly', '2026-11-26', 'Weekly', 60)`, [recId, ME]);
+{
+  await db.query(`INSERT INTO slots (id, user_id, title, do_date, start_time, duration_minutes, recurrence_id, recurrence_date) VALUES ($1, $2, 'Weekly', '2026-11-26', '2026-11-26T17:00:00Z', 60, $3, '2026-11-26')`, [recSlot, ME, recId]);
+  await run("reschedule_slot", { slot_id: recSlot, start_local: "2026-11-26T11:00" });
+  const pinned = (await db.query<{ o: boolean }>(`SELECT recurrence_overridden AS o FROM slots WHERE id = $1`, [recSlot])).rows[0];
+  ok(pinned?.o === true, "moving one occurrence of a repeating block pins it");
+}
+// Refusals write nothing.
+const snap = JSON.stringify(await slot(holdId));
+out = await run("reschedule_slot", { slot_id: holdId, duration_minutes: 1441 });
+ok(typeof out.error === "string" && /1440/.test(String(out.error)), "reschedule_slot: 1441 minutes is a clean error");
+out = await run("reschedule_slot", { slot_id: holdId, duration_minutes: 1e12 });
+ok(typeof out.error === "string" && /1440/.test(String(out.error)), "reschedule_slot: an int4-overflow length is a clean error, not a 500");
+out = await run("reschedule_slot", { slot_id: holdId, start_local: "2026-02-30T09:00" });
+ok(typeof out.error === "string" && /start_local/.test(String(out.error)), "reschedule_slot: an impossible day is refused");
+out = await run("reschedule_slot", { slot_id: holdId });
+ok(typeof out.error === "string" && /Nothing to change/.test(String(out.error)), "reschedule_slot with nothing is a clear error");
+ok((await executeOwnedTool(me, "reschedule_slot", { slot_id: "nope", start_local: "2026-11-25T09:00" })) === NOT_FOUND, "reschedule_slot: a malformed slot_id is missing, not a throw");
+ok((await executeOwnedTool(me, "reschedule_slot", { slot_id: theirSlot2, start_local: "2026-11-25T09:00" })) === NOT_FOUND, "reschedule_slot: another owner's slot reads as missing");
+ok((await slot(theirSlot2))?.start_time === "2026-11-24T18:00Z", "…and stays where it was");
+ok(JSON.stringify(await slot(holdId)) === snap, "no reschedule refusal moved the block");
+
+// update_slot (Worker alias): fields and time, ownership checked first.
+out = await run("update_slot", { slot_id: holdId, title: "Renamed hold", project_id: PROJECT });
+s = await slot(holdId);
+ok(s?.title === "Renamed hold" && s?.project_id === PROJECT, "update_slot {slot_id} writes title and project");
+out = await run("update_slot", { slot_id: holdId, start_local: "2026-11-27T07:15", duration_minutes: 30 });
+s = await slot(holdId);
+ok(s?.start_time === "2026-11-27T15:15Z" && s?.do_date === "2026-11-27" && s?.duration_minutes === 30, "update_slot moves the block too");
+const snap2 = JSON.stringify(await slot(holdId));
+ok((await executeOwnedTool(me, "update_slot", { slot_id: holdId, project_id: OTHER_PROJECT, start_local: "2026-11-28T09:00" })) === NOT_FOUND, "update_slot: another owner's project is refused");
+ok(JSON.stringify(await slot(holdId)) === snap2, "…before the time was written");
+out = await run("update_slot", { slot_id: holdId, duration_minutes: 5000 });
+ok(typeof out.error === "string" && /1440/.test(String(out.error)), "update_slot: over a day is a clean error");
+ok((await executeOwnedTool(me, "update_slot", { slot_id: "x", title: "y" })) === NOT_FOUND, "update_slot: a malformed slot_id is missing, not a throw");
+
+// create_slot: the cap too.
+before = await slotCount();
+out = await run("create_slot", { title: "Too long", start_local: "2026-11-20T09:00", duration_minutes: 1e12 });
+ok(typeof out.error === "string" && /1440/.test(String(out.error)), "create_slot: an int4-overflow length is a clean error, not a 500");
+out = await run("create_slot", { title: "Exactly a day", start_local: "2026-11-29T00:00", duration_minutes: 1440 });
+ok(typeof out.id === "string", "create_slot: exactly 1440 is allowed");
+out = await run("create_slot", { title: "Big piece", start_local: "2026-11-29T00:00", tasks: [{ title: "x", duration_minutes: 99999 }] });
+ok(typeof out.error === "string" && /1440/.test(String(out.error)), "create_slot: a piece over a day is a clean error");
+ok((await slotCount()) === before + 1, "only the valid create wrote a slot");
+
+// delete_slot: malformed id and a title.
+ok((await executeOwnedTool(me, "delete_slot", { slot_id: "not-a-uuid" })) === NOT_FOUND, "delete_slot: a malformed slot_id is missing, not a throw");
+out = await run("delete_slot", { slot_title: "Renamed hold", date: "2026-11-27" });
+ok(out.deleted === 1 && (await slot(holdId)) === undefined, "delete_slot resolves slot_title + date");
+ok((await trow(c1)).slot_id === null, "…its tasks stay, un-blocked");
+
 if (fails.length) {
   console.error(`agentSlot.check: ${fails.length} of ${checks} failed`);
   for (const f of fails) console.error(`  ✗ ${f}`);
