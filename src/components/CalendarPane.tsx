@@ -1,5 +1,5 @@
 import { duplicateEventInput } from "../lib/eventActs";
-import { duplicateSlotInput, duplicateTaskInput } from "../lib/taskActs";
+import { deleteSlotScoped, duplicateSlotInput, duplicateTaskInput } from "../lib/taskActs";
 import { format } from "date-fns";
 import { Icon } from "./Icon";
 import { Button, Dot, IconButton, Kbd, Menu, MenuItem, MenuSeparator, PageBar, Popover, Tabs, usePageTabKeys, withPageTabKeys } from "./kit";
@@ -29,7 +29,7 @@ import { synClass } from "../lib/syntax";
 import { createDefaults, isWritableAccount, isWritableCalendar, pickCreateTarget, providerLabel, writableCalendarTargets, type CreateTarget } from "../lib/calendarWrite";
 import { isPendingEventCreate } from "../lib/eventWriteback";
 import type { useSlotMutations } from "../hooks/useSlots";
-import { HORIZON_DAYS, type useRecurrenceMutations } from "../hooks/useRecurrence";
+import { HORIZON_DAYS, useRecurrences, type useRecurrenceMutations } from "../hooks/useRecurrence";
 import DraftComposer, { type CreateDraft, type CreateKind } from "./DraftComposer";
 import { CalendarTargetList, useCreateTargets } from "./calendar/EventCalendarPicker";
 import { DeferCard } from "./DeferCard";
@@ -626,7 +626,12 @@ function CalendarPane({
   const closeTaskRowMenu = useCallback(() => setTaskRowMenu(null), []);
   // Task → Event asking which calendar (D-152), opened from the menu's item.
   const [taskEventPick, setTaskEventPick] = useState<{ x: number; y: number; task: Task } | null>(null);
-  const [slotMenu, setSlotMenu] = useState<{ x: number; y: number; slot: Slot; el: HTMLElement } | null>(null);
+  const [slotMenu, setSlotMenu] = useState<{ x: number; y: number; slot: Slot; el: HTMLElement; startInDelete?: boolean } | null>(null);
+  // The slot menu's delete step — Delete on a slot that holds work, or repeats,
+  // asks HERE (what happens to the tasks · which occurrences) rather than
+  // opening the slot to ask there. `alsoTasks` is that question's one toggle.
+  const [slotDeleteStep, setSlotDeleteStep] = useState<{ alsoTasks: boolean } | null>(null);
+  const { data: recurrenceRows = [] } = useRecurrences();
 
   // Can the user create real calendar events? True when any writable account
   // (Google or iCloud two-way) is connected.
@@ -2516,7 +2521,10 @@ function CalendarPane({
   const [deferOffer, setDeferOffer] = useState<{ x: number; y: number; slot: Slot } | null>(null);
   const closeDeferOffer = useCallback(() => setDeferOffer(null), []);
   const slotMenuRef = useRef<HTMLDivElement | null>(null);
-  const slotMenuPos = useOnScreen(slotMenuRef, slotMenu?.x ?? 0, slotMenu?.y ?? 0, slotMenu?.slot.id ?? "");
+  const slotMenuPos = useOnScreen(slotMenuRef, slotMenu?.x ?? 0, slotMenu?.y ?? 0, `${slotMenu?.slot.id}:${slotDeleteStep ? 1 : 0}`);
+  useEffect(() => {
+    setSlotDeleteStep(slotMenu?.startInDelete ? { alsoTasks: false } : null);
+  }, [slotMenu]);
   useEffect(() => {
     if (!slotMenu) return;
     const onDown = (e: PointerEvent) => {
@@ -2776,12 +2784,18 @@ function CalendarPane({
     }
   };
   /** The question, asked where the menu asks it. A slot with work in it (or a
-   *  series) opens its detail, whose delete picker says what happens to the
-   *  work — the same route the slot's menu takes. */
+   *  series) opens its own menu on the delete step, which says what happens to
+   *  the work — the same route the slot's menu takes. */
   const askToDelete = (b: GridBlock) => {
     if (b.kind === "slot") {
       const slot = findSlot(b.refId);
-      if (slot) onOpenSlot(slot, blockRect(b.id), blockEl(b.id));
+      if (slot) {
+        const el = blockEl(b.id);
+        if (el) {
+          const r = el.getBoundingClientRect();
+          setSlotMenu({ x: r.left + Math.min(24, r.width / 2), y: r.top + Math.min(r.height, 28), slot, el, startInDelete: true });
+        }
+      }
       return;
     }
     openBlockMenu(b, "delete");
@@ -5049,6 +5063,8 @@ function CalendarPane({
             style={{ top, left, width: 240, ["--pop-origin" as string]: "top left" }}
           >
             <div className="k-mlabel truncate">{slotTitle(slot)}</div>
+            {!slotDeleteStep ? (
+              <>
             <EventMenuItem onClick={() => {
               const el = slotMenu.el;
               const rect = el.getBoundingClientRect();
@@ -5109,17 +5125,65 @@ function CalendarPane({
             })()}
             <MenuSeparator />
             <EventMenuItem danger onClick={() => {
-              const el = slotMenu.el;
-              const rect = el.getBoundingClientRect();
-              setSlotMenu(null);
-              // A plain, empty, non-recurring slot deletes outright. Anything with
-              // occurrence scope or tasks inside needs the full picker in the slot
-              // detail panel (SlotDeleteButton) — don't reimplement that choice here.
-              if (!recurring && childCount === 0) slotMutations.removeSlot(slot);
-              else onOpenSlot(slot, rect, el);
+              // A plain, empty, non-recurring slot deletes outright (the toast
+              // undoes it). Anything with tasks inside or a repeat asks, here.
+              if (!recurring && childCount === 0) {
+                setSlotMenu(null);
+                slotMutations.removeSlot(slot);
+                return;
+              }
+              setSlotDeleteStep({ alsoTasks: false });
             }}>
               {!recurring && childCount === 0 ? "Delete slot" : "Delete slot…"}
             </EventMenuItem>
+              </>
+            ) : (
+              <>
+            {(() => {
+              const recurrence = recurring ? recurrenceRows.find((r) => r.id === slot.recurrence_id) ?? null : null;
+              const repeats = Boolean(recurrence);
+              const kids = slotTasks[slot.id] ?? [];
+              const run = (scope: "simple" | "this" | "following" | "series") => {
+                setSlotMenu(null);
+                deleteSlotScoped(
+                  { slotMutations, recurrenceMutations, taskMutations: mutations },
+                  slot, recurrence, kids, scope, childCount > 0 && slotDeleteStep!.alsoTasks,
+                );
+              };
+              const scopes: { scope: "simple" | "this" | "following" | "series"; label: string }[] = repeats
+                ? [
+                    { scope: "this", label: "This occurrence" },
+                    { scope: "following", label: "This & following" },
+                    { scope: "series", label: "Whole series" },
+                  ]
+                : [{ scope: "simple", label: "Delete slot" }];
+              return (
+                <>
+                  {childCount > 0 && (
+                    <>
+                      <EventMenuItem checked={slotDeleteStep!.alsoTasks} onClick={() => setSlotDeleteStep({ alsoTasks: !slotDeleteStep!.alsoTasks })}>
+                        Also delete {childCount} task{childCount === 1 ? "" : "s"} inside
+                      </EventMenuItem>
+                      <MenuSeparator />
+                    </>
+                  )}
+                  <div className="k-mlabel truncate">
+                    {childCount > 0 && !slotDeleteStep!.alsoTasks
+                      ? `Tasks stay on ${format(new Date(slot.do_date + "T12:00:00"), "MMM d")}`
+                      : "Delete"}
+                  </div>
+                  {scopes.map((sc) => (
+                    <EventMenuItem key={sc.scope} danger onClick={() => run(sc.scope)}>
+                      {sc.label}
+                    </EventMenuItem>
+                  ))}
+                  <MenuSeparator />
+                  <EventMenuItem onClick={() => setSlotDeleteStep(null)}>Back</EventMenuItem>
+                </>
+              );
+            })()}
+              </>
+            )}
           </div>
         );
       })()}
