@@ -30,6 +30,7 @@ import {
   todayIn,
 } from "../../supabase/functions/_shared/dayShape.ts";
 import { completionStamp, FALLBACK_PLANNED_MINUTES } from "../../supabase/functions/_shared/completedWork.ts";
+import { sizeSlotToCount } from "../../supabase/functions/_shared/slotSizing.ts";
 import {
   assertOwnedFks,
   contacts,
@@ -421,14 +422,7 @@ export async function executeOwnedTool(
     case "delete_key_result":
       return removeRow(store, "key_results", args.id ?? args.key_result_id);
     case "create_slot":
-      return createRow(store, "slots", {
-        title: args.title ?? "",
-        do_date: args.do_date,
-        start_time: args.start_time,
-        duration_minutes: args.duration_minutes,
-        project_id: args.project_id,
-        domain_id: args.domain_id,
-      });
+      return createSlot(store, args, zone);
     case "reschedule_slot":
     case "update_slot":
       return patchRow(store, "slots", args.id, {
@@ -437,7 +431,8 @@ export async function executeOwnedTool(
         domain_id: args.domain_id,
       });
     case "delete_slot":
-      return removeRow(store, "slots", args.id);
+      // toolDefs name the block `slot_id`; `id` is the older spelling.
+      return removeRow(store, "slots", args.slot_id ?? args.id);
     case "add_to_slot":
       return patchRow(store, "tasks", args.task_id ?? args.id, { slot_id: args.slot_id });
     case "add_step":
@@ -780,6 +775,112 @@ async function createTask(store: Store, args: Record<string, unknown>, zone: str
     RETURNING *
   `;
   return rows[0] ? JSON.stringify(rows[0]) : FORBIDDEN_FK;
+}
+
+// ── Slots: one block of time that owns several tasks ────────────────────────
+// toolDefs.ts gives create_slot `start_local` (+ duration_minutes, tasks,
+// task_ids). The port read `do_date` / `start_time`, which no caller sends, so
+// insertOwned refused the row and every MCP create_slot answered "not found".
+// This is the edge executor's create_slot (supabase/functions/agent/tools.ts)
+// on the Worker's store: local start read in the caller's zone, a stated length
+// or one sized to the work inside, then the work placed inside it.
+
+interface SlotTaskInput {
+  title: string;
+  duration_minutes?: number;
+  notes?: string;
+}
+
+function normalizeSlotTasks(raw: unknown): SlotTaskInput[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SlotTaskInput[] = [];
+  for (const item of raw) {
+    if (typeof item === "string" && item.trim()) {
+      out.push({ title: item.trim() });
+    } else if (item && typeof item === "object") {
+      const rec = item as Record<string, unknown>;
+      const title = String(rec.title ?? "").trim();
+      if (!title) continue;
+      out.push({
+        title,
+        duration_minutes: positiveMinutes(rec.duration_minutes),
+        notes: typeof rec.notes === "string" ? rec.notes : undefined,
+      });
+    }
+  }
+  return out;
+}
+
+async function createSlot(store: Store, args: Record<string, unknown>, zone: string): Promise<string> {
+  const title = String(args.title ?? "").trim();
+  if (!title) return badArg("A slot needs a title — name the through-line of the work inside it");
+  const startTime = startInstant(args.start_local ?? args.start_time, zone);
+  if (!startTime) return badArg("start_local must be local 'YYYY-MM-DDTHH:MM' (24h)");
+
+  const newTasks = normalizeSlotTasks(args.tasks);
+  const taskIds = Array.isArray(args.task_ids) ? args.task_ids.filter((v): v is string => typeof v === "string" && v.length > 0) : [];
+
+  let duration: number;
+  if (args.duration_minutes != null) {
+    const mins = positiveMinutes(args.duration_minutes);
+    if (mins === undefined) return badArg("duration_minutes must be a positive number");
+    duration = mins;
+  } else {
+    duration = sizeSlotToCount(newTasks.length + taskIds.length);
+  }
+
+  const projectId = asId(args.project_id);
+  const domainId = asId(args.domain_id);
+  for (const v of [projectId, domainId]) if (v && !UUID_RE.test(v)) return FORBIDDEN_FK;
+  // Every task named must be this owner's and live before anything is written.
+  for (const id of taskIds) {
+    const row = UUID_RE.test(id) ? await getOwned(store, "tasks", id) : null;
+    if (!row || row.status === "trashed") return MISSING;
+  }
+
+  const doDate = localDateISO(startTime, zone);
+  const slot = await insertOwned(store, "slots", {
+    title,
+    do_date: doDate,
+    start_time: startTime,
+    duration_minutes: duration,
+    project_id: projectId,
+    domain_id: domainId,
+  });
+  if (!slot) return FORBIDDEN_FK;
+  const slotId = String(slot.id);
+
+  // Inside a block a task has the block's day and no time of its own.
+  const placed: { id: string; title: string }[] = [];
+  const inside = (): TaskPatch => ({
+    slot_id: slotId,
+    do_date: doDate,
+    start_time: null,
+    status: "planned",
+    ...completionStamp("planned", new Date().toISOString()),
+  });
+  for (const id of taskIds) {
+    const t = await writeTask(store, id, inside());
+    if (t) placed.push({ id: String(t.id), title: String(t.title ?? "") });
+  }
+  for (const t of newTasks) {
+    const created = await insertOwned(store, "tasks", { title: t.title, notes: t.notes ?? "", status: "planned", slot_id: slotId });
+    if (!created) continue;
+    const w = await writeTask(store, String(created.id), {
+      ...inside(),
+      duration_minutes: t.duration_minutes ?? FALLBACK_PLANNED_MINUTES,
+    });
+    if (w) placed.push({ id: String(w.id), title: String(w.title ?? "") });
+  }
+
+  return JSON.stringify({
+    id: slotId,
+    title: String(slot.title ?? title),
+    startTime,
+    durationMinutes: duration,
+    do_date: doDate,
+    tasks: placed,
+  });
 }
 
 /** update_task: the task's own attributes. Placement is plan/schedule_task. */
