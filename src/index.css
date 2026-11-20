@@ -2267,6 +2267,19 @@ html:root .nuvo-cal-host .fc .fc-timegrid-event-harness {
 @container (max-width: 44px) {
   .fc .fc-timegrid-event [data-done-toggle] { display: none; }
 }
+/* Overlaps slice a day into columns, and a 3-up Tuesday is ~100px a block.
+   There the title is the only thing worth the room: padding tightens, the time
+   line, the slot's count and peek, and the repeat mark step aside (the popover
+   says all of it), and a word is never cut mid-letter — "Permitti / ng" read as
+   two different things. A title that can't fit ellipsises instead. */
+@container (max-width: 110px) {
+  .fc .fc-timegrid-event .evt-shell { padding-left: 6px; padding-right: 3px; gap: 4px; }
+  .fc .fc-timegrid-event .evt-timeline,
+  .fc .fc-timegrid-event .evt-count,
+  .fc .fc-timegrid-event .evt-items,
+  .fc .fc-timegrid-event .evt-recur { display: none; }
+  .fc .fc-timegrid-event .evt-lines { overflow-wrap: break-word; hyphens: manual; }
+}
 
 /* Hover answers the pointer — a filter on the one block under it, the only
    property the block transitions. */
@@ -2288,6 +2301,17 @@ html:root .nuvo-cal-host .fc .fc-timegrid-event-harness {
   left: 0 !important;
   right: 0 !important;
   z-index: 50 !important;
+}
+/* …and on top of its neighbours it must hide them. A slot's hatch and a plan
+   ghost are see-through ON PURPOSE (they show the hours behind them), which is
+   right beside a neighbour and wrong over one: the focused block is lifted to
+   full width above events it overlaps, and their titles read straight through
+   it. Only the colour layer changes — the hatch and the ring stay. */
+.fc .fc-event.evt-focused .evt-shell[data-kind="slot"] {
+  background-color: color-mix(in srgb, var(--evt-hue) 4%, var(--panel));
+}
+.fc .fc-event.evt-focused .evt-shell[data-kind="ghost"] {
+  background-color: color-mix(in srgb, var(--evt-hue) 8%, var(--panel));
 }
 /* Selected = an accent ring + the popover lift, in place (no rise, no scale:
    it must never grow past its harness). The rest of a ⇧/⌘ selection (D-158)

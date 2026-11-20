@@ -256,7 +256,7 @@ export default function MobileDayView({
                       top: y(l.startMin),
                       height,
                       left: `calc(${CAL_GUTTER + 2}px + (${itemArea} - 2px) * ${l.col / l.cols})`,
-                      width: `calc((${itemArea} - 2px) * ${1 / l.cols} - ${l.cols > 1 ? 2 : 0}px)`,
+                      width: `calc((${itemArea} - 2px) * ${l.span / l.cols} - ${l.cols > 1 ? 2 : 0}px)`,
                     }}
                   >
                     <div className="ph-blk-body">

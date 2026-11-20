@@ -198,7 +198,7 @@ export default function MobileWeekView({
               const colLeft = `calc(${CAL_GUTTER}px + (100% - ${CAL_GUTTER}px) * ${
                 (di + l.col / l.cols) / 7
               } + 1px)`;
-              const colWidth = `calc((100% - ${CAL_GUTTER}px) * ${1 / (7 * l.cols)} - 2px)`;
+              const colWidth = `calc((100% - ${CAL_GUTTER}px) * ${l.span / (7 * l.cols)} - 2px)`;
               return (
                 <button
                   key={`${di}-${i}`}

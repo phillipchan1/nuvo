@@ -434,11 +434,16 @@ export interface Laid {
   endMin: number;
   col: number;
   cols: number;
+  /** Columns this item occupies, from `col` rightward — 1 unless the columns to
+   *  its right are empty for the whole of its time. */
+  span: number;
 }
 
 /** Overlap packing — the classic day-grid algorithm: sort by start (longer
  *  first on ties), walk runs of transitively-overlapping items, give each the
- *  first free column, and let every member of a run share its column count.
+ *  first free column, and let every member of a run share its column count —
+ *  then widen each into any columns to its right that are empty for its whole
+ *  time (`span`).
  *
  *  Lives here rather than in a lens because the Day grid and the Week grid draw
  *  the same day and must pack it identically — two copies is how one lens
@@ -448,7 +453,7 @@ export function layoutDay(items: TimedItem[], date: Date): Laid[] {
   const mins = (d: Date, edge: 0 | 1440) => (dayKey(d) === dk ? d.getHours() * 60 + d.getMinutes() : edge);
   const laid: Laid[] = items.map((item) => {
     const startMin = mins(item.start, 0);
-    return { item, startMin, endMin: Math.max(mins(item.end, 1440), startMin + 1), col: 0, cols: 1 };
+    return { item, startMin, endMin: Math.max(mins(item.end, 1440), startMin + 1), col: 0, cols: 1, span: 1 };
   });
   laid.sort((a, b) => a.startMin - b.startMin || (b.endMin - b.startMin) - (a.endMin - a.startMin));
 
@@ -456,7 +461,19 @@ export function layoutDay(items: TimedItem[], date: Date): Laid[] {
   let colEnds: number[] = [];
   let clusterMax = -1;
   const flush = () => {
-    for (const l of cluster) l.cols = colEnds.length;
+    const cols = colEnds.length;
+    for (const l of cluster) {
+      l.cols = cols;
+      // Grow into free columns to the right (a long slot beside one short
+      // event is half the day, not a third of it): the run's column count is
+      // its WIDEST moment, and a block must not be thin where only two meet.
+      let span = 1;
+      for (let c = l.col + 1; c < cols; c++) {
+        if (cluster.some((o) => o.col === c && o.startMin < l.endMin && o.endMin > l.startMin)) break;
+        span++;
+      }
+      l.span = span;
+    }
     cluster = [];
     colEnds = [];
     clusterMax = -1;
