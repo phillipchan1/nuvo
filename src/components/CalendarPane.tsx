@@ -1765,6 +1765,29 @@ function CalendarPane({
     };
   }, [view]);
 
+  // The hour gutter and the blocks must be measured against the SAME slot
+  // height. `--nuvo-hour` (above) resizes the slats in CSS, but FullCalendar
+  // positions every block in px from slat coordinates it measured ONCE — and
+  // neither `updateSize()` nor a window resize re-reads them for a height-only
+  // change. So whenever the density moved after that measure (the pane's real
+  // height arriving after the 52px first paint, the "hours on screen" setting
+  // loading, a window or panel resize), the gutter said 9am where a block
+  // drawn for 9:05 sat at ~8:20 — every block on the grid in the wrong place,
+  // growing with the hour. Setting an option makes FullCalendar re-measure
+  // its slats and re-place the blocks — but only if the value CHANGES (a
+  // repeat is deduped), so `longPressDelay`, an interaction-only option with
+  // no visual effect, alternates 1000 ↔ 1001ms. It must follow the CSS
+  // commit, one call per frame (a window drag changes this every frame).
+  // `tests/calendar-density-remeasure.test.ts` pins it.
+  const remeasureFlip = useRef(false);
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      remeasureFlip.current = !remeasureFlip.current;
+      calRef.current?.getApi()?.setOption("longPressDelay", remeasureFlip.current ? 1001 : 1000);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [pxPerHour, uiScale]);
+
   // Document CSS zoom breaks FullCalendar pointer → date math. The calendar host
   // counters it (see wrap style) so interactions run at effective scale 1 —
   // tell FC to reflow whenever the UI zoom changes.
