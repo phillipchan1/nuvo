@@ -47,6 +47,9 @@ describe("tokenDecrypt.check query shape", () => {
     expect(EXPECTED_TOKENS_SQL).toMatch(/'apple'::text/);
     // Only rows that carried a Vault token owe a sealed one.
     expect(EXPECTED_TOKENS_SQL.match(/secret_id IS NOT NULL/g)).toHaveLength(3);
+    // Each sealed row says whether it owed a token, so the count is per row.
+    expect(SEALED_TOKENS_SQL.match(/secret_id IS NOT NULL\)/g)).toHaveLength(3);
+    expect(SEALED_TOKENS_SQL).toMatch(/AS owed/);
   });
 
   it("uses Neon HTTPS unless TOKEN_DECRYPT_TCP=1", () => {
@@ -110,6 +113,40 @@ describe("tokenDecrypt.check decrypt pass/fail", () => {
     const result = await checkTokenRows([google], { google: 1 }, ring);
     expect(result.lines).toEqual(["google ok"]);
     expect(result.failed).toBe(0);
+  });
+
+  it("fails when an owed row is missing even if an unowed sealed row makes up the total", async () => {
+    const ring = await parseTokenKeyring({ TOKEN_ENC_KEY_V1: KEY });
+    const stray = { ...(await sealedRow("apple-refresh-token-value-0001", "apple", "apple_identities")), owed: false };
+    const result = await checkTokenRows([stray], { apple: 1 }, ring);
+    expect(result.checked.apple).toBe(1);
+    expect(result.lines).toEqual(["apple fail"]);
+    expect(result.failed).toBe(1);
+  });
+
+  it("passes when every owed row opens alongside a good unowed row", async () => {
+    const ring = await parseTokenKeyring({ TOKEN_ENC_KEY_V1: KEY });
+    const owed = await sealedRow("apple-refresh-token-value-0001", "apple", "apple_identities");
+    const stray = { ...owed, owed: false };
+    const result = await checkTokenRows([owed, stray], { apple: 1 }, ring);
+    expect(result.lines).toEqual(["apple ok"]);
+  });
+
+  it("fails a provider that owes 0 tokens when its sealed row is broken", async () => {
+    const ring = await parseTokenKeyring({ TOKEN_ENC_KEY_V1: KEY });
+    const good = await sealedRow("apple-refresh-token-value-0001", "apple", "apple_identities");
+    const bad: TokenRow = { ...good, owed: false, enc: new Uint8Array(good.enc as Uint8Array) };
+    (bad.enc as Uint8Array)[0] ^= 0xff;
+    const result = await checkTokenRows([bad], {}, ring);
+    expect(result.lines).toEqual(["apple fail"]);
+    expect(result.failed).toBe(1);
+  });
+
+  it("fails an owed row that opens to the wrong shape", async () => {
+    const ring = await parseTokenKeyring({ TOKEN_ENC_KEY_V1: KEY });
+    const wrong = await sealedRow("not-a-google-token", "google");
+    const result = await checkTokenRows([wrong], { google: 1 }, ring);
+    expect(result.lines).toEqual(["google fail"]);
   });
 
   it("reads the key from a file path and never returns env when the file is set", () => {
