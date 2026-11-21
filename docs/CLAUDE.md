@@ -112,3 +112,11 @@ update.
 
 Don't mutate real data to audit. Read, navigate, and observe; leave data-changing actions
 to the user or ask first.
+
+## 8 · Migrations
+
+Since the Nov 13 2026 cutover, **migrations go to Neon prod only** (`frosty-snow-66931204` /
+`neondb`). Supabase `ebibzojtkzkphykznomv` is frozen and read-only, kept only as a fallback:
+never apply migrations or writes there. A doc that still says `supabase db push` predates the
+cutover; read it as "apply to Neon". How to ship one: root
+[`CLAUDE.md`](../CLAUDE.md) § Database migrations.

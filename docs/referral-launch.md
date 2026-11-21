@@ -28,6 +28,11 @@ supabase secrets set STRIPE_REFERRAL_COUPON=coup_… --project-ref ebibzojtkzkph
 
 ### 3. Migrations (if not applied)
 
+> **Since the Nov 13 2026 cutover, migrations go to Neon prod only** (project `frosty-snow-66931204`, db `neondb`).
+> Supabase `ebibzojtkzkphykznomv` is frozen and read-only, kept only as a fallback: never `supabase db push`,
+> apply migrations, or write there. See the root [`CLAUDE.md`](../CLAUDE.md) § Database migrations.
+> The command below is pre-cutover.
+
 ```bash
 supabase db push --project-ref ebibzojtkzkphykznomv
 ```
