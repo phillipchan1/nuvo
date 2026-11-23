@@ -755,7 +755,7 @@ export default function Planner({
         <KeepAlive active={onSchedule} className="flex min-h-0 min-w-0 flex-1">
         {planning ? (
           <Suspense fallback={<div className="w-[340px] shrink-0 border-r" style={{ borderColor: "var(--line-1)" }} />}>
-            <PlanRail onOverlay={setPlanOverlay} onClose={closeFlow} railRef={railRef} learned={learned} />
+            <PlanRail onOverlay={setPlanOverlay} onClose={closeFlow} railRef={railRef} learned={learned} onOpenTask={openTaskAt} />
           </Suspense>
         ) : repairing ? (
           <Suspense fallback={<div className="w-[340px] shrink-0 border-r" style={{ borderColor: "var(--line-1)" }} />}>

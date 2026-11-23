@@ -9904,3 +9904,42 @@ exist), nothing that needs clean data, nothing tuned to one account.
 
 *Status: built 2026-11-22 — `WeekPanel` no longer hides the door when `onLine` is given;
 `tests/rail-offers.test.tsx` pins it. Not yet driven in the running app.*
+
+**D-253 · 2026-11-22 · A group Plan the week built is a proposal you can correct: tick it, open it, move it.**
+*(Reported by the operator, on a Sunday, from the plan: "sometimes there's a task in the inbox I've
+already completed… it's asking me to put things in weeks that have already been completed", and "the
+inbox grouping… need a way to move things around, either in other slots or one by one… a little
+constricting, a little too biased, too much reading".)*
+
+→ **Finding first.** The v2 rail listed what a block held as plain text (`BlockItems`: a title and
+minutes) and offered only whole-block acts. Two corrections the old Sunday walk had were gone: take
+one task out of its group (`removeFromRun`, still in the hook, no longer reachable here) and, never
+built, say a task is over. A proposal you can't correct is a decision made for you (P3), and "Admin
+batch" is exactly that: grouped by the verb or the domain, a bias, with no way to disagree except
+dropping the whole block.
+
+→ **A block's tasks are now the one task row** (D-111; `TaskListView` with no add box), so a task that
+is already done is ticked right there (undoable, and `draftableKept` already drops done work, so it
+leaves the draft by itself), and opening it edits it. A block that is one task, or a lone task that
+needs a time, carries **Already done** beside its other acts. Each row's **⋯ Move** offers: another
+loose block of this draft, by name and time · **On its own** (places by itself) · **Off the week**
+(stays in the inbox, never re-offered). A project's work can only leave the week: it belongs to its
+sitting. The receiving block is frozen into a run under a fresh id; the block a task left simply
+re-clusters without it.
+
+→ **Not done, and said so.** The copy ("No time found — it needs 1h in one go…", the reason line) is
+unchanged: the fix for "too much reading" here is that you no longer have to read your way to a
+correction. Moving to a *specific time* one task at a time is the existing **Pick a time** on a
+block that has none. The phone's Plan the week (`MobilePlanWeek`) has no per-task correction yet;
+`moveToBlock` / `leaveOut` are in the shared hook for it.
+
+**Anchor.** No new ledger row: **D7** (did I finish, or just move it) and **W3** (what should I drop,
+as acts on each plan row). Strains **the rail's law** (*decide, don't read*): more controls per row,
+held by one ⋯ and a tick, nothing per row but those. Four no's: no pool (a task moves inside the
+draft), no new name (*Done*, *Move*, *Off the week* exist), helps messy data rather than needing
+clean, nothing one account's.
+
+*Status: built 2026-11-22 — `PlanRail`, `useWeekDraft` (`moveToBlock`, `leaveOut`),
+`tests/plan-move-to-block.test.tsx`, `tests/plan-walk.test.tsx`. Driven in the `?rail=plan` harness
+(a group, its Move menu, a move into Replies — the lengths followed); not driven against real data.
+Not pushed.*

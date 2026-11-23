@@ -784,6 +784,57 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
 
 
   /**
+   * Put a loose task into ANOTHER block of the draft — the correction a group
+   * that "wasn't good" needs (docs/plan-the-week-v2.md §4.3). The target gains
+   * the task and its place on the grid is the composer's to re-find; the block
+   * the task left shrinks (a derived batch simply re-clusters without it).
+   * Project work stays with its project's sitting, so it never moves this way.
+   * A derived batch that receives a task is frozen into a run (it is now
+   * something you made, not something the pool re-derives), under a fresh id.
+   * Returns whether anything moved.
+   */
+  const moveSeq = useRef(0);
+  const moveToBlock = useCallback(
+    (taskId: string, blockId: string): boolean => {
+      const baseId = blockId.split("~")[0]; // a split part is its batch's, whole
+      const target = runs.find((r) => r.id === baseId) ?? looseBatches.find((b) => b.id === baseId);
+      const t = taskById.get(taskId);
+      if (!target || target.projectId || !t || t.project_id || target.taskIds.includes(taskId)) return false;
+      const mins = (id: string) => taskById.get(id)?.duration_minutes ?? 30;
+      const frozen = !runs.some((r) => r.id === target.id);
+      const toId = frozen ? `moved-${++moveSeq.current}` : target.id;
+      setUnbatched((prev) => {
+        if (!prev.has(taskId)) return prev;
+        const next = new Set(prev);
+        next.delete(taskId);
+        return next;
+      });
+      setRuns((prev) => {
+        const stripped = prev.map((r) => (r.taskIds.includes(taskId) ? { ...r, taskIds: r.taskIds.filter((id) => id !== taskId) } : r));
+        const withTarget = frozen ? [...stripped, { ...target, id: toId }] : stripped;
+        return withTarget
+          .map((r) => (r.id === toId ? { ...r, taskIds: [...r.taskIds, taskId] } : r))
+          .map((r) => ({ ...r, durationMins: Math.max(15, r.taskIds.reduce((sum, id) => sum + mins(id), 0)) }))
+          .filter((r) => r.taskIds.length > 0);
+      });
+      return true;
+    },
+    [runs, looseBatches, taskById],
+  );
+
+  /** Leave a task out of this week's draft. It stays wherever it was (the
+   *  inbox, its project) — only the plan stops carrying it, and it is never
+   *  re-offered behind your back (`offered`). */
+  const leaveOut = useCallback((taskId: string) => {
+    setKept((prev) => {
+      if (!prev.has(taskId)) return prev;
+      const next = new Set(prev);
+      next.delete(taskId);
+      return next;
+    });
+  }, []);
+
+  /**
    * Take a task out of the block it was grouped into. AI grouping is a proposal,
    * and a proposal you can't correct is a decision made for you (Principle 3) —
    * a capture themed "Frontier" that's really SCE has to be rescuable before it
@@ -1141,6 +1192,8 @@ export function useWeekDraft(opts: { autoTheme?: boolean; weekStartISO?: string;
      *  AI's themed runs — so both shells list (and let you take apart) one set. */
     runs: shownRuns,
     removeFromRun,
+    moveToBlock,
+    leaveOut,
     // the calendar the week lands in
     visibleEvents,
     /** The week's events with individually-set-aside ones still IN, so a step can

@@ -36,6 +36,7 @@ import BulkBar from "./BulkBar";
 import { useBulkOps } from "../hooks/useBulkOps";
 import { AppNavigationProvider, useAppNavigation } from "../hooks/useAppNavigation";
 import { VerticalStoreProvider, type VerticalStore } from "../hooks/useVertical";
+import PlanRailHarness from "./plan/PlanRailHarness";
 import { toDateISO } from "../lib/dates";
 import { deriveSlotTitle } from "../lib/slots";
 import { toggleGroup } from "../lib/selection";
@@ -422,6 +423,8 @@ function Phone({ fx = BASE }: { fx?: Fixture }) {
 
 export default function RailHarness() {
   const mode = new URLSearchParams(window.location.search).get("rail");
+  // `?rail=plan`: Plan the week's rail, over its own seeded providers (D-253).
+  if (mode === "plan") return <PlanRailHarness />;
   const busy = mode === "offers" || mode === "offers-phone";
   const fx = busy ? BUSY : BASE;
   const qc = useMemo(

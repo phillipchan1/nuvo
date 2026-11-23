@@ -11,6 +11,9 @@ import WeekSetMoment from "./WeekSetMoment";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useWeekDraft, placementKey, type OnWeekItem } from "../../hooks/useWeekDraft";
+import { useTaskMutations } from "../../hooks/useTasks";
+import type { Task } from "../../lib/types";
+import TaskListView from "../tasks/TaskListView";
 import type { Placement } from "../../lib/compose";
 import { parseDateISO, planSessionWeekStartISO, planningWeekStartISO, toDateISO } from "../../lib/dates";
 import { useSettings } from "../../hooks/useSettings";
@@ -105,6 +108,8 @@ type StackItem = {
   /** what a block holds, unless its label is already the one task's title —
    *  a group's name ("Frontier admin") never says what's in it */
   items?: { id: string; title: string; mins: number }[];
+  /** the draft block `items` belong to — the Move menu needs to say where from */
+  blockId?: string;
   /** a third act, when there is one (Pick a time · Shorten to fit) */
   extra?: { label: string; run: () => void }[];
   yes: () => string;
@@ -120,6 +125,9 @@ type RailProps = {
   /** Memory, when the host has it (docs/memory.md §4.5) — its sure
    *  observations join What I noticed. Omitted = the planner's own only. */
   learned?: MemoryApi | null;
+  /** Open a task where it lives (the Schedule's popover) — so a task in a block
+   *  can be read and edited before the week takes it. Omitted, rows still tick. */
+  onOpenTask?: (t: Task, anchor?: DOMRect | null, el?: HTMLElement | null) => void;
 };
 
 /**
@@ -184,6 +192,7 @@ function PlanRailWeek({
   memory,
   setMemory,
   learned,
+  onOpenTask,
 }: RailProps & {
   memory: PlanMemory;
   setMemory: (f: (m: PlanMemory) => PlanMemory) => void;
@@ -206,6 +215,20 @@ function PlanRailWeek({
   const { openRecord, nav } = useAppNavigation();
   const recordOpen = nav.overlay === "project-record" || nav.overlay === "initiative-record";
   const { data, placements, slotById } = d;
+  const mutations = useTaskMutations();
+  /** The Move menu: which task, in which block, anchored on its button. */
+  const [moveFor, setMoveFor] = useState<{ taskId: string; blockId: string; anchor: HTMLElement } | null>(null);
+  /** "I already did this" — the plan was about to book work that is over. The
+   *  task is completed for real (undoable), so it leaves the draft by itself. */
+  const alreadyDone = useCallback(
+    (taskId: string) => {
+      const t = d.taskById.get(taskId);
+      if (!t) return;
+      mutations.complete(t, { undo: "toast", label: `Done — ${t.title}` });
+      setChanges((n) => n + 1);
+    },
+    [d.taskById, mutations],
+  );
 
   const [sel, setSel] = useState<string | null>(null);
   /** The selected block's fits, frozen at selection: [where it was, ...others]. */
@@ -343,6 +366,35 @@ function PlanRailWeek({
     [sel, byKey, d, moveTo],
   );
 
+  /** What a block holds, as the one task row (D-111): tick it if it's already
+   *  done, open it to edit, and ⋯ moves it — into another block, on its own, or
+   *  off the week. A group is a proposal; this is how you correct it (P3). */
+  const blockTasks = (blockId: string, ids: string[]) => {
+    const tasks = ids.map((id) => d.taskById.get(id)).filter((t): t is Task => !!t);
+    return (
+      <TaskListView
+        tasks={tasks}
+        context={{}}
+        keyboard={false}
+        composer={false}
+        reorderable={false}
+        flush
+        onOpen={(t, anchor, el) => onOpenTask?.(t, anchor, el)}
+        rowAction={(t) => (
+          <IconButton
+            size="xs"
+            label="Move…"
+            icon={<Icon name="more" size={14} />}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMoveFor({ taskId: t.id, blockId, anchor: e.currentTarget });
+            }}
+          />
+        )}
+      />
+    );
+  };
+
   // ── the stack: only what needs a yes or no ──────────────────────────────
   const inboxIds = useMemo(
     () => d.loosePool.filter((t) => t.status === "inbox" && !d.kept.has(t.id)).map((t) => t.id),
@@ -436,7 +488,12 @@ function PlanRailWeek({
         sub: `No time found — ${plainReason(u.reason)}`,
         // shown unless the label already IS the one task's title
         items: items.length > 1 || (items.length === 1 && items[0].title !== (b?.name ?? u.task.title)) ? items : undefined,
+        blockId: u.task.id,
         extra: [
+          // one task, no list to tick it in: say it here
+          ...(items.length <= 1 && !(items.length === 1 && items[0].title !== (b?.name ?? u.task.title))
+            ? [{ label: "Already done", run: () => alreadyDone(b?.taskIds[0] ?? u.task.id) }]
+            : []),
           { label: "Pick a time", run: () => {
             setSel(null);
             setFocus(null);
@@ -518,7 +575,7 @@ function PlanRailWeek({
       });
     }
     return out.filter((s) => !dismissed.has(s.id));
-  }, [d, slotById, inboxIds, thin, dismissed, noticed, memNoticed, mem, setMemory, today, record, weekStartISO, openRecord]);
+  }, [d, slotById, inboxIds, thin, dismissed, noticed, memNoticed, mem, setMemory, today, record, weekStartISO, openRecord, alreadyDone]);
 
   const decide = useCallback(
     (id: string, yes: boolean) => {
@@ -1129,6 +1186,47 @@ function PlanRailWeek({
               )}
             </Menu>
 
+            <Menu anchor={moveFor?.anchor ?? null} open={moveFor != null} onClose={() => setMoveFor(null)} label="Move this task">
+              {moveFor && (() => {
+                const task = d.taskById.get(moveFor.taskId);
+                const here = moveFor.blockId.split("~")[0];
+                const block = slotById.get(moveFor.blockId);
+                const loose = !!task && !task.project_id;
+                const seen = new Set<string>();
+                const targets = loose
+                  ? placements.flatMap((p) => {
+                      const b = slotById.get(p.task.id);
+                      const base = b?.id.split("~")[0];
+                      if (!b || b.projectId || !base || base === here || seen.has(base)) return [];
+                      seen.add(base);
+                      return [{ id: b.id, name: b.baseName ?? b.name, when: where(p) }];
+                    })
+                  : [];
+                const act = (f: () => string) => {
+                  d.remember();
+                  const msg = f();
+                  setChanges((n) => n + 1);
+                  setSel(null);
+                  setMoveFor(null);
+                  toast(msg);
+                };
+                return (
+                  <>
+                    <MenuLabel>Move</MenuLabel>
+                    {targets.map((t) => (
+                      <MenuItem key={t.id} hint={t.when} onSelect={() => act(() => (d.moveToBlock(moveFor.taskId, t.id) ? `Moved to ${t.name}` : "Couldn't move it"))}>
+                        {t.name}
+                      </MenuItem>
+                    ))}
+                    {loose && (block?.taskIds.length ?? 0) > 1 && (
+                      <MenuItem onSelect={() => act(() => { d.removeFromRun(here, moveFor.taskId); return "On its own — placing it"; })}>On its own</MenuItem>
+                    )}
+                    <MenuItem onSelect={() => act(() => { d.leaveOut(moveFor.taskId); return "Left off the week"; })}>Off the week</MenuItem>
+                  </>
+                );
+              })()}
+            </Menu>
+
             {placing && (
               <Card style={{ boxShadow: "0 0 0 1.5px var(--slot), var(--sh-1)" }}>
                 <div className="f-title">
@@ -1192,7 +1290,7 @@ function PlanRailWeek({
                         </div>
                       </div>
                     </div>
-                    {items.length > 1 && <BlockItems items={items} />}
+                    {items.length > 1 && blockTasks(selP.task.id, items.map((i) => i.id))}
                     <div className="text-caption text-muted">{selP.reason}</div>
                     {/* how long — your estimate beats the sum of the tasks; Nuvo re-places it */}
                     <div className="grid gap-1">
@@ -1243,6 +1341,11 @@ function PlanRailWeek({
                         {held && (
                           <Button size="xs" kind="ghost" shortcut="H" onClick={() => act.hold(sel!)}>
                             {LET_IT_MOVE}
+                          </Button>
+                        )}
+                        {(items.length === 1 || !slotById.get(selP.task.id)) && (
+                          <Button size="xs" kind="ghost" onClick={() => alreadyDone(items[0]?.id ?? selP.task.id)}>
+                            Already done
                           </Button>
                         )}
                         {/* the halves' places are the composer's to find, after the split,
@@ -1348,9 +1451,7 @@ function PlanRailWeek({
                     </div>
                     {it.sub && <p className="pl-6 text-caption leading-snug text-muted">{it.sub}</p>}
                     {it.items && (
-                      <div className="pl-6">
-                        <BlockItems items={it.items} />
-                      </div>
+                      <div className="pl-6">{blockTasks(it.blockId ?? "", it.items.map((i) => i.id))}</div>
                     )}
                     <div className="flex flex-wrap gap-1 pl-6">
                       <Button
@@ -1442,23 +1543,5 @@ function PlanRailWeek({
         </>
       )}
     </div>
-  );
-}
-
-/** The tasks a block holds, one hairline row each — the same list on the
- *  selected block and on a To settle card, so a group's name is never the
- *  only thing you're asked to decide about. */
-function BlockItems({ items }: { items: { id: string; title: string; mins: number }[] }) {
-  return (
-    <ul className="grid min-w-0 grid-cols-[minmax(0,1fr)]" style={{ boxShadow: "inset 0 1px 0 var(--line-1)" }}>
-      {items.map((t) => (
-        <li key={t.id} className="flex min-h-[28px] min-w-0 items-center gap-2" style={{ boxShadow: "inset 0 -1px 0 var(--line-1)" }}>
-          <span className="min-w-0 flex-1 truncate text-body" title={t.title}>
-            {t.title}
-          </span>
-          <span className="f-num shrink-0 text-caption text-[var(--faint)]">{t.mins}m</span>
-        </li>
-      ))}
-    </ul>
   );
 }

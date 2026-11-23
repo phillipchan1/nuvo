@@ -18,6 +18,22 @@ vi.mock("../src/lib/calendarReveal", () => ({ revealOnCalendar: vi.fn() }));
 const openRecord = vi.fn();
 vi.mock("../src/hooks/useAppNavigation", () => ({ useAppNavigation: () => ({ navigate: vi.fn(), openRecord, nav: { overlay: "none" } }) }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }));
+// The block's tasks are the one task row (TaskListView); its own wiring has its
+// own tests — here it is a list that hands each row's trailing act back.
+const completeTask = vi.fn();
+vi.mock("../src/hooks/useTasks", () => ({ useTaskMutations: () => ({ complete: completeTask }) }));
+vi.mock("../src/components/tasks/TaskListView", () => ({
+  default: ({ tasks, rowAction }: { tasks: { id: string; title: string }[]; rowAction?: (t: { id: string; title: string }) => unknown }) => (
+    <ul>
+      {tasks.map((x) => (
+        <li key={x.id}>
+          <span>{x.title}</span>
+          {rowAction?.(x) as never}
+        </li>
+      ))}
+    </ul>
+  ),
+}));
 vi.mock("../src/hooks/useSettings", () => ({ useSettings: () => ({ settings: { work_end_minutes: 990 }, isLoading: false, update: vi.fn() }) }));
 // The pinned crown (rail-modes §2) reads the week through useWeekCrown; here it
 // is one project whose two loose pieces are the Admin batch's.
@@ -76,6 +92,9 @@ const S = {
   placedLog: [] as { key: string; taskIds: string[] }[],
   onWeek: [] as unknown[],
   takeBack: vi.fn(),
+  moveToBlock: vi.fn(() => true),
+  leaveOut: vi.fn(),
+  removeFromRun: vi.fn(),
 };
 vi.mock("../src/hooks/useWeekDraft", () => ({
   placementKey: (p: { task: { id: string } }) => p.task.id,
@@ -88,6 +107,7 @@ vi.mock("../src/hooks/useWeekDraft", () => ({
       unpinPlacement: () => {}, remember: () => {}, undo: () => false, moveLocally: () => {},
       setBlockLength: S.setBlockLength, placeInGap: S.placeInGap, openGaps: () => S.gaps,
       loosePool: S.empty, kept: S.kept, setKept: () => {}, result: S.result, suggestions: S.empty,
+      moveToBlock: S.moveToBlock, leaveOut: S.leaveOut, removeFromRun: S.removeFromRun,
       placedLog: S.placedLog, onWeek: S.onWeek, takeBack: S.takeBack, addToWeek: vi.fn(),
       clearRegions: S.empty, weekSlots: S.weekSlots, planDays: S.planDays, workingDays: S.workingDays, dayContexts: S.ctx, applying: false,
     };
@@ -134,6 +154,65 @@ describe("Plan the week — the walk", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Look at it last/ }));
     expect(screen.getByText("Block 2 of 2")).toBeTruthy();
     expect(screen.getByText("2 to go")).toBeTruthy();
+  });
+});
+
+describe("Plan the week — a group is a proposal you can correct (D-253)", () => {
+  const openMove = (row: string) => {
+    const li = screen.getByText(row).closest("li")!;
+    fireEvent.click(li.querySelector('button[aria-label="Move…"]')!);
+  };
+
+  it("a task in a block moves into another block, by name and time", () => {
+    S.moveToBlock.mockClear();
+    render(<PlanRail onOverlay={() => {}} onClose={() => {}} />);
+    openMove("Fill in Timesheet");
+    // only the OTHER block is offered, with where it sits
+    expect(screen.queryByRole("menuitem", { name: /Admin batch/ })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Replies.*Tue 2–2:45pm/ }));
+    expect(S.moveToBlock).toHaveBeenCalledWith("a1", "replies");
+  });
+
+  it("…or goes on its own, or comes off the week — and says which", () => {
+    S.leaveOut.mockClear();
+    S.removeFromRun.mockClear();
+    const first = render(<PlanRail onOverlay={() => {}} onClose={() => {}} />);
+    openMove("Renew car registration");
+    fireEvent.click(screen.getByRole("menuitem", { name: "On its own" }));
+    expect(S.removeFromRun).toHaveBeenCalledWith("admin", "a2");
+    first.unmount();
+    render(<PlanRail onOverlay={() => {}} onClose={() => {}} />);
+    openMove("Renew car registration");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Off the week" }));
+    expect(S.leaveOut).toHaveBeenCalledWith("a2");
+  });
+
+  it("a project's task can only leave the week — it never changes sittings", () => {
+    const saved = S.taskById.get("a1")!;
+    S.taskById.set("a1", { ...saved, project_id: "p1" } as never);
+    try {
+      render(<PlanRail onOverlay={() => {}} onClose={() => {}} />);
+      openMove("Fill in Timesheet");
+      expect(screen.queryByRole("menuitem", { name: /Replies/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: "On its own" })).toBeNull();
+      expect(screen.getByRole("menuitem", { name: "Off the week" })).toBeTruthy();
+    } finally {
+      S.taskById.set("a1", saved);
+    }
+  });
+
+  it("a lone task that's already done says so, and is completed for real", () => {
+    const was = S.slotById.get("admin")!;
+    S.slotById.set("admin", { ...was, name: "Fill in Timesheet", taskIds: ["a1"] });
+    completeTask.mockClear();
+    try {
+      render(<PlanRail onOverlay={() => {}} onClose={() => {}} />);
+      fireEvent.click(screen.getByRole("button", { name: "Already done" }));
+      expect(completeTask).toHaveBeenCalledTimes(1);
+      expect(completeTask.mock.calls[0][0]).toMatchObject({ id: "a1" });
+    } finally {
+      S.slotById.set("admin", was);
+    }
   });
 });
 
