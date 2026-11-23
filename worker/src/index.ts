@@ -342,9 +342,9 @@ app.options("/api/data/*", () => new Response("ok", { headers: OPEN_CORS }));
 app.options("/api/rpc/*", () => new Response("ok", { headers: OPEN_CORS }));
 
 /**
- * Billing is read from Supabase until CUTOVER_FLIPPED, then from Neon (where
- * worker/src/billing writes). The session id is the preserved auth.users
- * id — never a client-supplied owner, never an email remap.
+ * Billing is read from Neon (where worker/src/billing writes). The session
+ * id is the preserved auth.users id — never a client-supplied owner, never
+ * an email remap. No store → EntitlementUnavailableError → 503.
  */
 app.get("/api/entitlement", async (c) => {
   const got = await requireSession(c);

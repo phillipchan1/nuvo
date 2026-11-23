@@ -10,12 +10,13 @@ import {
   type Driver,
   type QueryResult,
 } from "kysely";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { decryptOAuthToken, setTokenUtil } from "better-auth/oauth2";
 import { ACCOUNT_DELETE_CONFIRM } from "../supabase/functions/_shared/accountDeletion.ts";
 import { revokeAppleToken } from "../supabase/functions/_shared/appleIdentity.ts";
 import { appleSocialProvider, createAuth } from "../worker/src/auth.ts";
 import { APPLE_TOKEN_UNOPENABLE, deleteOwnedAccount } from "../worker/src/deleteAccount.ts";
+import { installBillingReaderForTests } from "../worker/src/lib/billingRead.ts";
 import type { Env } from "../worker/src/env.ts";
 import type { Sql } from "../worker/src/db.ts";
 import {
@@ -192,6 +193,13 @@ function storeWithFakeWipe(db: PGlite, userId: string): Store {
 }
 
 describe.sequential("Better Auth Apple tokens never land in plaintext", { timeout: 60_000 }, () => {
+  beforeEach(() => {
+    installBillingReaderForTests(async () => null);
+  });
+  afterEach(() => {
+    installBillingReaderForTests(async () => null)();
+  });
+
   it("wires encryptOAuthTokens and the account seal hook", () => {
     const src = readFileSync("worker/src/auth.ts", "utf8");
     expect(src).toContain("encryptOAuthTokens: true");
@@ -403,12 +411,7 @@ describe.sequential("Better Auth Apple tokens never land in plaintext", { timeou
       storeWithFakeWipe(db, user.id),
       { id: user.id },
       { confirm: ACCOUNT_DELETE_CONFIRM },
-      {
-        ...env,
-        SUPABASE_URL: "https://example.supabase.co",
-        SUPABASE_SERVICE_ROLE_KEY: "k",
-      },
-      async () => new Response("[]", { status: 200, headers: { "content-type": "application/json" } }),
+      env,
     );
     expect(res.status).toBe(200);
     expect(revokeAppleToken).toHaveBeenCalled();
@@ -507,15 +510,12 @@ describe.sequential("Better Auth Apple tokens never land in plaintext", { timeou
     const rotatedEnv = {
       ...tokenEnv(),
       BETTER_AUTH_SECRET: newSecret,
-      SUPABASE_URL: "https://example.supabase.co",
-      SUPABASE_SERVICE_ROLE_KEY: "k",
     };
     const res = await deleteOwnedAccount(
       storeWithFakeWipe(db, user.id),
       { id: user.id },
       { confirm: ACCOUNT_DELETE_CONFIRM },
       rotatedEnv,
-      async () => new Response("[]", { status: 200, headers: { "content-type": "application/json" } }),
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true, appleRevoked: false });
@@ -567,10 +567,7 @@ describe.sequential("Better Auth Apple tokens never land in plaintext", { timeou
       {
         ...writeEnv,
         BETTER_AUTH_SECRET: "wrong-only-better-auth-secret-32b!",
-        SUPABASE_URL: "https://example.supabase.co",
-        SUPABASE_SERVICE_ROLE_KEY: "k",
       },
-      async () => new Response("[]", { status: 200, headers: { "content-type": "application/json" } }),
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, appleRevoked: false });
@@ -620,10 +617,7 @@ describe.sequential("Better Auth Apple tokens never land in plaintext", { timeou
       {
         ...env,
         BETTER_AUTH_SECRET: "wrong-only-better-auth-secret-32b!",
-        SUPABASE_URL: "https://example.supabase.co",
-        SUPABASE_SERVICE_ROLE_KEY: "k",
       },
-      async () => new Response("[]", { status: 200, headers: { "content-type": "application/json" } }),
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true, appleRevoked: true });
@@ -671,10 +665,7 @@ describe.sequential("Better Auth Apple tokens never land in plaintext", { timeou
         ...env,
         BETTER_AUTH_SECRET: wrongSecret,
         TOKEN_ENC_KEY_V1: otherEncKey(),
-        SUPABASE_URL: "https://example.supabase.co",
-        SUPABASE_SERVICE_ROLE_KEY: "k",
       },
-      async () => new Response("[]", { status: 200, headers: { "content-type": "application/json" } }),
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, appleRevoked: false });
@@ -720,12 +711,7 @@ describe.sequential("Better Auth Apple tokens never land in plaintext", { timeou
       storeWithFakeWipe(db, user.id),
       { id: user.id },
       { confirm: ACCOUNT_DELETE_CONFIRM },
-      {
-        ...env,
-        SUPABASE_URL: "https://example.supabase.co",
-        SUPABASE_SERVICE_ROLE_KEY: "k",
-      },
-      async () => new Response("[]", { status: 200, headers: { "content-type": "application/json" } }),
+      env,
     );
     expect(res.status).toBe(200);
     expect(revokeAppleToken).toHaveBeenCalled();

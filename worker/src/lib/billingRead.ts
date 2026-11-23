@@ -1,6 +1,5 @@
 /**
- * Delete-account Stripe gate. Own read (Supabase PostgREST before the flip,
- * Neon after) — never `readEntitlement`,
+ * Delete-account Stripe gate. Own read from Neon — never `readEntitlement`,
  * never a Stripe secret, never the Stripe API.
  *
  * The shared entitlement SELECT omits Stripe identifiers (they must not
@@ -14,8 +13,8 @@
  * / trialing, even if plan_source is now apple. Period end and card-on-file
  * do not matter. Unknown stripe status fails closed. Trials with no Stripe
  * subscription, ended Stripe rows, and StoreKit-only users can delete.
- * 404/406 and a 200 that is not a documented empty `[]` fail closed here
- * only; the shared entitlement reader is unchanged.
+ * A missing store, a failed query, or a row for someone else fail closed
+ * here only; the shared entitlement reader is unchanged.
  */
 import {
   APPLE_DELETE_NOTICE,
@@ -46,14 +45,6 @@ export const SUBSCRIPTION_STATUSES = ["trialing", "active", "past_due", "cancell
 
 const STRIPE_ENDED = new Set(["cancelled", "canceled", "incomplete_expired"]);
 const STRIPE_CHARGING = new Set(["active", "past_due", "unpaid", "trialing"]);
-
-const GATE_SELECT = [
-  "user_id",
-  "status",
-  "trial_ends_at",
-  "plan_source",
-  "stripe_subscription_id",
-].join(",");
 
 export function billingPlanSource(row: DeleteGateRow | null | undefined): string {
   if (!row) return "";
@@ -89,15 +80,6 @@ export class BillingLookupError extends Error {
   }
 }
 
-/** PostgREST URL for the delete gate only — includes Stripe id columns. */
-export function billingSubscriptionQueryUrl(baseUrl: string, userId: string): string {
-  const base = baseUrl.replace(/\/+$/, "");
-  const params = new URLSearchParams();
-  params.set("user_id", `eq.${userId}`);
-  params.set("select", GATE_SELECT);
-  return `${base}/rest/v1/subscriptions?${params.toString()}`;
-}
-
 function asText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -120,9 +102,8 @@ function mapGateRow(value: unknown, userId: string): DeleteGateRow {
 }
 
 export type BillingReader = (
-  env: Pick<Env, "SUPABASE_URL" | "SUPABASE_SERVICE_ROLE_KEY">,
+  env: Pick<Env, "CUTOVER_FLIPPED">,
   userId: string,
-  fetchImpl?: typeof fetch,
 ) => Promise<DeleteGateRow | null>;
 
 let testReader: BillingReader | null = null;
@@ -132,45 +113,6 @@ export function installBillingReaderForTests(fn: BillingReader): () => void {
   return () => {
     testReader = null;
   };
-}
-
-async function fetchBillingSubscription(
-  env: Pick<Env, "SUPABASE_URL" | "SUPABASE_SERVICE_ROLE_KEY">,
-  userId: string,
-  fetchImpl: typeof fetch,
-): Promise<DeleteGateRow | null> {
-  const base = env.SUPABASE_URL?.trim() ?? "";
-  const key = env.SUPABASE_SERVICE_ROLE_KEY?.trim() ?? "";
-  if (!base || !key) throw new BillingLookupError();
-  let res: Response;
-  try {
-    res = await fetchImpl(billingSubscriptionQueryUrl(base, userId), {
-      method: "GET",
-      headers: {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-        Accept: "application/json",
-      },
-    });
-  } catch {
-    throw new BillingLookupError();
-  }
-  // 404/406 is not the empty-row document (that's HTTP 200 + `[]`).
-  // A missing table or schema-cache miss must fail closed — here only.
-  if (res.status === 406 || res.status === 404) throw new BillingLookupError();
-  if (!res.ok) throw new BillingLookupError();
-  let body: unknown;
-  try {
-    body = await res.json();
-  } catch {
-    throw new BillingLookupError();
-  }
-  if (body == null) throw new BillingLookupError();
-  if (Array.isArray(body)) {
-    if (body.length === 0) return null;
-    return mapGateRow(body[0], userId);
-  }
-  return mapGateRow(body, userId);
 }
 
 /** Post-flip delete gate: the same columns from Neon. Any failure fails closed. */
@@ -189,12 +131,11 @@ export async function readBillingSubscriptionFromNeon(sql: Sql, userId: string):
 }
 
 export async function readBillingSubscription(
-  env: Pick<Env, "SUPABASE_URL" | "SUPABASE_SERVICE_ROLE_KEY" | "CUTOVER_FLIPPED">,
+  env: Pick<Env, "CUTOVER_FLIPPED">,
   userId: string,
-  fetchImpl?: typeof fetch,
   sql?: Sql,
 ): Promise<DeleteGateRow | null> {
-  if (testReader && !fetchImpl) return testReader(env, userId);
+  if (testReader) return testReader(env, userId);
   if (sql && cutoverFlipped(env.CUTOVER_FLIPPED)) return readBillingSubscriptionFromNeon(sql, userId);
-  return fetchBillingSubscription(env, userId, fetchImpl ?? fetch);
+  throw new BillingLookupError();
 }

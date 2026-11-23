@@ -12,19 +12,18 @@
  * Tauri import never even loads — same lazy-import shape MobileShell uses for
  * deep links, so the web bundle doesn't pull in a native module.
  *
- * **What crosses is not the refresh token.** Supabase rotates refresh tokens and
- * runs reuse detection: once the phone refreshes, a copy on the watch is
- * revoked, and presenting it later is treated as a compromised-token replay that
- * revokes the whole family — signing the user out *on their phone*. So the
+ * **What crosses is not the refresh token.** Better Auth's signed bearer lives
+ * on the phone; a copy on the watch is never refreshed from the wrist. The
  * durable credential is a `connections` bearer token (Settings → Apps &
- * devices), and until the watch mints one, a short-lived access token that it
- * never refreshes.
+ * devices), and until the watch mints one, the phone's current session bearer
+ * that it never refreshes.
  */
 
 import { useEffect } from "react";
 import type { Session } from "@supabase/supabase-js";
+import { apiBaseUrl, apiConfigured } from "../lib/backend";
 import { isTauriIOS } from "../lib/platform";
-import { supabase, supabaseAnonKey, supabaseUrl } from "../lib/supabase";
+import { supabase } from "../lib/supabase";
 
 /** The app key for the watch's own row in `connections`. One per account. */
 const WATCH_APP = "apple_watch";
@@ -51,11 +50,10 @@ async function sha256Hex(s: string): Promise<string> {
 /**
  * The watch's durable credential.
  *
- * A Supabase access token lasts about an hour, and the phone can only refresh
- * it while the app is running — so a watch holding one is dead most of the time,
- * which is exactly when you want to capture something. The refresh token can't
- * cross either: rotation plus reuse detection would revoke the whole family and
- * sign the user out on their phone.
+ * A Better Auth session bearer lasts as long as the phone keeps it fresh — a
+ * watch holding one is dead once the phone has been in a pocket long enough,
+ * which is exactly when you want to capture something. The watch never
+ * refreshes it.
  *
  * So the watch gets a `connections` bearer token — the same mechanism Settings →
  * Apps & devices mints by hand, and the one `/capture` authenticates. It never
@@ -137,16 +135,20 @@ export function useWatchSession(session: Session | null): void {
           return;
         }
 
+        // The wrist talks to the Worker (`VITE_API_BASE_URL`). A build without
+        // that address has nowhere live to send capture / Ask.
+        if (!apiConfigured()) return;
+
         // Both travel: the connection token is durable and carries capture; the
-        // access token is what reaches the agent and /day, and is refreshed here
-        // every time the phone renews it.
+        // access token is the Better Auth bearer that reaches the agent, and is
+        // refreshed here every time the phone renews it.
         const connectionToken = await watchConnectionToken(userId);
         if (cancelled) return;
 
         await invoke("plugin:nuvo-watch|push_session", {
           payload: {
-            url: supabaseUrl,
-            anonKey: supabaseAnonKey,
+            url: apiBaseUrl(),
+            anonKey: "",
             // Shipped in the payload so the watch needs no build-time env
             // injection — VITE_* is a Vite-time substitution Swift can't see.
             accessToken,

@@ -8,36 +8,25 @@ import {
   ACTIVE_STRIPE_DELETE_MESSAGE,
   APPLE_DELETE_NOTICE,
   BillingLookupError,
-  billingSubscriptionQueryUrl,
   installBillingReaderForTests,
   readBillingSubscription,
   stripeSubscriptionBlocksDelete,
+  type DeleteGateRow,
 } from "../worker/src/lib/billingRead.ts";
-import { fetchSubscriptionByUserId } from "../worker/src/entitlement.ts";
 import { makePgliteSql } from "../worker/src/pgliteSql.ts";
 import { wipeOwnedAccount, type Store } from "../worker/src/store.ts";
 import type { Sql } from "../worker/src/db.ts";
 
 const SESSION = "aaaaaaaa-aaaa-4000-8000-000000000001";
 const PLANNER = "11111111-1111-1111-1111-111111111111";
-const ENV = { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "k" };
+const FLIPPED = { CUTOVER_FLIPPED: "1" };
 
-function postgrest(status: number, body: unknown): typeof fetch {
-  return async () =>
-    new Response(typeof body === "string" ? body : JSON.stringify(body), {
-      status,
-      headers: { "content-type": "application/json" },
-    });
-}
-
-function stripeRow(overrides: Record<string, unknown> = {}) {
+function stripeGate(overrides: DeleteGateRow = {}): DeleteGateRow {
   return {
-    user_id: SESSION,
     status: "active",
     plan_source: "stripe",
-    stripe_subscription_id: "sub_live",
-    stripe_customer_id: "cus_live",
-    current_period_end: null,
+    hasStripeSubscription: true,
+    present: true,
     ...overrides,
   };
 }
@@ -47,156 +36,103 @@ describe("Worker delete-account Stripe gate", () => {
     installBillingReaderForTests(async () => null)();
   });
 
-  it("reads through readBillingSubscription and never puts Stripe ids on the row", async () => {
-    const url = billingSubscriptionQueryUrl(ENV.SUPABASE_URL, SESSION);
-    expect(url).toContain("user_id=eq." + SESSION);
-    expect(url).toContain("stripe_subscription_id");
-    expect(url).not.toContain("stripe_customer_id");
-
-    const row = await readBillingSubscription(
-      ENV,
-      SESSION,
-      postgrest(200, [stripeRow({ current_period_end: null })]),
+  it("reads through Neon and never puts Stripe ids on the row", async () => {
+    const db = new PGlite();
+    await applyIsolationSchema(db);
+    const sql = makePgliteSql(db);
+    await db.query(
+      `INSERT INTO subscriptions (user_id, status, trial_ends_at, plan_source, stripe_subscription_id, stripe_customer_id)
+       VALUES ($1, 'active', '2099-01-01T00:00:00Z', 'stripe', 'sub_live', 'cus_live')`,
+      [SESSION],
     );
+    const row = await readBillingSubscription(FLIPPED, SESSION, sql);
     expect(row?.hasStripeSubscription).toBe(true);
     expect(row).not.toHaveProperty("stripe_subscription_id");
     expect(row).not.toHaveProperty("stripe_customer_id");
     expect(stripeSubscriptionBlocksDelete(row)).toBe(true);
+    await db.close();
   });
 
-  it("active / past_due / unpaid / trialing Stripe subscriptions refuse, even with a null period end", async () => {
+  it("active / past_due / unpaid / trialing Stripe subscriptions refuse, even with a null period end", () => {
     for (const status of ["active", "past_due", "unpaid", "trialing"] as const) {
-      const row = await readBillingSubscription(
-        ENV,
-        SESSION,
-        postgrest(200, [stripeRow({ status, current_period_end: null })]),
-      );
-      expect(stripeSubscriptionBlocksDelete(row), status).toBe(true);
+      expect(stripeSubscriptionBlocksDelete(stripeGate({ status })), status).toBe(true);
     }
   });
 
-  it("canceled / incomplete_expired / no row all allow", async () => {
+  it("canceled / incomplete_expired / no row all allow", () => {
     for (const status of ["cancelled", "canceled", "incomplete_expired"] as const) {
-      const row = await readBillingSubscription(
-        ENV,
-        SESSION,
-        postgrest(200, [stripeRow({ status })]),
-      );
-      expect(stripeSubscriptionBlocksDelete(row), status).toBe(false);
+      expect(stripeSubscriptionBlocksDelete(stripeGate({ status })), status).toBe(false);
     }
-    await expect(readBillingSubscription(ENV, SESSION, postgrest(200, []))).resolves.toBeNull();
     expect(stripeSubscriptionBlocksDelete(null)).toBe(false);
     expect(stripeSubscriptionBlocksDelete({ present: false })).toBe(false);
   });
 
-  it("an apple-labeled user with an active Stripe subscription refuses", async () => {
-    const row = await readBillingSubscription(
-      ENV,
-      SESSION,
-      postgrest(200, [
-        stripeRow({
-          plan_source: "apple",
-          status: "active",
-          stripe_subscription_id: "sub_still_live",
-        }),
-      ]),
-    );
-    expect(row?.plan_source).toBe("apple");
-    expect(row?.hasStripeSubscription).toBe(true);
+  it("an apple-labeled user with an active Stripe subscription refuses", () => {
+    const row = stripeGate({ plan_source: "apple", status: "active", hasStripeSubscription: true });
+    expect(row.plan_source).toBe("apple");
+    expect(row.hasStripeSubscription).toBe(true);
     expect(stripeSubscriptionBlocksDelete(row)).toBe(true);
   });
 
-  it("an apple user without a Stripe subscription allows", async () => {
-    const row = await readBillingSubscription(
-      ENV,
-      SESSION,
-      postgrest(200, [
-        {
-          user_id: SESSION,
-          status: "active",
-          plan_source: "apple",
-          stripe_subscription_id: null,
-          stripe_customer_id: "cus_leftover",
-        },
-      ]),
-    );
-    expect(row?.plan_source).toBe("apple");
-    expect(row?.hasStripeSubscription).toBe(false);
+  it("an apple user without a Stripe subscription allows", () => {
+    const row = stripeGate({ plan_source: "apple", status: "active", hasStripeSubscription: false });
+    expect(row.plan_source).toBe("apple");
+    expect(row.hasStripeSubscription).toBe(false);
     expect(stripeSubscriptionBlocksDelete(row)).toBe(false);
   });
 
   it("does not gate on stripe_customer_id alone", async () => {
-    const row = await readBillingSubscription(
-      ENV,
-      SESSION,
-      postgrest(200, [
-        {
-          user_id: SESSION,
-          status: "active",
-          plan_source: "apple",
-          stripe_customer_id: "cus_only",
-          stripe_subscription_id: null,
-        },
-      ]),
+    const db = new PGlite();
+    await applyIsolationSchema(db);
+    const sql = makePgliteSql(db);
+    await db.query(
+      `INSERT INTO subscriptions (user_id, status, trial_ends_at, plan_source, stripe_customer_id)
+       VALUES ($1, 'active', '2099-01-01T00:00:00Z', 'apple', 'cus_only')`,
+      [SESSION],
     );
+    const row = await readBillingSubscription(FLIPPED, SESSION, sql);
     expect(row?.hasStripeSubscription).toBe(false);
     expect(stripeSubscriptionBlocksDelete(row)).toBe(false);
+    await db.close();
   });
 
-  it("a no-card trial with no Stripe subscription can delete", async () => {
-    const live = await readBillingSubscription(
-      ENV,
-      SESSION,
-      postgrest(200, [
-        {
-          user_id: SESSION,
-          status: "trialing",
-          plan_source: null,
-          trial_ends_at: "2099-01-01T00:00:00Z",
-          stripe_subscription_id: null,
-        },
-      ]),
-    );
-    const lapsed = await readBillingSubscription(
-      ENV,
-      SESSION,
-      postgrest(200, [
-        {
-          user_id: SESSION,
-          status: "trialing",
-          plan_source: null,
-          trial_ends_at: "2020-01-01T00:00:00Z",
-          stripe_subscription_id: null,
-        },
-      ]),
-    );
-    expect(stripeSubscriptionBlocksDelete(live)).toBe(false);
-    expect(stripeSubscriptionBlocksDelete(lapsed)).toBe(false);
+  it("a no-card trial with no Stripe subscription can delete", () => {
+    expect(
+      stripeSubscriptionBlocksDelete({
+        status: "trialing",
+        plan_source: null,
+        trial_ends_at: "2099-01-01T00:00:00Z",
+        hasStripeSubscription: false,
+        present: true,
+      }),
+    ).toBe(false);
+    expect(
+      stripeSubscriptionBlocksDelete({
+        status: "trialing",
+        plan_source: null,
+        trial_ends_at: "2020-01-01T00:00:00Z",
+        hasStripeSubscription: false,
+        present: true,
+      }),
+    ).toBe(false);
   });
 
-  it("fails closed on an unknown stripe status", async () => {
-    const row = await readBillingSubscription(
-      ENV,
-      SESSION,
-      postgrest(200, [stripeRow({ status: "paused" })]),
-    );
-    expect(stripeSubscriptionBlocksDelete(row)).toBe(true);
+  it("fails closed on an unknown stripe status", () => {
+    expect(stripeSubscriptionBlocksDelete(stripeGate({ status: "paused" }))).toBe(true);
   });
 
   it("Apple users can delete and are told to cancel in Apple Settings, with no Stripe wording", async () => {
+    installBillingReaderForTests(async () => ({
+      status: "active",
+      plan_source: "apple",
+      hasStripeSubscription: false,
+      present: true,
+    }));
     const res = await deleteOwnedAccount(
       dummyStore(),
       { id: SESSION },
       { confirm: ACCOUNT_DELETE_CONFIRM },
-      ENV,
-      postgrest(200, [
-        {
-          user_id: SESSION,
-          status: "active",
-          plan_source: "apple",
-          stripe_subscription_id: null,
-        },
-      ]),
+      FLIPPED,
     );
     expect(res.status).not.toBe(409);
     const body = (await res.json()) as { error?: string; notice?: string; ok?: boolean };
@@ -207,23 +143,18 @@ describe("Worker delete-account Stripe gate", () => {
 
   it("reads billing by the session user.id, not the adopted planner id", async () => {
     const seen: string[] = [];
-    const fetchImpl: typeof fetch = async (input) => {
-      const href = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      seen.push(href);
-      return new Response(JSON.stringify([stripeRow()]), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
-    };
+    installBillingReaderForTests(async (_env, userId) => {
+      seen.push(userId);
+      return stripeGate();
+    });
     const res = await deleteOwnedAccount(
       dummyStore(PLANNER),
       { id: SESSION },
       { confirm: ACCOUNT_DELETE_CONFIRM },
-      ENV,
-      fetchImpl,
+      FLIPPED,
     );
     expect(res.status).toBe(409);
-    expect(seen.some((u) => u.includes(SESSION) && !u.includes(PLANNER))).toBe(true);
+    expect(seen).toEqual([SESSION]);
     const body = (await res.json()) as { error?: string };
     expect(body.error).toBe(ACTIVE_STRIPE_DELETE_MESSAGE);
   });
@@ -235,50 +166,38 @@ describe("Worker delete-account Stripe gate", () => {
   });
 
   it("returns 502 when the delete-gate billing read fail-closes", async () => {
+    installBillingReaderForTests(async () => {
+      throw new BillingLookupError();
+    });
     const res = await deleteOwnedAccount(
       dummyStore(),
       { id: SESSION },
       { confirm: ACCOUNT_DELETE_CONFIRM },
-      ENV,
-      postgrest(200, [stripeRow({ user_id: PLANNER })]),
+      FLIPPED,
     );
     expect(res.status).toBe(502);
   });
 
-  it("fails closed when the Supabase billing reader is unconfigured", async () => {
-    await expect(
-      readBillingSubscription({ SUPABASE_URL: "", SUPABASE_SERVICE_ROLE_KEY: "" }, SESSION, postgrest(200, [])),
-    ).rejects.toBeInstanceOf(BillingLookupError);
+  it("fails closed when there is no Neon store", async () => {
+    await expect(readBillingSubscription(FLIPPED, SESSION)).rejects.toBeInstanceOf(BillingLookupError);
+    await expect(readBillingSubscription({ CUTOVER_FLIPPED: "" }, SESSION, dummyStore().sql)).rejects.toBeInstanceOf(
+      BillingLookupError,
+    );
   });
 
-  it("treats PostgREST 404/406 as fail-closed on the delete-gate read only", async () => {
-    await expect(readBillingSubscription(ENV, SESSION, postgrest(404, "no"))).rejects.toBeInstanceOf(
-      BillingLookupError,
-    );
-    await expect(readBillingSubscription(ENV, SESSION, postgrest(406, "no"))).rejects.toBeInstanceOf(
-      BillingLookupError,
-    );
-    await expect(readBillingSubscription(ENV, SESSION, postgrest(200, []))).resolves.toBeNull();
+  it("Neon empty is allow; a row for someone else fail-closes", async () => {
+    const db = new PGlite();
+    await applyIsolationSchema(db);
+    const sql = makePgliteSql(db);
+    await expect(readBillingSubscription(FLIPPED, SESSION, sql)).resolves.toBeNull();
 
-    await expect(readBillingSubscription(ENV, SESSION, postgrest(200, "not-json"))).rejects.toBeInstanceOf(
-      BillingLookupError,
+    await db.query(
+      `INSERT INTO subscriptions (user_id, status, trial_ends_at, plan_source, stripe_subscription_id)
+       VALUES ($1, 'active', '2099-01-01T00:00:00Z', 'stripe', 'sub_other')`,
+      [PLANNER],
     );
-    await expect(readBillingSubscription(ENV, SESSION, postgrest(200, null))).rejects.toBeInstanceOf(
-      BillingLookupError,
-    );
-    await expect(
-      readBillingSubscription(ENV, SESSION, postgrest(200, [{ status: "active", plan_source: "stripe" }])),
-    ).rejects.toBeInstanceOf(BillingLookupError);
-    await expect(
-      readBillingSubscription(ENV, SESSION, postgrest(200, [stripeRow({ user_id: PLANNER })])),
-    ).rejects.toBeInstanceOf(BillingLookupError);
-
-    await expect(
-      fetchSubscriptionByUserId(ENV, SESSION, postgrest(404, "no")),
-    ).resolves.toBeNull();
-    await expect(
-      fetchSubscriptionByUserId(ENV, SESSION, postgrest(406, "no")),
-    ).resolves.toBeNull();
+    await expect(readBillingSubscription(FLIPPED, SESSION, sql)).resolves.toBeNull();
+    await db.close();
   });
 
   it("revokes Apple only after the wipe transaction commits", () => {
@@ -307,6 +226,9 @@ describe("Worker delete-account Stripe gate", () => {
     expect(src).toContain("user.id");
     expect(src).toContain("wipeOwnedAccount");
     expect(src).not.toMatch(/hasStripeBilling/);
+    expect(src).toMatch(/sql && cutoverFlipped\(env\.CUTOVER_FLIPPED\)/);
+    expect(src).toContain("readBillingSubscriptionFromNeon");
+    expect(src).not.toMatch(/env\.SUPABASE_/);
   });
 });
 

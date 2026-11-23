@@ -29,8 +29,7 @@ struct Creds: Equatable {
     let anonKey: String
     /// The durable credential — a `connections` bearer token.
     let connectionToken: String?
-    /// Short-lived Supabase access token. Milestone only; never refreshed here,
-    /// because refreshing a rotated token would revoke the phone's session too.
+    /// Short-lived Better Auth session bearer. Milestone only; never refreshed here.
     let accessToken: String?
     let userId: String
     let issuedAt: Int64

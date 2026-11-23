@@ -8,7 +8,7 @@
 // not just the gap. The model proposes; the human adjudicates each result.
 
 import { assertWritable } from "./maintenance";
-import { supabase, supabaseAnonKey, supabaseUrl } from "./supabase";
+import { functionUrl, supabase, supabaseAnonKey } from "./supabase";
 import {
   domainById,
   projectsOf,
@@ -150,7 +150,7 @@ export async function draftOKRs(opts: {
   await assertWritable();
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData.session?.access_token ?? supabaseAnonKey;
-  const res = await fetch(`${supabaseUrl}/functions/v1/agent`, {
+  const res = await fetch(functionUrl("agent"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

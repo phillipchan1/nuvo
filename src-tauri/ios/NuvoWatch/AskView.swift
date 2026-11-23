@@ -6,9 +6,9 @@
 // own, so a client that renders only that gets a coherent answer with no
 // SPA logic (see loop.ts, which synthesises prose when the model acts silently).
 //
-// It runs on the Supabase access token, which lives about an hour and is
-// refreshed only by the phone. That is a real limit and this screen says so
-// plainly rather than failing in a way that looks like the chat is broken.
+// It runs on the Better Auth session bearer, which is refreshed only by the
+// phone. That is a real limit and this screen says so plainly rather than
+// failing in a way that looks like the chat is broken.
 
 import SwiftUI
 

@@ -382,7 +382,7 @@ describe("assertWritable", () => {
 });
 
 describe("agent callers", () => {
-  it("route the four functions/v1/agent fetches through writeFrozen", async () => {
+  it("route the four agent fetches through writeFrozen and functionUrl", async () => {
     const { readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
     const files = [
@@ -394,8 +394,26 @@ describe("agent callers", () => {
     for (const file of files) {
       const src = readFileSync(join(import.meta.dirname, "..", file), "utf8");
       expect(src, file).toMatch(/assertWritable\(\)/);
-      expect(src, file).toMatch(/functions\/v1\/agent|functionUrl\("agent"\)/);
+      expect(src, file).toMatch(/functionUrl\("agent"\)/);
+      expect(src, file).not.toMatch(/\$\{supabaseUrl\}\/functions\/v1\/agent/);
     }
+  });
+});
+
+describe("watch session", () => {
+  it("hands the wrist the Worker API base, not a Supabase origin", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const root = join(import.meta.dirname, "..");
+    const hook = readFileSync(join(root, "src/hooks/useWatchSession.ts"), "utf8");
+    expect(hook).toMatch(/apiBaseUrl\(\)/);
+    expect(hook).toMatch(/apiConfigured\(\)/);
+    expect(hook).not.toMatch(/url:\s*supabaseUrl/);
+    const client = readFileSync(join(root, "src-tauri/ios/NuvoWatch/NuvoClient.swift"), "utf8");
+    expect(client).toContain('"/capture"');
+    expect(client).toContain('"/agent"');
+    expect(client).not.toContain("/functions/v1/capture");
+    expect(client).not.toContain("/functions/v1/agent");
   });
 });
 
