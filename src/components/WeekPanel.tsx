@@ -4,8 +4,8 @@
 // line — the week's span as `text-display masthead` — and under it the week as
 // ONE track (D-206): a piece per task, done toward an initiative · done, other
 // · placed · no time, the week's pace tick, and one number ("13/17 done"). The
-// door ("Get ready ›", or the old "Plan the week" when the host has no Get
-// ready mode) rides the hero's line as a quiet button. Below, the
+// door ("Plan the week" · "The plan" · "Review", D-252) rides the week's
+// eyebrow as a quiet button; Get ready is the crown's line, a separate door. Below, the
 // week's projects as a kit section (name · count · disclosure), each one the
 // deck card's anatomy at rail density, because a project on the On Deck board
 // and a project in this week's crown are the same object:
@@ -423,8 +423,8 @@ export default function WeekPanel({
     <div className="crown">
       {/* The crown (D-207): the same part both decks wear. The eyebrow names
           the week it measures; the hero is the one number; the track is the
-          week (D-206); the line is the door to Get ready. A host with no Get
-          ready mode (a harness) keeps the old week door at the eyebrow's end. */}
+          week (D-206); the line is the door to Get ready; the week's own door
+          (Plan the week · The plan · Review) sits at the eyebrow's end (D-252). */}
       <div className="crown-readings" data-crown="">
         {/* The day (D-209): today's own tasks, closed the moment the last one
             is — at 3pm or whenever — with the hour you got back. The rail's
@@ -437,21 +437,25 @@ export default function WeekPanel({
                 crown reads the week being planned — and says so. */}
             <MarkLabel k="week">{crown.weekISO > mondayOf(toDateISO(new Date())) ? "Next week" : "This week"}</MarkLabel>
             <Stop on={weekReady} />
-            {!onLine && (
-              <span className="crown-week-act">
-                <Button
-                  size="xs"
-                  kind={mode === "view" ? "ghost" : "secondary"}
-                  onClick={openWeekPlan}
-                  title={door?.title ?? `The week's plan — ${slateSentence}`}
-                  aria-label={`${action}. ${slateSentence}.`}
-                  icon={door?.glow ? <span className="crown-door-dot" aria-hidden /> : undefined}
-                  trailing={mode === "view" ? <Icon name="chevron-right" size={12} /> : undefined}
-                >
-                  {action}
-                </Button>
-              </span>
-            )}
+            {/* The week's own door (D-252): Plan the week · The plan · Review.
+                Always here — the line is the door to Get ready, and Get ready
+                is Nuvo's offer; planning the week is YOUR choice, so it can't
+                wait on an offer being made. (D-207 hid this whenever the host
+                had a line, and D-219 then quieted the line behind the Scheduled
+                dial — so on a Sunday with work to place, nothing led in.) */}
+            <span className="crown-week-act">
+              <Button
+                size="xs"
+                kind={mode === "view" ? "ghost" : "secondary"}
+                onClick={openWeekPlan}
+                title={door?.title ?? `The week's plan — ${slateSentence}`}
+                aria-label={`${action}. ${slateSentence}.`}
+                icon={door?.glow ? <span className="crown-door-dot" aria-hidden /> : undefined}
+                trailing={mode === "view" ? <Icon name="chevron-right" size={12} /> : undefined}
+              >
+                {action}
+              </Button>
+            </span>
           </div>
           {rows.length > 0 ? (
             <>

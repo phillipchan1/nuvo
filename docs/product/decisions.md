@@ -9873,3 +9873,34 @@ dependence, nothing tuned to one account.
 on a local test account at 1600px (two columns, beside the block, the hint outside it) and at the
 default ~1024px (single column). Not yet released.*
 
+
+**D-252 · 2026-11-22 · The week's own door comes back to the rail: Plan the week · The plan · Review.**
+*(Reported by the operator, on a Sunday: "I was trying to plan the week, but I don't even see the
+option anymore.")*
+
+→ **Finding first.** On the desktop rail there was no door to Plan the week. D-207 retired it ("the
+Plan the week door it replaced", `rail-line.md` §9) and left the line as the only way in: Plan
+reached you as a Get ready card, "starts by your choice; the line only invites when work has no
+time". Then D-219 quieted the line while the Scheduled dial is open, and the dial stopped opening
+Get ready. A Sunday with ten things still needing a time is exactly that state: no line, a dial
+that scrolls to tasks, and no button. The same gate hid **Review** on Friday (only a toast
+announced it). A choice that is "yours" cannot depend on Nuvo having something to offer.
+
+→ **The door returns, beside the line and not instead of it.** `WeekPanel` draws the host's week
+door (`Plan the week` · `The plan` · `Review`, the word following the week's lifecycle, as
+`Planner` already computed it) at the end of the week's eyebrow whether or not the host also
+gives a line. The line stays the one door into **Get ready** (D-207 holds there); this is the
+door into **Plan**, which D-207's own table says is "your choice".
+
+→ **Not changed.** The phone has its own door (the Plan the week card, `MobilePlanWeek`). D-219's
+quiet line stays: the dial still says the count, and a Get ready card still opens from the line
+when the dial is full.
+
+**Anchor.** Serves **W2 · W3** (where do this week's hours go; what do I drop). Strains **P8**
+(say it once): a button and a line share the eyebrow's row, held by the line speaking only about
+facts and the button only about the week's one lifecycle act. Amends **D-207** ("the line replaces
+the button") for Plan only. Four no's: no pool, no new name (*Plan the week*, *The plan*, *Review*
+exist), nothing that needs clean data, nothing tuned to one account.
+
+*Status: built 2026-11-22 — `WeekPanel` no longer hides the door when `onLine` is given;
+`tests/rail-offers.test.tsx` pins it. Not yet driven in the running app.*

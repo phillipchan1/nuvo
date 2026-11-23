@@ -241,8 +241,12 @@ describe("the crown header: one track, one number, and the line as the door (D-2
     const a = mountCrown(go);
     const door = await waitFor(() => screen.getByRole("button", { name: /didn't happen \(2pm\)\. Get ready\.$/ }));
     expect(door.getAttribute("data-tone")).toBe("warn");
-    // No second door: the line IS the way into Get ready (D-207).
+    // No second door INTO GET READY: the line is the way (D-207)…
     expect(screen.getAllByRole("button", { name: /Get ready/ })).toHaveLength(1);
+    // …but planning the week is the operator's own choice, so its door stands
+    // beside the line, not behind it (D-252): on a Sunday with work to place the
+    // line can be quiet, and a week you meant to plan must never have no way in.
+    expect(screen.getByRole("button", { name: /^(Plan the week|The plan|Review)\./ })).toBeTruthy();
     fireEvent.click(door);
     expect(go).toHaveBeenCalledTimes(1);
     a.unmount();

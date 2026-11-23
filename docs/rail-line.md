@@ -196,7 +196,7 @@ faces). The crown's eyebrow is the rail's only header.
 
 ## 9 · What it retires
 
-- The **Get ready ›** button in the crown's header (D-206), and the Plan the week door it replaced.
+- The **Get ready ›** button in the crown's header (D-206). *(The Plan the week door it replaced came back the same month — D-252: Plan is your choice, so it can't wait on a card.)*
 - `RepairLine` as a separate line: a break is the stack's first card, so the line already says it.
 - The decks' own gap line ("3 need shaping · mid-groom ›") and its jump to Groom.
 - Three crown implementations, replaced by `RailCrown`, shown at `?kit`.
