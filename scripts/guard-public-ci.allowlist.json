@@ -113,7 +113,7 @@
       "file": "cloudflare-hosting.yml",
       "job": "deploy",
       "id": "build-app",
-      "sha256": "49f440d626a2ae7d98ab056d4ba2e7608b08edd429edd4ea926c4fafd52eeee7"
+      "sha256": "ab022772a092baad61ef15ede8657c36f1f750eec9ae18cb8df250e70a130e0f"
     },
     {
       "file": "cloudflare-hosting.yml",

@@ -396,7 +396,25 @@ describe("agent callers", () => {
       expect(src, file).toMatch(/assertWritable\(\)/);
       expect(src, file).toMatch(/functionUrl\("agent"\)/);
       expect(src, file).not.toMatch(/\$\{supabaseUrl\}\/functions\/v1\/agent/);
+      expect(src, file).not.toMatch(/apikey/);
+      expect(src, file).not.toMatch(/supabaseAnonKey/);
     }
+  });
+});
+
+describe("calendar OAuth start", () => {
+  it("navigates through calendarOauthStartHref, never a Supabase functions/v1 URL", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const root = join(import.meta.dirname, "..");
+    for (const file of ["src/components/SettingsModal.tsx", "src/components/ReconnectBanner.tsx"]) {
+      const src = readFileSync(join(root, file), "utf8");
+      expect(src, file).toMatch(/calendarOauthStartHref\(/);
+      expect(src, file).not.toMatch(/VITE_SUPABASE/);
+      expect(src, file).not.toMatch(/functions\/v1\//);
+    }
+    const supabase = readFileSync(join(root, "src/lib/supabase.ts"), "utf8");
+    expect(supabase).not.toMatch(/import\.meta\.env\.VITE_SUPABASE/);
   });
 });
 

@@ -6,20 +6,22 @@ import { isSpotlightWindow } from "./platform";
 import { workerRoute } from "./workerRoute";
 import { workerSession } from "./workerSession";
 
-const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+export const supabaseConfigured = apiConfigured();
 
-export const supabaseConfigured = Boolean((url && anonKey) || apiConfigured());
+/**
+ * Origin supabase-js builds `/rest/v1` against. Never the deleted project:
+ * `VITE_SUPABASE_*` is unread. When the Worker is flipped, `workerRoute`
+ * rewrites this origin to `authBaseUrl()`. `.invalid` is RFC 2606 reserved —
+ * a missed rewrite cannot land on a real host.
+ */
+export const supabaseUrl = "https://nuvo.invalid";
+/** Dummy key supabase-js requires at construct time. Never sent to the Worker
+ *  (`toWorker` deletes `apikey`; agent fetches send only the Better Auth bearer). */
+export const supabaseAnonKey = "public";
 
-// Exported so callers that need to stream an edge function (the agent replies
-// over SSE, which `functions.invoke` can't consume) can build the request URL
-// and auth headers themselves.
-export const supabaseUrl = url ?? "http://localhost:54321";
-export const supabaseAnonKey = anonKey ?? "missing-anon-key";
-
-/** Edge-function URL. Unchanged when `VITE_API_BASE_URL` is unset. */
+/** Worker function URL. Empty when `VITE_API_BASE_URL` is unset. */
 export function functionUrl(name: string): string {
-  return edgeFunctionUrl(supabaseUrl, name);
+  return edgeFunctionUrl(name);
 }
 
 /**
@@ -193,7 +195,6 @@ export async function restRequest(pathAndQuery: string, init?: RequestInit): Pro
   const path = pathAndQuery.replace(/^\//, "");
   const url = `${supabaseUrl.replace(/\/+$/, "")}/rest/v1/${path}`;
   const headers = new Headers(init?.headers);
-  if (!headers.has("apikey")) headers.set("apikey", supabaseAnonKey);
   if (!headers.has("Authorization")) {
     try {
       const { data } = await supabase.auth.getSession();

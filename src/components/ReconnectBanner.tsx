@@ -1,4 +1,5 @@
 import type { CalendarAccount } from "../lib/types";
+import { calendarOauthStartHref } from "../lib/backend";
 import { supabase } from "../lib/supabase";
 import { Icon } from "./Icon";
 import { Button } from "./kit";
@@ -32,8 +33,9 @@ export default function ReconnectBanner({
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token;
     if (!token) return;
-    const base = import.meta.env.VITE_SUPABASE_URL;
-    window.location.href = `${base}/functions/v1/google-oauth?action=start&token=${token}&redirect=${encodeURIComponent(window.location.origin)}`;
+    const href = calendarOauthStartHref(a.provider, token, window.location.origin);
+    if (!href) return;
+    window.location.href = href;
   };
 
   // A bar across the top of the work, in the kit's voice: what stopped, whose

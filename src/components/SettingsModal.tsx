@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { signOut } from "../lib/authActions";
 import { supabase } from "../lib/supabase";
+import { calendarOauthStartHref } from "../lib/backend";
 import { linkGoogleIdentity } from "../lib/googleAuth";
 import { appleLinkAvailable, linkAppleIdentity } from "../lib/appleAuth";
 import { readSignInMethods, type SignInMethod } from "../lib/authProviders";
@@ -489,9 +490,9 @@ function ConnectionsPane({
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token;
     if (!token) return;
-    const base = import.meta.env.VITE_SUPABASE_URL;
-    const redirect = encodeURIComponent(window.location.origin);
-    window.location.href = `${base}/functions/v1/${provider}-oauth?action=start&token=${token}&redirect=${redirect}`;
+    const href = calendarOauthStartHref(provider, token, window.location.origin);
+    if (!href) return;
+    window.location.href = href;
   };
   const disconnect = async (id: string) => {
     await supabase.from("calendar_accounts").delete().eq("id", id);

@@ -10,17 +10,18 @@
 // Failure is a graceful state: callers catch and the wall stays fully usable.
 
 import { assertWritable } from "./maintenance";
-import { functionUrl, supabase, supabaseAnonKey } from "./supabase";
+import { functionUrl, supabase } from "./supabase";
 import { domainById, tasksOf, type Domain, type Project, type VerticalData } from "./vertical";
 
 /** One JSON round-trip against the agent endpoint. Throws on network/parse. */
 async function callAgentJSON(prompt: string): Promise<unknown> {
   await assertWritable();
   const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData.session?.access_token ?? supabaseAnonKey;
+  const token = sessionData.session?.access_token;
+  if (!token) throw new Error("Not signed in");
   const res = await fetch(functionUrl("agent"), {
     method: "POST",
-    headers: { "Content-Type": "application/json", apikey: supabaseAnonKey, Authorization: `Bearer ${token}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ messages: [{ role: "user", content: prompt }] }),
   });
   if (!res.ok || !res.body) {
