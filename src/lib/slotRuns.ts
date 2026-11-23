@@ -10,12 +10,12 @@
 //
 // This is the one read both shells draw from: a slot becomes a single entry that
 // owns its open tasks, standing at its own start time among the lone timed
-// tasks. A slot whose work is all done still gets an entry — it should read
-// "done", not vanish. A slot with NOTHING in it does not: the list answers
-// "what's on today", an empty block is time rather than work, and the calendar
-// already draws it. It was listed at first ("held time with nothing in it") and
-// that turned out to be a permanent row with no act to take and no way to
-// dismiss it, under a label (On the clock) it didn't belong to (D-188).
+// tasks. A slot with NO open work does not stand at all — empty or all done. The
+// list answers "what's on today"; a block with nothing left in it is time or
+// history, not work, the calendar already draws it and the Done tail keeps what
+// landed. It was listed at first ("held time with nothing in it", then "all
+// done") and each was a row with no act to take, under a label (On the clock) it
+// didn't belong to (D-188, D-254).
 // (Never re-derive this in a surface — D-178.)
 
 import type { Slot, Task } from "./types";
@@ -75,7 +75,7 @@ export function clockEntries(scheduled: readonly Task[], slots: readonly Slot[],
   for (const run of runs.values()) run.open.sort((a, b) => a.sort_order - b.sort_order);
 
   const startOf = (e: ClockEntry) => (e.kind === "slot" ? e.slot.start_time : (e.task.start_time ?? ""));
-  const held = [...runs.values()].filter((run) => slotState(run) !== "empty");
+  const held = [...runs.values()].filter((run) => run.open.length > 0);
   return [...held, ...lone].sort(
     (a, b) =>
       startOf(a).localeCompare(startOf(b)) ||
