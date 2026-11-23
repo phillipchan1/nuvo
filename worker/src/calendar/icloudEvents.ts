@@ -106,7 +106,7 @@ async function rewriteOwnedRow(
         start_at = coalesce(${(patch.start_at as string | undefined) ?? null}, start_at),
         end_at = coalesce(${(patch.end_at as string | undefined) ?? null}, end_at),
         all_day = coalesce(${patch.all_day as boolean | null ?? null}, all_day),
-        location = CASE WHEN ${patch.location !== undefined} THEN ${patch.location as string | null} ELSE location END
+        location = CASE WHEN ${patch.location !== undefined} THEN ${(patch.location as string | null | undefined) ?? null} ELSE location END
       WHERE id = ${eventId}
         AND user_id = ${userId}
         AND start_at = ${rowAt.start_at}
@@ -120,7 +120,7 @@ async function rewriteOwnedRow(
       start_at = coalesce(${(patch.start_at as string | undefined) ?? null}, start_at),
       end_at = coalesce(${(patch.end_at as string | undefined) ?? null}, end_at),
       all_day = coalesce(${patch.all_day as boolean | null ?? null}, all_day),
-      location = CASE WHEN ${patch.location !== undefined} THEN ${patch.location as string | null} ELSE location END
+      location = CASE WHEN ${patch.location !== undefined} THEN ${(patch.location as string | null | undefined) ?? null} ELSE location END
     WHERE id = ${eventId} AND user_id = ${userId}
   `;
 }
