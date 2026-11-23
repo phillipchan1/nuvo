@@ -7,11 +7,9 @@ declare const __APP_VERSION__: string;
 declare const __TAURI_IOS__: boolean;
 
 interface ImportMetaEnv {
-  readonly VITE_SUPABASE_URL?: string;
-  readonly VITE_SUPABASE_ANON_KEY?: string;
   readonly VITE_DEV_EMAIL?: string;
   readonly VITE_DEV_PASSWORD?: string;
-  /** Empty = today's Supabase path. Worker: `/api` or `https://<worker>/api`. */
+  /** Worker API root: `/api` or `https://<worker>/api`. Empty = not baked. */
   readonly VITE_API_BASE_URL?: string;
   /** Optional absolute URL for GET {write_freeze}. Used when the API base is still Supabase. */
   readonly VITE_MAINTENANCE_URL?: string;

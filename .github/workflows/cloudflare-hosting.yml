@@ -57,14 +57,11 @@ jobs:
           # Cutover step 0 (docs/cloudflare-cutover.md): the armed build. Unset = today.
           VITE_MAINTENANCE_URL: ${{ vars.VITE_MAINTENANCE_URL }}
           VITE_CUTOVER_ARMED: ${{ vars.VITE_CUTOVER_ARMED }}
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_VAPID_PUBLIC_KEY: ${{ secrets.VITE_VAPID_PUBLIC_KEY }}
           VITE_POSTHOG_PROJECT_TOKEN: ${{ secrets.VITE_POSTHOG_PROJECT_TOKEN }}
           VITE_POSTHOG_HOST: ${{ secrets.VITE_POSTHOG_HOST }}
         run: |
           set -euo pipefail
-          test -n "$VITE_SUPABASE_URL" && test -n "$VITE_SUPABASE_ANON_KEY"
           npm run build:web
           test -f dist/index.html && test -f dist/sw.js && test -f dist/_headers
       - id: build-site
