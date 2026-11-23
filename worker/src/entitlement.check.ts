@@ -1,19 +1,22 @@
 // Worker entitlement check: lookup is always the preserved user_id.
 // Run: node --experimental-strip-types worker/src/entitlement.check.ts
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PGlite } from "@electric-sql/pglite";
 import {
+  EntitlementUnavailableError,
   entitlementOf,
   entitlementResponseBody,
-  fetchSubscriptionByUserId,
+  fetchSubscriptionFromNeon,
   installSubscriptionFetcherForTests,
   readEntitlement,
-  subscriptionQueryUrl,
   type SubscriptionColumns,
 } from "./entitlement.ts";
 import { compareAuthIds, compareEntitlementParity } from "./entitlementParity.ts";
+import { applyIsolationSchema } from "./isolationDb.ts";
+import { makePgliteSql } from "./pgliteSql.ts";
 
 const fails: string[] = [];
 let checks = 0;
@@ -25,6 +28,7 @@ function ok(cond: boolean, msg: string) {
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "entitlement.ts"), "utf8");
 const indexSrc = readFileSync(join(here, "index.ts"), "utf8");
+const envSrc = readFileSync(join(here, "env.ts"), "utf8");
 const now = new Date("2026-10-26T19:00:00Z");
 const A = "11111111-1111-1111-1111-111111111111";
 const B = "22222222-2222-2222-2222-222222222222";
@@ -33,11 +37,31 @@ ok(!/from ["']stripe["']/.test(src), "entitlement.ts does not import the Stripe 
 ok(!/STRIPE_SECRET|stripe\.subscriptions|StoreKit/.test(src), "entitlement.ts does not call Stripe or StoreKit");
 ok(!/apple-iap|apple-webhook|stripe-webhook|stripe-checkout|stripe-portal/.test(src), "entitlement.ts does not import billing writers");
 ok(!/from\(["']subscriptions["']\)/.test(src), "entitlement.ts does not use the supabase-js writer client");
-ok(/user_id/.test(src) && /eq\./.test(src), "lookup filter is user_id=eq.<id>");
+ok(/WHERE user_id =/.test(src), "lookup filter is user_id");
 ok(!/email=/.test(src), "lookup never filters by email");
 ok(/readEntitlement/.test(indexSrc), "index.ts calls readEntitlement");
 ok(/\/api\/entitlement/.test(indexSrc), "index.ts serves GET /api/entitlement");
 ok(!/STRIPE_SECRET/.test(indexSrc), "Worker router does not read a Stripe secret");
+ok(!/SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY/.test(envSrc), "Env no longer names Supabase billing secrets");
+ok(/Boolean\(sql\) && cutoverFlipped\(env\.CUTOVER_FLIPPED\) && !fetcherOverridden/.test(src), "flag-on path still requires sql + CUTOVER_FLIPPED");
+ok(/fetchSubscriptionFromNeon\(sql!, userId\)/.test(src), "flag-on path still reads Neon");
+ok(/entitlement store unavailable/.test(src), "no store fails closed");
+
+const supabaseEnvNeedle = ["env", "SUPABASE_"].join(".");
+function workerSrcFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name);
+    const st = statSync(full);
+    if (st.isDirectory()) out.push(...workerSrcFiles(full));
+    else if (name.endsWith(".ts") && !name.endsWith(".check.ts")) out.push(full);
+  }
+  return out;
+}
+for (const file of workerSrcFiles(here)) {
+  const body = readFileSync(file, "utf8");
+  ok(!body.includes(supabaseEnvNeedle), `${file.slice(here.length + 1)} has no ${supabaseEnvNeedle}`);
+}
 
 const stripeActive: SubscriptionColumns = {
   user_id: A,
@@ -72,66 +96,63 @@ ok(entitlementOf(null, A, now).entitled === false, "missing row is not entitled"
 ok(entitlementOf(null, A, now).present === false, "missing row is present=false");
 ok(entitlementOf(stripeActive, A, now).plan === "active", "plan comes from status");
 
-const url = subscriptionQueryUrl("https://example.supabase.co", A);
-ok(url.includes("user_id=eq." + A), "query URL keys by the session user id");
-ok(url.includes("/rest/v1/subscriptions"), "query URL hits Supabase subscriptions");
-ok(!url.includes("email"), "query URL has no email");
-ok(!url.includes(B), "query URL does not include another user id");
-ok(url.includes("select=user_id"), "select is physical columns");
-ok(!url.includes("entitled") && !url.includes("plan,"), "select omits computed aliases");
-ok(url.includes("current_period_end") && url.includes("cancel_at_period_end"), "select includes period / cancel display fields");
-ok(url.includes("referral_code") && url.includes("referral_uses") && url.includes("referral_credits_earned"), "select includes referral display fields");
+const neonSelect = src.slice(src.indexOf("SELECT user_id::text"), src.indexOf("FROM subscriptions"));
+ok(neonSelect.includes("user_id") && neonSelect.includes("current_period_end") && neonSelect.includes("cancel_at_period_end"), "Neon select includes period / cancel display fields");
+ok(neonSelect.includes("referral_code") && neonSelect.includes("referral_uses") && neonSelect.includes("referral_credits_earned"), "Neon select includes referral display fields");
+ok(!/entitled/.test(neonSelect) && !/, plan,/.test(neonSelect), "Neon select omits computed aliases");
 ok(
-  !url.includes("stripe_customer") &&
-    !url.includes("stripe_subscription") &&
-    !url.includes("price_id") &&
-    !url.includes("stripe_promotion") &&
-    !url.includes("apple_original") &&
-    !url.includes("apple_product"),
-  "select omits Stripe / Apple identifiers",
+  !neonSelect.includes("stripe_customer") &&
+    !neonSelect.includes("stripe_subscription") &&
+    !neonSelect.includes("price_id") &&
+    !neonSelect.includes("stripe_promotion") &&
+    !neonSelect.includes("apple_original") &&
+    !neonSelect.includes("apple_product"),
+  "Neon select omits Stripe / Apple identifiers",
 );
 
-const calls: string[] = [];
-const fakeFetch: typeof fetch = async (input) => {
-  const href = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-  calls.push(href);
-  return new Response(JSON.stringify([stripeActive]), { status: 200, headers: { "content-type": "application/json" } });
-};
-
-const fetched = await fetchSubscriptionByUserId(
-  { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "service-role-test" },
-  A,
-  fakeFetch,
+const db = new PGlite();
+await applyIsolationSchema(db);
+const sql = makePgliteSql(db);
+await db.query(
+  `INSERT INTO subscriptions (
+    user_id, status, trial_ends_at, plan_source, current_period_end, cancel_at_period_end,
+    referral_code, referral_uses, referral_last_use_at, referral_credits_earned, referral_last_credit_at
+  ) VALUES (
+    $1, 'active', '2026-08-01T00:00:00Z', 'stripe', '2026-11-26T00:00:00Z', true,
+    'PHIL-TEST', 2, '2026-10-01T00:00:00Z', 1, '2026-10-02T00:00:00Z'
+  )`,
+  [A],
 );
-ok(fetched?.user_id === A, "fetch returns the row for the requested id");
-ok(calls.length === 1 && calls[0]?.includes(A) && !calls[0]?.includes(B), "fetch requested only A");
 
-const wrongUserFetch: typeof fetch = async () =>
-  new Response(JSON.stringify([{ ...stripeActive, user_id: B }]), {
-    status: 200,
-    headers: { "content-type": "application/json" },
-  });
-const rejected = await fetchSubscriptionByUserId(
-  { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "service-role-test" },
-  A,
-  wrongUserFetch,
-);
-ok(rejected === null, "a row for a different user_id is dropped (no cross-user leak)");
+const fetched = await fetchSubscriptionFromNeon(sql, A);
+ok(fetched?.user_id === A, "Neon fetch returns the row for the requested id");
+ok(fetched?.plan_source === "stripe" && fetched?.cancel_at_period_end === true, "Neon fetch maps physical columns");
+ok(fetched?.referral_code === "PHIL-TEST" && fetched?.referral_uses === 2, "Neon fetch maps referral display fields");
 
-for (const status of [404, 406] as const) {
-  const missing = await fetchSubscriptionByUserId(
-    { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "service-role-test" },
-    A,
-    async () => new Response("nope", { status }),
-  );
-  ok(missing === null, `fetch ${status}: shared entitlement reader treats as empty`);
+const missing = await fetchSubscriptionFromNeon(sql, B);
+ok(missing === null, "Neon fetch for an unknown id is empty");
+
+const flipped = { CUTOVER_FLIPPED: "1" };
+const fromRead = await readEntitlement(flipped, A, now, sql);
+ok(fromRead.userId === A && fromRead.entitled === true && fromRead.present === true, "flag-on readEntitlement reads Neon");
+ok(fromRead.referralCode === "PHIL-TEST", "flag-on readEntitlement carries referral fields");
+
+const unknown = await readEntitlement(flipped, B, now, sql);
+ok(unknown.userId === B && unknown.present === false && unknown.entitled === false, "flag-on unknown id is not entitled");
+
+try {
+  await readEntitlement(flipped, A, now);
+  ok(false, "flag-on without sql must fail closed");
+} catch (err) {
+  ok(err instanceof EntitlementUnavailableError, "flag-on without sql is EntitlementUnavailableError");
 }
-const emptyOk = await fetchSubscriptionByUserId(
-  { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "service-role-test" },
-  A,
-  async () => new Response("[]", { status: 200, headers: { "content-type": "application/json" } }),
-);
-ok(emptyOk === null, "fetch 200 + [] is the documented empty result");
+
+try {
+  await readEntitlement({ CUTOVER_FLIPPED: "" }, A, now, sql);
+  ok(false, "flag-off must not fall back");
+} catch (err) {
+  ok(err instanceof EntitlementUnavailableError, "flag-off without a test fetcher fails closed");
+}
 
 const body = entitlementResponseBody(entitlementOf(stripeActive, A, now));
 ok(body.entitled === true && body.plan === "active", "response body carries the tier");
@@ -181,6 +202,7 @@ ok(after.userId === A && after.entitled === true, "readEntitlement uses the give
 const other = await readEntitlement({}, B, now);
 ok(other.userId === B && other.present === false && other.entitled === false, "readEntitlement for an unknown id is not entitled");
 restoreFetch();
+await db.close();
 
 console.log(`${checks} checks, ${fails.length} failed`);
 if (fails.length) {

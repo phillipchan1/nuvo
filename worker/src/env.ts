@@ -52,10 +52,6 @@ export interface Env {
   INBOUND_FORWARD_TO?: string;
   /** Resend inbound-email Svix secret. Unset → inbound-email 500. */
   RESEND_WEBHOOK_SECRET?: string;
-  /** Supabase origin for the billing read. Subscriptions stay there. */
-  SUPABASE_URL?: string;
-  /** Service-role key used only to SELECT subscriptions by session user_id. Never a Stripe secret. */
-  SUPABASE_SERVICE_ROLE_KEY?: string;
   /** AES-256-GCM key (32-byte hex or base64). Required to seal/open tokens. Unset → fail closed. */
   TOKEN_ENC_KEY_V1?: string;
   TOKEN_ENC_KEY_V2?: string;

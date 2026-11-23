@@ -1,5 +1,5 @@
 /**
- * Worker entitlement check. Billing rows stay on Supabase; this module
+ * Worker entitlement check. Billing rows live on Neon; this module
  * only SELECTs `subscriptions` by the session's preserved user id
  * (Better Auth `user.id` = GoTrue `auth.users.id` after the auth copy).
  *
@@ -13,14 +13,12 @@ import type { Sql } from "./db.ts";
 export type { PlanSource, PlanState };
 
 export interface EntitlementEnv {
-  SUPABASE_URL?: string;
-  SUPABASE_SERVICE_ROLE_KEY?: string;
   /** After the flip, billing lives on Neon (worker/src/billing) and is read there. */
   CUTOVER_FLIPPED?: string;
 }
 
 /** Physical columns only — never the `entitled` / `plan` SQL functions,
- *  and never Stripe / Apple identifiers. */
+ *  and never Stripe / Apple identifiers. The Neon SELECT below is this list. */
 export interface SubscriptionColumns {
   user_id: string;
   status: PlanState | null;
@@ -67,30 +65,6 @@ export type SubscriptionFetcher = (
   env: EntitlementEnv,
   userId: string,
 ) => Promise<SubscriptionColumns | null>;
-
-const PHYSICAL_SELECT = [
-  "user_id",
-  "status",
-  "trial_ends_at",
-  "plan_source",
-  "current_period_end",
-  "cancel_at_period_end",
-  "apple_environment",
-  "referral_code",
-  "referral_uses",
-  "referral_last_use_at",
-  "referral_credits_earned",
-  "referral_last_credit_at",
-].join(",");
-
-/** PostgREST URL: filter is only `user_id=eq.<session id>`. */
-export function subscriptionQueryUrl(baseUrl: string, userId: string): string {
-  const base = baseUrl.replace(/\/+$/, "");
-  const params = new URLSearchParams();
-  params.set("user_id", `eq.${userId}`);
-  params.set("select", PHYSICAL_SELECT);
-  return `${base}/rest/v1/subscriptions?${params.toString()}`;
-}
 
 function asIso(value: unknown): string | null {
   return typeof value === "string" && value ? value : null;
@@ -148,41 +122,8 @@ function parseSubscriptionRow(value: unknown): SubscriptionColumns | null {
   };
 }
 
-export async function fetchSubscriptionByUserId(
-  env: EntitlementEnv,
-  userId: string,
-  fetchImpl: typeof fetch = fetch,
-): Promise<SubscriptionColumns | null> {
-  const base = env.SUPABASE_URL?.trim() ?? "";
-  const key = env.SUPABASE_SERVICE_ROLE_KEY?.trim() ?? "";
-  if (!base || !key) {
-    throw new EntitlementUnavailableError("supabase is not configured");
-  }
-  let res: Response;
-  try {
-    res = await fetchImpl(subscriptionQueryUrl(base, userId), {
-      method: "GET",
-      headers: {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-        Accept: "application/json",
-      },
-    });
-  } catch (err) {
-    throw new EntitlementUnavailableError(err);
-  }
-  if (res.status === 406 || res.status === 404) return null;
-  if (!res.ok) throw new EntitlementUnavailableError(`supabase ${res.status}`);
-  const body: unknown = await res.json().catch(() => null);
-  if (Array.isArray(body)) {
-    const first = body[0];
-    const row = parseSubscriptionRow(first);
-    if (row && row.user_id !== userId) return null;
-    return row;
-  }
-  const row = parseSubscriptionRow(body);
-  if (row && row.user_id !== userId) return null;
-  return row;
+async function subscriptionStoreUnavailable(): Promise<SubscriptionColumns | null> {
+  throw new EntitlementUnavailableError("entitlement store unavailable");
 }
 
 /**
@@ -213,14 +154,14 @@ export async function fetchSubscriptionFromNeon(sql: Sql, userId: string): Promi
   return row;
 }
 
-let fetchSubscription: SubscriptionFetcher = fetchSubscriptionByUserId;
+let fetchSubscription: SubscriptionFetcher = subscriptionStoreUnavailable;
 let fetcherOverridden = false;
 
 export function installSubscriptionFetcherForTests(fn: SubscriptionFetcher): () => void {
   fetchSubscription = fn;
   fetcherOverridden = true;
   return () => {
-    fetchSubscription = fetchSubscriptionByUserId;
+    fetchSubscription = subscriptionStoreUnavailable;
     fetcherOverridden = false;
   };
 }

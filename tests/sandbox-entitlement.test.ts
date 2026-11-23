@@ -49,13 +49,12 @@ describe("isEntitled — sandbox rows end at the verified period end", () => {
     });
   }
 
-  it("the Worker's entitlement (Supabase and Neon reads) uses it, with apple_environment selected", () => {
+  it("the Worker's entitlement (Neon read) uses it, with apple_environment selected", () => {
     for (const c of CASES) {
       const e = entitlementOf({ user_id: "u", trial_ends_at: c.row.trial_ends_at ?? PAST, ...c.row }, "u", NOW);
       expect(e.entitled, c.name).toBe(c.entitled);
     }
     const src = readFileSync("worker/src/entitlement.ts", "utf8");
-    expect(src).toMatch(/"apple_environment",/); // PostgREST select
     expect(src).toMatch(/cancel_at_period_end, apple_environment,/); // Neon select
   });
 

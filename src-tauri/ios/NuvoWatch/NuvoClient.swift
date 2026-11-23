@@ -5,10 +5,9 @@
 //   • connectionToken — durable, never expires, revocable from Settings →
 //     Apps & devices. Authenticates /capture. This is what makes capture work
 //     on a wrist whose phone has been in a pocket all day.
-//   • accessToken — a Supabase session token, good for about an hour. Reaches
-//     the agent and /day. The watch NEVER refreshes it: rotation plus reuse
-//     detection would revoke the whole token family and sign the user out on
-//     their phone. When it is stale, say so — don't retry it into a sign-out.
+//   • accessToken — a Better Auth session bearer from the phone. Reaches
+//     the agent. The watch NEVER refreshes it: the phone owns the session.
+//     When it is stale, say so — don't retry it into a sign-out.
 
 import Foundation
 
@@ -40,7 +39,9 @@ struct NuvoClient {
         guard let url = URL(string: creds.url + path) else { return nil }
         var r = URLRequest(url: url)
         r.httpMethod = method
-        r.setValue(creds.anonKey, forHTTPHeaderField: "apikey")
+        if !creds.anonKey.isEmpty {
+            r.setValue(creds.anonKey, forHTTPHeaderField: "apikey")
+        }
         r.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
         // A wrist is not a place to wait. Fail early enough to say so.
@@ -56,7 +57,7 @@ struct NuvoClient {
             // No durable token yet. The phone mints one on its next launch.
             throw NuvoClientError.needsPairing
         }
-        guard var r = request("/functions/v1/capture", bearer: token) else {
+        guard var r = request("/capture", bearer: token) else {
             throw NuvoClientError.notSignedIn
         }
         // `text` is the free-text field the server parses with the same
@@ -90,7 +91,7 @@ struct NuvoClient {
         guard let token = creds.accessToken, !token.isEmpty else {
             throw NuvoClientError.sessionExpired
         }
-        guard var r = request("/functions/v1/agent", bearer: token) else {
+        guard var r = request("/agent", bearer: token) else {
             throw NuvoClientError.sessionExpired
         }
         r.timeoutInterval = 45 // a turn can take tool rounds

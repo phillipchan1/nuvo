@@ -57,7 +57,6 @@ export async function deleteOwnedAccount(
   user: SessionUser,
   body: unknown,
   env: Env,
-  fetchImpl?: typeof fetch,
 ): Promise<Response> {
   const confirm = body && typeof body === "object" && !Array.isArray(body)
     ? (body as { confirm?: unknown }).confirm
@@ -68,7 +67,7 @@ export async function deleteOwnedAccount(
 
   let billing;
   try {
-    billing = await readBillingSubscription(env, user.id, fetchImpl, store.sql);
+    billing = await readBillingSubscription(env, user.id, store.sql);
   } catch (err) {
     if (err instanceof BillingLookupError) {
       return json({ error: "Could not verify billing status. Try again." }, 502, OPEN_CORS);
