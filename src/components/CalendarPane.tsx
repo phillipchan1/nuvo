@@ -4889,7 +4889,13 @@ function CalendarPane({
                     <p>
                       {eventMenuCancelNotifies
                         ? series
-                          ? `Cancel — ${eventMenuOtherGuests.length} ${eventMenuOtherGuests.length === 1 ? "guest is" : "guests are"} told…`
+                          ? `Cancel ${
+                            eventDeleteConfirm === "ALL"
+                              ? "the whole series"
+                              : eventDeleteConfirm === "FOLLOWING"
+                                ? "this and following events"
+                                : "just this event"
+                          } — ${eventMenuOtherGuests.length} ${eventMenuOtherGuests.length === 1 ? "guest is" : "guests are"} told.`
                           : `Cancel for ${eventMenuOtherGuests.length} ${eventMenuOtherGuests.length === 1 ? "guest" : "guests"}?`
                         : `Delete ${
                           eventDeleteConfirm === "ALL"
@@ -4930,7 +4936,7 @@ function CalendarPane({
                             {eventMenuCancelNotifies ? "Cancel & notify" : "Delete"}
                           </Button>
                           <Button size="xs" full onClick={() => setEventDeleteConfirm(null)}>
-                            Cancel
+                            Back
                           </Button>
                         </>
                       )}
