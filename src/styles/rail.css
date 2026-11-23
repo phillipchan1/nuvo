@@ -1050,6 +1050,16 @@ html:root .rest-deck-all:focus-visible { outline: none; box-shadow: 0 0 0 2px va
 /* one column since D-236: the week and the day's list share a scroll, and the
    Today · Inbox strip holds the top while you read down its list */
 .rail-col > .rail-tray-handle { position: sticky; top: 0; z-index: 2; background: var(--panel, var(--bg)); }
+/* The column scrolls down, never sideways. `overflow-y: auto` quietly makes x
+   scrollable too, so a few px of overflow anywhere in the crown or the list let
+   the whole column slide left and cut the week's door off the right edge. Each
+   part (the week, the strip, the list) clips its own overflow — clip, not
+   hidden: no scroll container, so the strip still sticks — so the column never
+   has anything to scroll to, even programmatically, and the crown's grids
+   can't grow past the rail. */
+.rail-col { overflow-x: hidden; }
+.rail-col > * { min-width: 0; overflow-x: clip; }
+.crown-readings, .crown-week { grid-template-columns: minmax(0, 1fr); }
 .rail-tabs > .k-fold { align-self: center; margin-left: -4px; }
 .crown-line-solo { padding: 8px 16px 10px; border-bottom: 1px solid var(--line-1); }
 
