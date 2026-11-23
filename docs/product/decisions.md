@@ -9943,3 +9943,35 @@ clean, nothing one account's.
 `tests/plan-move-to-block.test.tsx`, `tests/plan-walk.test.tsx`. Driven in the `?rail=plan` harness
 (a group, its Move menu, a move into Replies — the lengths followed); not driven against real data.
 Not pushed.*
+
+**D-254 · 2026-11-23 · A slot is a quiet label over its tasks, and it leaves when the work is done.**
+*(Amends D-178 part 2; finishes what D-188 started.)*
+The Today list's slot header was a bold row with a ring in the check column. The ring *picked*
+the group; it never completed anything, so it read as a task you could tick and couldn't.
+Bold names plus a note (`2 left · 1h of 1h`) also made the rail louder than the tasks it
+organised, and a finished block kept an "all done" row long after there was anything to do.
+
+→ The header is now a **label**, in the section header's voice: 11px, muted, name left and span
+right (`Admin · 9–11am`), the slot's hue on a dot. The note moves to the tooltip. The pick
+ring is a **rounded square** (so it can't pass for a task's circle), shown on hover, under a
+finger (`pointer: coarse`), or once something inside is picked. The label exists only while the
+slot holds **open** work (`clockEntries`) — empty (D-188) *and* all-done blocks stand nowhere,
+as "On the clock" itself does when it empties. What landed stays in the Done tail.
+
+**Anchor.** Closes no new row; it relieves **P8**'s strain, which D-178 admitted (a second kind
+of line in a list asking one question), by making the second kind quieter than a task rather
+than louder. Four no's: no pool, no name; it degrades to the flat list with no slots (P7);
+the objection that this is one operator's irritation (P16) is answered by the mechanism —
+a ring that looks like a check and isn't misleads anyone.
+
+**Rejected.** *A checkable header* (ring completes the whole block): the only option that
+answers "I can't tick it", but it makes a slot something you complete, a new act needing its
+own undo — not asked for. *A hairline rule* with the name on it: quietest, but faint in Light.
+*No header, spine only*: the name survives only as a tooltip, and a phone has neither hover
+nor the spine.
+
+*Status: built — `lib/slotRuns.ts`, `tasks/SlotRunHeader.tsx`, `styles/rail.css`;
+`tests/slot-runs.test.ts` updated (an all-done slot is absent). Driven at `?rail` (hover reveals the
+ring, picking selects the group, bulk bar up) and `?rail=phone` at 375px (44px label, no
+horizontal overflow). Not run: `npm run perf`, the live Schedule with real data. D-178's
+"a finished slot reads all done" line is superseded.*

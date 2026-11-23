@@ -230,14 +230,18 @@ html:root .step-input:focus-visible { outline: none; }
 .task-list-grip:active,
 .task-list-grip[data-arming] { color: var(--ink); }
 
-/* ── A slot, as the head of its tasks ───────────────────────────────────── */
+/* ── A slot, as the label over its tasks (D-254) ────────────────────────────
+   Section-label voice: small, muted, sentence case, name left and span right.
+   Not a row — no bold, and no ring standing in the check column looking like a
+   check. The pick ring is revealed on hover, under a finger, or once something
+   inside is picked, and is a rounded square so it never reads as a task's check. */
 .slot-run-head {
   position: relative;
   display: flex;
   align-items: center;
   gap: var(--tr-gap);
-  min-height: var(--tr-h);
-  padding: 0 var(--tr-pad);
+  min-height: 26px;
+  padding: 4px var(--tr-pad) 0;
   border-radius: var(--r-ctl);
 }
 .slot-run-ring {
@@ -249,11 +253,16 @@ html:root .step-input:focus-visible { outline: none; }
   height: var(--tr-check);
   padding: 0;
   border: 1.5px solid var(--line-2);
-  border-radius: 50%;
+  border-radius: 4px;
   background: transparent;
   color: var(--on-accent);
+  opacity: 0;
+  transition: opacity var(--d-base) var(--ease-out);
 }
 .slot-run-ring::before { content: ""; position: absolute; inset: -7px; }
+.slot-run-ring[data-coverage="some"],
+.slot-run-ring[data-coverage="all"],
+.slot-run-head:focus-within .slot-run-ring { opacity: 1; }
 .slot-run-ring[data-coverage="some"] { border-color: var(--accent); }
 .slot-run-ring[data-coverage="some"]::after {
   content: "";
@@ -265,13 +274,15 @@ html:root .step-input:focus-visible { outline: none; }
 .slot-run-ring[data-coverage="all"] { background: var(--accent); border-color: var(--accent); }
 .slot-run-ring-spacer { flex: none; width: var(--tr-check); }
 @media (hover: hover) {
+  .slot-run-head:hover .slot-run-ring { opacity: 1; }
   .slot-run-ring[data-coverage="none"]:hover { border-color: var(--accent); background: var(--accent-wash); }
 }
+@media (pointer: coarse) { .slot-run-ring { opacity: 1; } }
 .slot-run-open {
   flex: 1 1 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
   align-self: stretch;
   padding: 0;
@@ -281,32 +292,22 @@ html:root .step-input:focus-visible { outline: none; }
   text-align: left;
 }
 .slot-run-name {
-  flex: 0 0 auto;
-  max-width: 62%;
+  flex: 0 1 auto;
+  max-width: 70%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 600 var(--tr-title) / 18px var(--font-sans);
-  color: var(--ink);
+  font: 600 11px/1 var(--font-sans);
+  color: var(--muted);
 }
-.slot-run-head[data-quiet] .slot-run-name { color: var(--muted); }
 .slot-run-dot { flex: none; }
-.slot-run-note {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font: 450 12px/1 var(--font-sans);
-  color: var(--faint);
-}
-.slot-run-head[data-state="empty"] .slot-run-note { color: var(--slot); }
 .slot-run-when {
   flex: none;
-  font: 500 12px/1 var(--font-sans);
+  margin-left: auto;
+  font: 450 11px/1 var(--font-sans);
   font-variant-numeric: tabular-nums;
-  color: var(--muted);
+  color: var(--faint);
 }
 .slot-run-head::before {
   content: "";
@@ -323,7 +324,7 @@ html:root .step-input:focus-visible { outline: none; }
 }
 html:root .slot-run-open:focus-visible { outline: none; box-shadow: inset 0 -2px 0 var(--accent-ring); border-radius: 0; }
 @media (max-width: 767px) {
-  .slot-run-head { border-radius: 0; border-bottom: 1px solid var(--line-1); }
+  .slot-run-head { border-radius: 0; min-height: 44px; padding-top: 14px; }
   .slot-run-ring::before { inset: -12px; }
 }
 /* The rail's slot group: its tasks hang off a hairline in the slot's hue, in

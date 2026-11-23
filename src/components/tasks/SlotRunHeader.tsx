@@ -1,16 +1,17 @@
-// A slot, as the head of the tasks inside it — rail and phone, one component.
+// A slot, as the label over the tasks inside it — rail and phone, one component.
 //
 // The list of the day says WHEN things happen by order alone, so a slot's tasks
 // (which all share the slot's start) read as separate commitments. This is the
-// line that says "these belong to one block of time": the block's name, its
-// clock span, and how much of it is spoken for. Tapping the line opens the
+// line that says "these belong to one block of time": its name and its clock
+// span, in the voice of a section label (D-254). It is a LABEL, not a row: it
+// used to be bold, carried a ring in the check column, and read as a task you
+// could tick — the ring picks, it never completed. Tapping the line opens the
 // slot (its popover on a desk, its sheet on a phone — the caller decides which);
-// the ring at the left picks every task inside it for the bulk bar, which is the
-// only way to act on a whole slot's work at once from a list.
+// the pick ring picks every task inside it for the bulk bar, and shows on hover
+// (always under a finger, always once something inside is picked).
 //
-// It dissolves rather than frames: a list row (the task row's geometry), its
-// hue on a dot, not a card. Open/unclaimed time wears `--slot`, the token that
-// means exactly that.
+// It exists only while the slot holds open work (`clockEntries`), so it leaves
+// when the block is done, as "On the clock" does when it empties.
 
 import { fmtMins } from "../../lib/now";
 import type { Coverage } from "../../lib/selection";
@@ -123,7 +124,6 @@ export default function SlotRunHeader({
       >
         <span className="slot-run-name">{title}</span>
         <Dot color={color} shape="round" size="sm" />
-        <span className="slot-run-note">{note}</span>
         <span className="slot-run-when">{when}</span>
       </button>
     </div>

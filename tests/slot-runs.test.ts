@@ -70,11 +70,12 @@ describe("clockEntries", () => {
     expect(slotState(out[0] as SlotRun)).toBe("open");
   });
 
-  it("reads a slot whose work is all done as done, not empty", () => {
+  it("does not stand a slot whose work is all done — like the section label, it leaves when it empties", () => {
     const out = clockEntries([], [slot("s1", 6)], [task("x", 6, { slot_id: "s1", status: "done" })]);
-    const run = out[0] as SlotRun;
-    expect(run.doneCount).toBe(1);
-    expect(slotState(run)).toBe("done");
+    expect(out).toEqual([]);
+    // …but while one task is still open it heads that task, and counts what landed.
+    const part = clockEntries([task("y", 6, { slot_id: "s1" })], [slot("s1", 6)], [task("x", 6, { slot_id: "s1", status: "done" })]);
+    expect((part[0] as SlotRun).doneCount).toBe(1);
   });
 
   it("stands the slot before a lone task at the same minute — the container comes first", () => {

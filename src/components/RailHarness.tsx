@@ -8,9 +8,10 @@
 //    BOTH rows are held, the bar says "2 selected" (D-178 — the popover used to
 //    stay up over the pick, and the first row was never in it);
 //  - ⇧-click a range; ⌘A; ⇧↓ / ⇧↑; Esc; click empty paper; "Select all N";
-//  - a slot's tasks sit under ONE header (name · span · what it holds), the
-//    ring on it picks the whole group, a finished one reads "all done", and an
-//    EMPTY slot ("Held", 3pm) is simply absent — time, not work (D-188);
+//  - a slot's tasks sit under ONE quiet label (name · span); the ring that picks
+//    the whole group shows on hover (a finger always sees it); a finished slot
+//    ("Morning pages") and an EMPTY one ("Held", 3pm) are simply absent — the
+//    label stands only over work that is still open (D-188, D-254);
 //  - on the phone: hold a row, tap more, tap a header's ring, the bar's ✕, and
 //    that a header tap opens the slot (here: a status line, the real sheet is
 //    MobileEventSheet — see ?sheets).
