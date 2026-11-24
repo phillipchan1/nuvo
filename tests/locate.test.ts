@@ -35,4 +35,16 @@ describe("locate", () => {
     expect(getLocate()).toBeNull();
     off();
   });
+
+  it("a different day or slot is a different target — the second Basketball isn't the first", () => {
+    let n = 0;
+    const off = subscribeLocate(() => n++);
+    setLocate({ taskIds: ["b"], dayISO: "2026-11-24" });
+    setLocate({ taskIds: ["b"], dayISO: "2026-11-24" });
+    setLocate({ taskIds: ["b"], dayISO: "2026-11-25" });
+    setLocate({ taskIds: [], slotIds: ["s1"], dayISO: "2026-11-25" });
+    expect(n).toBe(3);
+    setLocate(null);
+    off();
+  });
 });

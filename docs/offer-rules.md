@@ -37,7 +37,7 @@ the chips; the stack stays one press away behind the crown's line (D-207).
 |---|---|---|
 | R1 | **Only what's hard to do yourself.** Fitting several pieces into a fragmented week, finding the only gap, splitting, sizing from history, drafting tasks, naming what breaks. | One drag into an obvious gap would do it. |
 | R2 | **Says where, with the day.** The label is the destination: *Today 4:15–5pm*, *Thu 10:30–11am*, *File in Garage studio*. | A time without a day; an opinion (*Looks good*) or a placeless deferral (*Later*). |
-| R3 | **Shows where.** Hover or keyboard focus ghosts it on the grid and dims everything else to ~20%; the target day's column and header take the accent. The phone's first tap opens a sheet that draws the day. | You have to press to find out where it went. |
+| R3 | **Shows where.** (D-255: on a Get ready card, hovering the card rings the block where it is *now*; hovering its act ghosts where it goes.) Hover or keyboard focus ghosts it on the grid and dims everything else to ~20%; the target day's column and header take the accent. The phone's first tap opens a sheet that draws the day. | You have to press to find out where it went. |
 | R4 | **Says what it's built from**, in one muted line. With no history it says so and names the default ("30m is a guess"). | A number with no source, or a default dressed as a read of you (P6). |
 | R5 | **Says what it costs**: what it fills, pushes or collides with, in `--warn`. | A cost the user discovers after pressing. |
 | R6 | **Rides the row it changes.** One chip per row, quiet outline at rest, filled only under hover/focus. | A card or section of offers; an offer louder than the Today hero. |

@@ -9,6 +9,7 @@ const TODAY = "2026-11-11"; // a Wednesday
 const acts = (): ReadyActs => ({
   move: vi.fn(),
   leave: vi.fn(),
+  finish: vi.fn(),
   repairAll: vi.fn(),
   hold: vi.fn(),
   holdLoose: vi.fn(),
@@ -51,7 +52,7 @@ describe("Get ready — composeReadyCards", () => {
     expect(cards[0].primary.verb).toBe("Move to");
     expect(cards[0].primary.name).toMatch(/^Thu 9/);
     expect(cards[0].secondary?.label).toBe("Keep it there");
-    expect(cards[0].why).toMatch(/^Design sync landed on it · was Wed 10/);
+    expect(cards[0].why).toMatch(/^Was Wed 10.* · Design sync landed on it$/);
     // today's hold is spelled in the clock vocabulary, no day; the week's names its day
     expect(cards[1].primary).toMatchObject({ verb: "Schedule", name: "Today 2–2:30pm" });
     expect(cards[2].primary).toMatchObject({ verb: "Schedule", name: "Thu 10–11am" });
@@ -89,7 +90,7 @@ describe("Get ready — composeReadyCards", () => {
     const cards = composeReadyCards(input({ repairs }));
     expect(cards.filter((c) => c.kind === "repair")).toHaveLength(REPAIR_CARDS_MAX);
     expect(cards[REPAIR_CARDS_MAX]).toMatchObject({ kind: "repairAll", opensMode: "repair", primary: { verb: "Repair" } });
-    expect(cards[0].why).toMatch(/^Missed · was Wed 9/);
+    expect(cards[0].why).toMatch(/^Was Wed 9.* · missed$/);
   });
 
   it("a Not now said on a row chip holds here too — the same snooze keys", () => {
@@ -137,5 +138,44 @@ describe("Get ready — composeReadyCards", () => {
     );
     expect(cards.length).toBeGreaterThan(READY_MAX);
     expect(cards.slice(0, READY_MAX).map((c) => c.kind)).toEqual(["hold", "hold", "hold", "hold", "file"]);
+  });
+
+  it("Done is offered wherever a card stands for tasks, and finishes exactly those (D-255)", () => {
+    const a = acts();
+    const cards = composeReadyCards(
+      input({
+        acts: a,
+        repairs: [
+          { key: "r1", id: "t1", title: "Basketball", why: "meeting", event: "OE Permitting Working Session", from: at("2026-11-10", 810, 60), to: at("2026-11-12", 540, 60), projectId: null, work: ["t1"], locate: { taskIds: ["t1"], dayISO: "2026-11-10" } },
+          // an empty block has no work to finish — nothing to say Done to
+          { key: "r2", id: "s1", title: "A block", why: "missed", from: at(TODAY, 540, 60), to: at("2026-11-12", 540, 60), projectId: null },
+        ],
+        holds: [{ taskId: "h1", title: "Email Dana", projectId: null, at: at(TODAY, 840) }],
+        inbox: [{ taskId: "i1", title: "Call the vet", place: "Home", projectId: null }],
+        thin: [{ projectId: "p2", name: "Launch site", evidence: "3h held · 20m of work" }],
+        memory: { key: "m1", statement: "You stop at 4pm on Fridays", evidence: "6 of 8 weeks", consequence: "Fridays end at 4pm" },
+      }),
+    );
+    const by = (k: string) => cards.find((c) => c.key === k)!;
+    expect(by("repair:r1").done).toBeTruthy();
+    expect(by("repair:r2").done).toBeUndefined();
+    expect(by(readyKey.hold("h1")).done).toBeTruthy();
+    expect(by(readyKey.file("i1")).done).toBeTruthy();
+    // shaping and noticing cards are not tasks
+    expect(by(readyKey.path("p2")).done).toBeUndefined();
+    expect(by(readyKey.memory("m1")).done).toBeUndefined();
+    by("repair:r1").done!.run();
+    by(readyKey.hold("h1")).done!.run();
+    expect(a.finish).toHaveBeenNthCalledWith(1, ["t1"]);
+    expect(a.finish).toHaveBeenNthCalledWith(2, ["h1"]);
+  });
+
+  it("a repair says WHERE it was first, so a long meeting name can't truncate the day away (D-255)", () => {
+    const [c] = composeReadyCards(
+      input({ repairs: [{ key: "r1", id: "t1", title: "Basketball", why: "meeting", event: "OE Permitting Working Session - Requirements and the rest of a very long name", from: at("2026-11-10", 480, 60), to: at("2026-11-12", 540, 60), projectId: null, locate: { taskIds: ["t1"], dayISO: "2026-11-10" } }] }),
+    );
+    expect(c.why.startsWith("Was Tue 8")).toBe(true);
+    // the card carries what the Schedule rings, on its own day
+    expect(c.locate).toEqual({ taskIds: ["t1"], dayISO: "2026-11-10" });
   });
 });

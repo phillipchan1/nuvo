@@ -12,14 +12,22 @@
 // this mode ends (one mode at a time; no rest chips while it owns the rail —
 // LeftRail isn't mounted).
 //
-// Keys: ↵ the focused card's act · j / k move · ⌫ Not now (or Leave it where it
-// is) · Esc back to your day.
+// Pointing at a card rings the thing on the Schedule where it is NOW (D-226's
+// locate, on its own day), and pointing at its act draws where it would go (R3):
+// a repair has two places and you may not know which block it means (D-255).
+// "Done" is on every card that stands for tasks — the work happened, nobody
+// ticked it.
+//
+// Keys: ↵ the focused card's act · D done · j / k move · ⌫ Not now (or Leave it
+// where it is) · Esc back to your day.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IconButton, OfferCard } from "../kit";
 import { CardOtherTimes } from "../nuvo/OtherTimes";
 import { Icon } from "../Icon";
 import { landBlock, motionMs, motionOff } from "../../lib/motion";
+import { setLocate } from "../../lib/locate";
+import { instantAt } from "./destinations";
 import { READY_MAX, type ReadyCard } from "../../lib/readyCards";
 import PinnedCrown from "./PinnedCrown";
 import { useReadyCards } from "./useReadyCards";
@@ -84,9 +92,10 @@ export function useReadyStack(cards: readonly ReadyCard[], max = READY_MAX) {
 
   /** Run one of a card's acts; the card lands, then lets go. */
   const act = useCallback(
-    (card: ReadyCard, which: "primary" | "secondary", from: HTMLElement | null, cardEl: HTMLElement | null) => {
+    (card: ReadyCard, which: "primary" | "secondary" | "done", from: HTMLElement | null, cardEl: HTMLElement | null) => {
       if (leaving.some((l) => l.card.key === card.key)) return;
       if (which === "primary") card.primary.run(from);
+      else if (which === "done") card.done?.run();
       else card.secondary?.run();
       // A card that opens a mode doesn't leave: the mode replaces this one.
       if (which === "primary" && card.opensMode) return;
@@ -137,7 +146,7 @@ export default function GetReadyRail({
   const s = useReadyStack(cards);
   const cardEls = useRef(new Map<string, HTMLDivElement>());
 
-  const press = (card: ReadyCard, which: "primary" | "secondary", from?: HTMLElement | null) => {
+  const press = (card: ReadyCard, which: "primary" | "secondary" | "done", from?: HTMLElement | null) => {
     const el = cardEls.current.get(card.key) ?? null;
     s.act(card, which, from ?? el?.querySelector<HTMLElement>(".k-offer-card-act") ?? el, el);
   };
@@ -150,6 +159,16 @@ export default function GetReadyRail({
       if (t != null) window.clearTimeout(t);
     };
   }, [s.empty, onClose]);
+
+  // The ring follows the card under the pointer — and goes the moment that
+  // card does (acted on, snoozed), or the rail does.
+  const [pointed, setPointed] = useState<string | null>(null);
+  const pointedCard = s.visible.find((c) => c.key === pointed);
+  const ring = pointedCard && !s.lettingGo.has(pointedCard.key) ? pointedCard.locate ?? null : null;
+  useEffect(() => {
+    setLocate(ring);
+  }, [ring]);
+  useEffect(() => () => setLocate(null), []);
 
   const keys = useRef({ s, press, onClose });
   keys.current = { s, press, onClose };
@@ -168,6 +187,7 @@ export default function GetReadyRail({
       if (!f) return;
       // ↵ on a focused button belongs to that button.
       if (e.key === "Enter" && !(t && t.closest("button"))) return eat(), k.press(f, "primary");
+      if ((e.key === "d" || e.key === "D") && f.done) return eat(), k.press(f, "done");
       if (e.key === "Backspace" && f.secondary) return eat(), k.press(f, "secondary");
       if (e.key === "j" || e.key === "ArrowDown") return eat(), k.s.step(1);
       if (e.key === "k" || e.key === "ArrowUp") return eat(), k.s.step(-1);
@@ -211,6 +231,9 @@ export default function GetReadyRail({
                 leaving={s.lettingGo.has(c.key)}
                 arriving={s.arriving.has(c.key)}
                 onFocusCard={() => s.setFocusKey(c.key)}
+                onPoint={(on) => setPointed((p) => (on ? c.key : p === c.key ? null : p))}
+                preview={c.at ? { label: c.title, start: instantAt(c.at.dayISO, c.at.startMin), end: instantAt(c.at.dayISO, c.at.startMin + c.at.durationMin) } : null}
+                onDone={c.done ? () => press(c, "done") : undefined}
                 onPress={(el) => press(c, "primary", el)}
                 onNotNow={c.secondary?.label === "Not now" ? () => press(c, "secondary") : undefined}
                 secondary={c.secondary && c.secondary.label !== "Not now" ? { label: c.secondary.label, onPress: () => press(c, "secondary") } : undefined}

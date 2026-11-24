@@ -11,6 +11,8 @@ import { useState } from "react";
 import GetReadyRail, { READY_HOLD_MS } from "../src/components/plan/GetReadyRail";
 import { ReadyStackSheet } from "../src/components/mobile/MobileGetReady";
 import type { ReadyCard } from "../src/lib/readyCards";
+import { getLocate, setLocate } from "../src/lib/locate";
+import { useOfferPreview } from "../src/lib/offerPreview";
 
 vi.mock("../src/hooks/useTasks", async (orig) => ({ ...(await orig<typeof import("../src/hooks/useTasks")>()), useAllTasks: () => ({ data: [] }) }));
 
@@ -158,5 +160,52 @@ describe("Get ready — the Planner's third mode, and Rhythm's new door", () => 
     expect(pane).toMatch(/memory && rhythmOn && view !== "board" && !isYear && \(/);
     expect(planner).toMatch(/onShowOnSchedule=/);
     expect(readFileSync("src/components/memory/MemoryPage.tsx", "utf8")).toMatch(/Show on the Schedule/);
+  });
+
+  it("Done finishes the card's work without moving it, and D does the same from the keyboard (D-255)", () => {
+    const done = vi.fn();
+    const primary = vi.fn();
+    const withDone = (i: number): ReadyCard => ({ ...card(i, i === 1 ? primary : vi.fn()), done: { run: i === 1 ? done : vi.fn() } });
+    const { container } = render(<Host initial={[withDone(1), withDone(2)]} onClose={() => {}} />);
+    act(() => void fireEvent.click(screen.getAllByRole("button", { name: /^Done/ })[0]));
+    expect(done).toHaveBeenCalledTimes(1);
+    expect(primary).not.toHaveBeenCalled();
+    // a card with no tasks behind it has no Done
+    cleanup();
+    const r = render(<Host initial={[card(1)]} onClose={() => {}} />);
+    expect(r.container.textContent).not.toMatch(/Done/);
+    cleanup();
+    const keyed = vi.fn();
+    render(<Host initial={[{ ...card(1), done: { run: keyed } }]} onClose={() => {}} />);
+    act(() => void fireEvent.keyDown(window, { key: "d" }));
+    expect(keyed).toHaveBeenCalledTimes(1);
+    void container;
+  });
+
+  it("pointing at a card rings where it is now, on its day — and lets go when the pointer does (D-255)", () => {
+    const ring = { taskIds: ["t1"], dayISO: "2026-11-24" };
+    const { container } = render(<Host initial={[{ ...card(1), locate: ring }, card(2)]} onClose={() => {}} />);
+    const first = container.querySelector(".k-offer-card") as HTMLElement;
+    act(() => void fireEvent.pointerEnter(first, { pointerType: "mouse" }));
+    expect(getLocate()).toEqual(ring);
+    act(() => void fireEvent.pointerLeave(first, { pointerType: "mouse" }));
+    expect(getLocate()).toBeNull();
+    setLocate(null);
+  });
+
+  it("pointing at a card's act draws where it would land, and clears when you move off (R3, D-255)", () => {
+    const Probe = () => <span data-probe>{useOfferPreview()?.label ?? "none"}</span>;
+    const at = { dayISO: "2026-11-26", startMin: 840, durationMin: 60 };
+    const { container } = render(
+      <>
+        <Host initial={[{ ...card(1), at }]} onClose={() => {}} />
+        <Probe />
+      </>,
+    );
+    const act1 = container.querySelector(".k-offer-card-act") as HTMLElement;
+    act(() => void fireEvent.pointerEnter(act1, { pointerType: "mouse" }));
+    expect(container.querySelector("[data-probe]")?.textContent).toBe("Task 1");
+    act(() => void fireEvent.pointerLeave(act1, { pointerType: "mouse" }));
+    expect(container.querySelector("[data-probe]")?.textContent).toBe("none");
   });
 });

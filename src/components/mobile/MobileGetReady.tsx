@@ -29,10 +29,10 @@ export function ReadyStackSheet({ cards, onClose }: { cards: readonly ReadyCard[
     return () => window.clearTimeout(t);
   }, [s.empty, onClose]);
 
-  const press = (c: ReadyCard, which: "primary" | "secondary", el: HTMLElement | null) => {
+  const press = (c: ReadyCard, which: "primary" | "secondary" | "done", el: HTMLElement | null) => {
     // An act that changes your week lands with a success tap (D-207 §6); one
     // that only opens a mode or a record is a light tap; Not now is a tick.
-    haptic(which === "primary" ? (c.opensMode || c.kind === "path" ? "light" : "success") : "selection");
+    haptic(which === "secondary" ? "selection" : which === "done" ? "success" : c.opensMode || c.kind === "path" ? "light" : "success");
     s.act(c, which, el, el?.closest<HTMLElement>(".k-offer-card") ?? null);
   };
 
@@ -57,6 +57,7 @@ export function ReadyStackSheet({ cards, onClose }: { cards: readonly ReadyCard[
                   arriving={s.arriving.has(c.key)}
                   onPress={(el) => press(c, "primary", el)}
                   onNotNow={c.secondary?.label === "Not now" ? () => press(c, "secondary", null) : undefined}
+                  onDone={c.done ? () => press(c, "done", null) : undefined}
                   secondary={
                     c.secondary && c.secondary.label !== "Not now"
                       ? { label: c.secondary.label, onPress: () => press(c, "secondary", null) }

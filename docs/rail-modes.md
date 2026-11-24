@@ -101,6 +101,7 @@ the label. Long names truncate the name, never the verb.
 | Later J | **Look at it last** J | the walk | moves on; this block waits at the end of the line |
 | Take it ✓ | **Move to Wed 9–10am** ↵ | repair | moves the block to the composer's fit |
 | Leave it ✕ | **Leave it where it is** | repair | leaves the block in place |
+| (new, D-255) | **Done** D | any card that stands for tasks | finishes the card's tasks (with Undo); a repair's block where nobody ticked it |
 | Skip this week | **Back to <project>** | the walk's no-fit prompt | as above |
 | (inbox) | **File in <guess>** · **Into this week** · **File…** | inbox rows, at rest | the router's guess; the week, no time yet; pick |
 

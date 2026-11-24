@@ -43,6 +43,10 @@ export interface Repair {
   leftover?: Task[];
   /** `leftover`: how long the moved work needs (`from` stays the block's own span) */
   moveMin?: number;
+  /** The undone work this block stands for — what "Done" finishes when it
+   *  happened and nobody ticked it (D-255). A task: itself; a block: what's
+   *  still open inside; none for an empty block. */
+  work?: Task[];
 }
 
 const minsOf = (d: Date) => d.getHours() * 60 + d.getMinutes();
@@ -182,11 +186,11 @@ export function useWeekRepair({
         // Ended undone. It counts as missed once the kernel says so (D-207) —
         // a block you're finishing late isn't flagged mid-act.
         if (isMissed(e.getTime(), at.getTime(), nextStartAfter(e.getTime())))
-          broken.push({ key: `task:${t.id}@${t.start_time}`, kind: "task", id: t.id, title: t.title, why: "missed", from, task: t });
+          broken.push({ key: `task:${t.id}@${t.start_time}`, kind: "task", id: t.id, title: t.title, why: "missed", from, task: t, work: [t] });
         continue;
       }
       const m = meetingOn(s, e, t.updated_at);
-      if (m) broken.push({ key: `task:${t.id}@${t.start_time}`, kind: "task", id: t.id, title: t.title, why: "landed", event: m.title || "A meeting", from, task: t });
+      if (m) broken.push({ key: `task:${t.id}@${t.start_time}`, kind: "task", id: t.id, title: t.title, why: "landed", event: m.title || "A meeting", from, task: t, work: [t] });
     }
     for (const sl of slots) {
       if (!sl.start_time) continue;
@@ -207,27 +211,29 @@ export function useWeekRepair({
         const whole = !sl.recurrence_id && undone.length === inside.length;
         const at0 = { dayISO: toDateISO(s), startMin: minsOf(s) };
         if (whole) {
-          broken.push({ key: `slot:${sl.id}@${sl.start_time}`, kind: "slot", id: sl.id, title: name, why: "missed", from: { ...at0, durationMin: sl.duration_minutes }, slot: sl });
+          broken.push({ key: `slot:${sl.id}@${sl.start_time}`, kind: "slot", id: sl.id, title: name, why: "missed", from: { ...at0, durationMin: sl.duration_minutes }, slot: sl, work: undone });
         } else {
           const need = undone.reduce((n, t) => n + (t.duration_minutes ?? 30), 0);
           const durationMin = Math.max(15, Math.min(sl.duration_minutes, Math.ceil(need / 15) * 15));
           const left = undone.length === 1 ? undone[0].title : `Rest of ${sl.title || "a block"}`;
-          broken.push({ key: `left:${sl.id}@${sl.start_time}`, kind: "leftover", id: undone.length === 1 ? undone[0].id : sl.id, title: left, why: "missed", from: { ...at0, durationMin: sl.duration_minutes }, moveMin: durationMin, slot: sl, leftover: undone });
+          broken.push({ key: `left:${sl.id}@${sl.start_time}`, kind: "leftover", id: undone.length === 1 ? undone[0].id : sl.id, title: left, why: "missed", from: { ...at0, durationMin: sl.duration_minutes }, moveMin: durationMin, slot: sl, leftover: undone, work: undone });
         }
         continue;
       }
       if (sl.recurrence_id) continue; // a standing block keeps its hour
       const m = meetingOn(s, e, sl.updated_at);
+      const open = tasks.filter((t) => t.slot_id === sl.id && t.status !== "trashed" && t.status !== "done");
       if (m)
         broken.push({
           key: `slot:${sl.id}@${sl.start_time}`,
           kind: "slot",
           id: sl.id,
-          title: blockName(sl, tasks.filter((t) => t.slot_id === sl.id && t.status !== "trashed" && t.status !== "done")),
+          title: blockName(sl, open),
           why: "landed",
           event: m.title || "A meeting",
           from: { dayISO: toDateISO(s), startMin: minsOf(s), durationMin: sl.duration_minutes },
           slot: sl,
+          work: open,
         });
     }
     if (!broken.length) return [];

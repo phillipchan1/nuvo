@@ -1,4 +1,5 @@
-import { forwardRef, type ReactNode } from "react";
+import { forwardRef, useEffect, useId, type ReactNode } from "react";
+import { clearOfferPreview, showOfferPreview } from "../../lib/offerPreview";
 import { Icon } from "../Icon";
 import { Button, Dest, IconButton } from "./Button";
 import { cx } from "./cx";
@@ -38,13 +39,28 @@ export interface OfferCardProps {
   /** under a finger: 44px acts, Not now said as text in the footer */
   touch?: boolean;
   onFocusCard?: () => void;
+  /** "It's already done" — a text act, so it is findable, not guessed (D-255) */
+  onDone?: () => void;
+  /** Pointing at the act draws where it would land on the Schedule and dims
+   *  the rest (R3). Nothing is written. */
+  preview?: { label: string; start: Date; end: Date } | null;
+  /** The pointer or keyboard focus is on the card (true) or left it (false):
+   *  the host rings where the thing is now */
+  onPoint?: (on: boolean) => void;
 }
 
 export const OfferCard = forwardRef<HTMLDivElement, OfferCardProps>(function OfferCard(
-  { title, why, verb, name, shortcut, onPress, onNotNow, secondary, other, focused, leaving, arriving, touch, onFocusCard },
+  { title, why, verb, name, shortcut, onPress, onNotNow, secondary, other, focused, leaving, arriving, touch, onFocusCard, onDone, preview, onPoint },
   ref,
 ) {
   const tap = touch ? "tap" : undefined;
+  const previewId = useId();
+  const showPreview = () => {
+    if (preview) showOfferPreview({ id: previewId, ...preview });
+  };
+  const hidePreview = () => clearOfferPreview(previewId);
+  // A card that goes (acted on, re-rendered away) takes its picture with it.
+  useEffect(() => () => clearOfferPreview(previewId), [previewId]);
   return (
     <div
       ref={ref}
@@ -57,6 +73,16 @@ export const OfferCard = forwardRef<HTMLDivElement, OfferCardProps>(function Off
       data-arriving={arriving || undefined}
       data-touch={touch || undefined}
       onPointerDown={onFocusCard}
+      onPointerEnter={(e) => {
+        if (e.pointerType === "mouse") onPoint?.(true);
+      }}
+      onPointerLeave={() => onPoint?.(false)}
+      onFocus={(e) => {
+        if (e.target.matches(":focus-visible")) onPoint?.(true);
+      }}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) onPoint?.(false);
+      }}
     >
       <div className="k-offer-card-head">
         <span className="k-offer-card-title" title={title}>
@@ -75,7 +101,18 @@ export const OfferCard = forwardRef<HTMLDivElement, OfferCardProps>(function Off
           size={touch ? "md" : "sm"}
           className={cx("k-offer-card-act", tap)}
           shortcut={focused && !touch ? shortcut : undefined}
-          onClick={(e) => onPress(e.currentTarget)}
+          onClick={(e) => {
+            hidePreview();
+            onPress(e.currentTarget);
+          }}
+          onPointerEnter={(e) => {
+            if (e.pointerType === "mouse") showPreview();
+          }}
+          onPointerLeave={hidePreview}
+          onFocus={(e) => {
+            if (e.currentTarget.matches(":focus-visible")) showPreview();
+          }}
+          onBlur={hidePreview}
         >
           {name ? <Dest verb={verb} name={name} /> : verb}
         </Button>
@@ -83,6 +120,21 @@ export const OfferCard = forwardRef<HTMLDivElement, OfferCardProps>(function Off
         {secondary && (
           <Button kind="ghost" size={touch ? "md" : "sm"} className={tap} shortcut={focused && !touch && !onNotNow ? "⌫" : undefined} onClick={secondary.onPress}>
             {secondary.label}
+          </Button>
+        )}
+        {onDone && (
+          <Button
+            kind="ghost"
+            size={touch ? "md" : "sm"}
+            className={tap}
+            icon={<Icon name="check" size={12} />}
+            shortcut={focused && !touch ? "D" : undefined}
+            onClick={() => {
+              hidePreview();
+              onDone();
+            }}
+          >
+            Done
           </Button>
         )}
         {onNotNow && touch && (

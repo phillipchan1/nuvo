@@ -2270,10 +2270,11 @@ function CalendarPane({
     const t = getLocate();
     if (!t) return;
     const ids = new Set(t.taskIds);
-    const slotIds = new Set(t.taskIds.map((id) => findTask(id)?.slot_id).filter((s): s is string => !!s));
+    const slotIds = new Set([...t.taskIds.map((id) => findTask(id)?.slot_id).filter((s): s is string => !!s), ...(t.slotIds ?? [])]);
     const lit: HTMLElement[] = [];
     for (const el of pane.querySelectorAll<HTMLElement>(".fc-event[data-task-id], .fc-event[data-slot-id]")) {
       if (el.hasAttribute(DRAG_MIRROR_ATTR)) continue;
+      if (t.dayISO && el.closest<HTMLElement>("[data-date]")?.getAttribute("data-date") !== t.dayISO) continue;
       const taskId = el.getAttribute("data-task-id");
       const slotId = el.getAttribute("data-slot-id");
       const on = taskId

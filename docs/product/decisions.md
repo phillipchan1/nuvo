@@ -9975,3 +9975,38 @@ nor the spine.
 ring, picking selects the group, bulk bar up) and `?rail=phone` at 375px (44px label, no
 horizontal overflow). Not run: `npm run perf`, the live Schedule with real data. D-178's
 "a finished slot reads all done" line is superseded.*
+
+**D-255 · 2026-11-24 · A Get ready card can say "Done", and a repair says where its block is.**
+*(Reported by the operator on the Schedule: "Does it give me an option to mark as complete? A lot of
+times I'm not up to date, and sometimes everybody actually finished this." and "I don't know which
+date it's referring to — I have basketball Tuesday and Wednesday, so I'm not sure which one is
+flagging.")*
+
+→ **Finding first.** Every Get ready card assumed the work had *not* happened: Move to, Schedule,
+Keep it there, Not now. For a person who is behind on ticking, a missed block is usually a finished
+one, and the only honest answer ("it's done") had no button. Second: the evidence line read
+*"<meeting> landed on it · was Wed 8–9am"*, and the line truncates from the right — a long meeting
+name ate the day, so two same-named blocks on two days were indistinguishable.
+
+→ **Done.** `ReadyCard.done`, present on every card that stands for tasks (a repair with undone work
+inside it, a hold, a loose slate piece, an inbox capture) and absent on cards about shaping or
+noticing (a thin path, a Memory read). It finishes exactly the tasks the card stands for
+(`Repair.work`), with the ordinary `complete` and its Undo toast (one toast for a block's several).
+`D` on the focused card; a text act, not an icon, so it is found rather than guessed. It is not a
+fourth way to "get ready" — it is the first card verb about the past.
+
+→ **Where.** The evidence line leads with where: *"Was Wed 8–9am · <meeting> landed on it"*. Pointing
+at a card rings the block where it is **now** on the Schedule, on its own day (`LocateTarget.dayISO`,
+`slotIds` — D-226's locate), and pointing at the card's act draws where it would **go** (R3, which
+chips had and cards did not). Nothing is written by either (P3).
+
+**Anchor.** Serves **W3** (what breaks) and **A2** (what's about to blow up), honestly: a break that
+isn't one stops asking. Strains **P8** (say it once) lightly — a fourth control on a repair card —
+held by Done being the only one that is new. Four no's: no pool, no new name (*Done* is the app's own
+word), nothing that needs clean data (it is what you do *because* the data is behind), nothing tuned
+to one account.
+
+*Status: built 2026-11-24 on `claude/ready-card-done-and-locate` — `tests/ready-cards.test.ts`,
+`get-ready-rail.test.tsx`, `locate.test.ts`. Driven in the Get ready harness (`?rail=ready`,
+`?rail=ready-phone` at 375px: Done at 44px, no overflow). **Not driven on the live Schedule** — the
+ring and the day filter in `CalendarPane` have no test and were not seen on a real grid.*

@@ -17,6 +17,11 @@ export interface LocateTarget {
   taskIds: string[];
   /** a project: every block of its work, and its own sittings */
   projectId?: string | null;
+  /** slots (sittings) to find by their own id — a block with no task to name */
+  slotIds?: string[];
+  /** only the blocks on this day: a card that says "Basketball, Wed" must not
+   *  ring Tuesday's Basketball too (D-255) */
+  dayISO?: string;
 }
 
 let current: LocateTarget | null = null;
@@ -24,7 +29,13 @@ const listeners = new Set<() => void>();
 
 const same = (a: LocateTarget | null, b: LocateTarget | null) =>
   a === b ||
-  (!!a && !!b && a.projectId === b.projectId && a.taskIds.length === b.taskIds.length && a.taskIds.every((id, i) => id === b.taskIds[i]));
+  (!!a &&
+    !!b &&
+    a.projectId === b.projectId &&
+    a.dayISO === b.dayISO &&
+    a.taskIds.length === b.taskIds.length &&
+    a.taskIds.every((id, i) => id === b.taskIds[i]) &&
+    (a.slotIds ?? []).join("|") === (b.slotIds ?? []).join("|"));
 
 export function setLocate(t: LocateTarget | null): void {
   if (same(current, t)) return;

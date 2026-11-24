@@ -29,6 +29,7 @@ export function useHarnessReadyCards(say: (s: string) => void) {
       move: (k) => (say(`moved ${k}`), gone(`repair:${k}`)),
       moveAt: (k, at) => (say(`moved ${k} to ${at.dayISO} ${at.startMin}m`), gone(`repair:${k}`)),
       leave: (k) => (say(`left ${k}`), gone(`repair:${k}`)),
+      finish: (ids) => (say(`done ${ids.join(", ")}`), ids.forEach((id) => setDone((d) => new Set(d).add(`hold:${id}`)))),
       repairAll: () => say("→ Repair mode"),
       hold: (id) => (say(`held ${id}`), gone(`hold:${id}`)),
       holdLoose: (id) => (say(`held ${id} (into the week)`), gone(`loose:${id}`)),
@@ -53,6 +54,8 @@ export function useHarnessReadyCards(say: (s: string) => void) {
           from: { dayISO: today, startMin: 600, durationMin: 60 },
           to: { dayISO: day(1), startMin: 540, durationMin: 60 },
           projectId: "p1",
+          work: ["t-pricing"],
+          locate: { taskIds: ["t-pricing"], dayISO: today },
         },
       ],
       holds: [

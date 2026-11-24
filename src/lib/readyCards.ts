@@ -30,6 +30,7 @@ import { instantAt, whereSpan } from "../components/plan/destinations";
 import { at, span } from "../components/mobile/dayPlan";
 import { parseDateISO } from "./dates";
 import { blocks, lineFrom, type CrownLineData, type LineCard } from "./crownLine";
+import type { LocateTarget } from "./locate";
 
 export type ReadyKind = "repair" | "repairAll" | "hold" | "loose" | "plan" | "file" | "path" | "memory" | "risk" | "shape" | "crowd";
 
@@ -78,6 +79,13 @@ export interface ReadyCard {
   /** hold the card's task at a time chosen in Other times instead (R13) — the
    *  same write as `primary`, at another place */
   placeAt?: (at: Where, from: HTMLElement | null) => void;
+  /** "It's done — nobody ticked it" (D-255): finishes the card's work. Present
+   *  only when the card stands for tasks; a card about shaping has none. */
+  done?: { run: () => void };
+  /** Where the thing is now: pointing at the card rings it on the Schedule
+   *  (D-226's locate) — a repair has two places, and the act's own preview
+   *  shows only the second (D-255) */
+  locate?: LocateTarget;
 }
 
 export interface ReadyActs {
@@ -85,6 +93,8 @@ export interface ReadyActs {
   /** a broken block moved to a time chosen in Other times instead (R13) */
   moveAt?: (repairKey: string, at: Where, from: HTMLElement | null) => void;
   leave: (repairKey: string) => void;
+  /** Finish tasks that were done in life but never ticked (D-255) */
+  finish: (taskIds: string[]) => void;
   repairAll: () => void;
   hold: (taskId: string, from: HTMLElement | null) => void;
   holdLoose: (taskId: string, from: HTMLElement | null) => void;
@@ -111,6 +121,10 @@ export interface ReadyInput {
     /** the composer's fit */
     to: Where;
     projectId: string | null;
+    /** the undone tasks "Done" would finish — none, no Done */
+    work?: readonly string[];
+    /** how to find the broken block on the grid */
+    locate?: LocateTarget;
   }[];
   /** today's tasks with no time, each with Find time's fit */
   holds?: readonly { taskId: string; title: string; projectId: string | null; at: Where }[];
@@ -166,7 +180,9 @@ export function composeReadyCards(input: ReadyInput): ReadyCard[] {
       key: `repair:${r.key}`,
       kind: "repair",
       title: r.title,
-      why: `${r.why === "missed" ? "Missed" : `${r.event || "A meeting"} landed on it`} · was ${whereSpan(r.from)}`,
+      // Where it was leads: the line truncates from the right, and a long
+      // meeting name used to eat the day — two Basketballs, no way to tell which (D-255)
+      why: `Was ${whereSpan(r.from)} · ${r.why === "missed" ? "missed" : `${r.event || "A meeting"} landed on it`}`,
       primary: { verb: "Move to", name: whereSpan(r.to), run: (el) => acts.move(r.key, el) },
       at: r.to,
       // Other times asks the composer about this block — a task, or a sitting
@@ -174,6 +190,8 @@ export function composeReadyCards(input: ReadyInput): ReadyCard[] {
       taskId: r.id ?? undefined,
       placeAt: acts.moveAt ? (at, el) => acts.moveAt!(r.key, at, el) : undefined,
       secondary: { label: "Keep it there", run: () => acts.leave(r.key) },
+      done: r.work?.length ? { run: () => acts.finish([...r.work!]) } : undefined,
+      locate: r.locate,
       projectId: r.projectId,
     });
   }
@@ -203,6 +221,7 @@ export function composeReadyCards(input: ReadyInput): ReadyCard[] {
       at: h.at,
       taskId: h.taskId,
       placeAt: (at, el) => acts.placeAt(h.taskId, at, el, false),
+      done: { run: () => acts.finish([h.taskId]) },
       secondary: notNow(readyKey.hold(h.taskId)),
       projectId: h.projectId,
     });
@@ -224,6 +243,7 @@ export function composeReadyCards(input: ReadyInput): ReadyCard[] {
       at: l.at,
       taskId: l.taskId,
       placeAt: (at, el) => acts.placeAt(l.taskId, at, el, true),
+      done: { run: () => acts.finish([l.taskId]) },
       secondary: notNow(readyKey.loose(l.taskId)),
       projectId: l.projectId,
     });
@@ -253,6 +273,7 @@ export function composeReadyCards(input: ReadyInput): ReadyCard[] {
       title: f.title,
       why: "In the inbox",
       primary: { verb: "Add to", name: f.place, run: (el) => acts.file(f.taskId, el) },
+      done: { run: () => acts.finish([f.taskId]) },
       secondary: notNow(readyKey.file(f.taskId)),
       projectId: f.projectId,
     });

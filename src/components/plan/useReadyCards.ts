@@ -20,6 +20,7 @@
 // rest, agree about where everything goes.
 
 import { useMemo, useRef } from "react";
+import { toast } from "sonner";
 import { useWeekCrown } from "../../hooks/useWeekCrown";
 import { useDayTasks, useInboxTasks, type useTaskMutations } from "../../hooks/useTasks";
 import { useTodayHolds } from "../../hooks/useFindTime";
@@ -159,6 +160,10 @@ export function useReady({
           from: r.from,
           to: { dayISO: fit.dayISO, startMin: fit.startMin, durationMin: fit.durationMin },
           projectId: r.task?.project_id ?? r.slot?.project_id ?? null,
+          work: r.work?.map((t) => t.id),
+          // the block as it stands NOW — on its own day, so a second Basketball
+          // on another day is left alone
+          locate: r.kind === "task" ? { taskIds: [r.id], dayISO: r.from.dayISO } : { taskIds: [], slotIds: r.slot ? [r.slot.id] : [], dayISO: r.from.dayISO },
         };
       }),
       holds: holdPool.flatMap((t) => {
@@ -199,6 +204,23 @@ export function useReady({
           const rs = L().repairState;
           const r = rs?.open.find((x) => x.key === key);
           if (rs && r) rs.leave(r);
+        },
+        finish: (ids) => {
+          const { pool: ps, inbox: ib, repairState: rs, mutations: m } = L();
+          const known = new Map<string, Task>();
+          for (const t of [...ps, ...ib]) known.set(t.id, t);
+          for (const r of rs?.open ?? []) for (const t of r.work ?? []) known.set(t.id, t);
+          const tasks = ids.flatMap((id) => known.get(id) ?? []);
+          if (!tasks.length) return;
+          // One task: the ordinary complete, with its own Undo toast. Several
+          // (a block's whole leftover): quiet writes and ONE toast that undoes
+          // them all.
+          if (tasks.length === 1) {
+            m.complete(tasks[0], { undo: "toast", label: `Done — ${tasks[0].title}` });
+            return;
+          }
+          for (const t of tasks) m.complete(t, { undo: false });
+          toast(`Done — ${tasks.length} tasks`, { action: { label: "Undo", onClick: () => tasks.forEach((t) => m.uncomplete(t, { undo: false })) } });
         },
         repairAll: () => L().onRepair?.(),
         hold: (id, from) => placeTask(id, from, false),

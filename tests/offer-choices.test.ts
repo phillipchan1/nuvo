@@ -60,7 +60,7 @@ describe("your own pick (R13)", () => {
 
 describe("no time offers for this project (R8)", () => {
   const noop = () => {};
-  const acts = { move: noop, leave: noop, repairAll: noop, hold: noop, holdLoose: noop, placeAt: noop, planWeek: noop, file: noop, draftPath: noop, keep: noop, notNow: noop } as ReadyActs;
+  const acts = { move: noop, leave: noop, finish: noop, repairAll: noop, hold: noop, holdLoose: noop, placeAt: noop, planWeek: noop, file: noop, draftPath: noop, keep: noop, notNow: noop } as ReadyActs;
   const loose = [{ taskId: "t1", title: "Runbook", projectId: "p1", projectName: "Security", at: at(TUE, 16, 15) }];
   it("a project-wide no hides its loose cards; the card can be held elsewhere", () => {
     const shown = composeReadyCards({ todayISO: TUE, loose, acts });
