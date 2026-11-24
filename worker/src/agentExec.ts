@@ -118,8 +118,13 @@ export async function buildSnapshot(
       slot_id: String(t.slot_id),
     }));
   const slotSummaries = buildSlotSummaries(slots, slotChildren, zone, nowMs);
-  const todaySchedule = buildDaySchedule(visibleEvents, scheduled, slotSummaries, today);
-  const todayOpenWindows = computeOpenWindows(visibleEvents, scheduled, slotSummaries, today, nowMs, zone);
+  // A finished task no longer holds its time: it drops out of today's schedule and
+  // frees its window. (`scheduled` below still lists it, with its status.)
+  const busyScheduled = tasks
+    .filter((t) => t.start_time && t.status === "planned")
+    .map((t) => fmtTask(t, today, nowMs, zone));
+  const todaySchedule = buildDaySchedule(visibleEvents, busyScheduled, slotSummaries, today);
+  const todayOpenWindows = computeOpenWindows(visibleEvents, busyScheduled, slotSummaries, today, nowMs, zone);
 
   const week = weekRead(tasks, projects, sprints, today, nowMs, zone);
 

@@ -76,6 +76,36 @@ describe("the Worker's snapshot carries the week", () => {
     expect((ctx.weekPool as { id: string }[]).map((t) => t.id).sort()).toEqual(["a", "f"]);
   });
 
+  it("completed and trashed tasks leave todaySchedule and free their time in todayOpenWindows", async () => {
+    // now = 10:00 PST; meetings 09:00-10:00 and 13:00-14:00 bracket the day.
+    const ev = (id: string, s: string, e: string) => ({
+      id, title: id, start_at: s, end_at: e, all_day: false, busy: true, calendar_id: "c", account_id: "a",
+      provider_event_id: id, recurring_event_id: null,
+    });
+    const store = fakeStore({
+      external_events: [ev("m1", "2026-11-18T17:00:00Z", "2026-11-18T18:00:00Z"), ev("m2", "2026-11-18T21:00:00Z", "2026-11-18T22:00:00Z")],
+      tasks: [
+        // 11:00-11:30 PST, done: must not read as busy
+        task({ id: "2f4308db", status: "done", start_time: "2026-11-18T19:00:00Z", do_date: "2026-11-18" }),
+        task({ id: "gone", status: "trashed", start_time: "2026-11-18T19:30:00Z", do_date: "2026-11-18" }),
+      ],
+    });
+    const ctx = await buildSnapshot(store, undefined, undefined, "America/Los_Angeles");
+    expect((ctx.todaySchedule as { id: string }[]).map((i) => i.id)).toEqual(["m1", "m2"]);
+    const w = ctx.todayOpenWindows as { startISO: string; endISO: string; minutes: number }[];
+    expect(w).toHaveLength(1);
+    expect([w[0].startISO, w[0].endISO, w[0].minutes]).toEqual(["2026-11-18T18:00:00.000Z", "2026-11-18T21:00:00.000Z", 180]);
+
+    // control: the same task still planned does hold its time
+    store.sql = fakeStore({
+      external_events: [ev("m1", "2026-11-18T17:00:00Z", "2026-11-18T18:00:00Z"), ev("m2", "2026-11-18T21:00:00Z", "2026-11-18T22:00:00Z")],
+      tasks: [task({ id: "2f4308db", status: "planned", start_time: "2026-11-18T19:00:00Z", do_date: "2026-11-18" })],
+    }).sql;
+    const ctx2 = await buildSnapshot(store, undefined, undefined, "America/Los_Angeles");
+    expect((ctx2.todaySchedule as { id: string }[]).map((i) => i.id)).toContain("2f4308db");
+    expect((ctx2.todayOpenWindows as unknown[]).length).toBe(2);
+  });
+
   it("an empty account reads an empty week — at the planning week, not today", async () => {
     const ctx = await buildSnapshot(fakeStore({}), undefined, undefined, "America/Los_Angeles");
     expect(ctx.weekStart).toBe(WEEK);
