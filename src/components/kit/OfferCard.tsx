@@ -41,6 +41,8 @@ export interface OfferCardProps {
   onFocusCard?: () => void;
   /** "It's already done" — a text act, so it is findable, not guessed (D-255) */
   onDone?: () => void;
+  /** the word for it when it isn't "Done" — "Ship it…" (D-256) */
+  doneLabel?: string;
   /** Pointing at the act draws where it would land on the Schedule and dims
    *  the rest (R3). Nothing is written. */
   preview?: { label: string; start: Date; end: Date } | null;
@@ -50,7 +52,7 @@ export interface OfferCardProps {
 }
 
 export const OfferCard = forwardRef<HTMLDivElement, OfferCardProps>(function OfferCard(
-  { title, why, verb, name, shortcut, onPress, onNotNow, secondary, other, focused, leaving, arriving, touch, onFocusCard, onDone, preview, onPoint },
+  { title, why, verb, name, shortcut, onPress, onNotNow, secondary, other, focused, leaving, arriving, touch, onFocusCard, onDone, doneLabel, preview, onPoint },
   ref,
 ) {
   const tap = touch ? "tap" : undefined;
@@ -134,7 +136,7 @@ export const OfferCard = forwardRef<HTMLDivElement, OfferCardProps>(function Off
               onDone();
             }}
           >
-            Done
+            {doneLabel ?? "Done"}
           </Button>
         )}
         {onNotNow && touch && (

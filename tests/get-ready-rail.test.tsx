@@ -208,4 +208,12 @@ describe("Get ready — the Planner's third mode, and Rhythm's new door", () => 
     act(() => void fireEvent.pointerLeave(act1, { pointerType: "mouse" }));
     expect(container.querySelector("[data-probe]")?.textContent).toBe("none");
   });
+
+  it("an act that opens the ship assessment keeps the card, so a cancel doesn't cost it (D-256)", () => {
+    const ship = vi.fn();
+    const { container } = render(<Host initial={[{ ...card(1), done: { label: "Ship it…", opens: true, run: ship } }, card(2)]} onClose={() => {}} />);
+    act(() => void fireEvent.click(screen.getByRole("button", { name: /^Ship it…/ })));
+    expect(ship).toHaveBeenCalledTimes(1);
+    expect(titles(container)).toEqual(["Task 1", "Task 2"]);
+  });
 });

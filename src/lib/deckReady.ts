@@ -34,9 +34,20 @@ export interface DeckActs {
   draftProjects?: (initiativeId: string, from: HTMLElement | null) => void;
   /** write a drafted outcome onto the project */
   setOutcome?: (projectId: string, outcome: string, from: HTMLElement | null) => void;
-  /** move the project to the week the card names (the drag's own write) */
-  move?: (projectId: string, from: HTMLElement | null) => void;
+  /** move the project to the week — or the bet to the quarter — the card names
+   *  (the drag's own write) */
+  move?: (id: string, from: HTMLElement | null) => void;
+  /** open the ship assessment — shipping is a judgment, so this never writes (D-256) */
+  ship?: (projectId: string) => void;
+  /** park the record (status "waiting"), with an Undo */
+  park?: (id: string) => void;
+  /** a bet's own completion */
+  complete?: (initiativeId: string) => void;
 }
+
+/** Park it — a state, said in words (D-256). */
+const parkAct = (acts: DeckActs, id: string): ReadyCard["secondary"] =>
+  acts.park ? { label: "Park it", run: () => acts.park!(id) } : undefined;
 
 /** A ✦ outcome draft for a project with none — fetched when Get ready opens. */
 export type OutcomeDraft = { state: "loading" } | { state: "ready"; text: string } | { state: "error" };
@@ -65,6 +76,7 @@ export interface ProjectDeckFact {
 const RANK = { risk: 0, crowd: 1, path: 2, shape: 3, fit: 4 } as const;
 
 export function projectDeckCards(facts: readonly ProjectDeckFact[], acts: DeckActs): ReadyCard[] {
+  const parkOf = (id: string) => parkAct(acts, id);
   const open = (f: ProjectDeckFact): ReadyAct => ({ verb: "Open", name: f.name, run: () => acts.open(f.id) });
   const draft = (f: ProjectDeckFact): ReadyAct => ({ verb: "Suggest tasks", run: () => acts.draftPath(f.id) });
   const move = (f: ProjectDeckFact): ReadyAct | null =>
@@ -75,7 +87,17 @@ export function projectDeckCards(facts: readonly ProjectDeckFact[], acts: DeckAc
 
   for (const f of facts) {
     if (f.overdueDays && f.overdueDays > 0) {
-      add("risk", f, { key: `deck:overdue:${f.id}`, kind: "risk", why: `${f.overdueDays}d overdue · ${f.weekLabel}`, primary: open(f) });
+      // An overdue project is late, finished, or no longer wanted — a card that
+      // only said "Open" could answer none of the three (D-256). Reschedule it
+      // to the nearest week with room; or say it shipped; or park it.
+      add("risk", f, {
+        key: `deck:overdue:${f.id}`,
+        kind: "risk",
+        why: `${f.overdueDays}d overdue · ${f.weekLabel}`,
+        primary: move(f) ?? open(f),
+        done: acts.ship ? { label: "Ship it…", opens: true, run: () => acts.ship!(f.id) } : undefined,
+        secondary: parkOf(f.id),
+      });
     } else if (f.crowded && move(f)) {
       add("crowd", f, {
         key: `deck:crowd:${f.id}`,
@@ -123,6 +145,9 @@ export interface InitiativeDeckFact {
   stateWord: string | null;
   /** the deck can draft this bet's projects (`canDraftProjects`) */
   canDraft?: boolean;
+  /** the next quarter it could move to, in words ("next quarter") — bets are
+   *  thought of in quarters, never dates (D-256) */
+  moveTo?: { label: string } | null;
 }
 
 export function initiativeDeckCards(facts: readonly InitiativeDeckFact[], acts: DeckActs): ReadyCard[] {
@@ -143,8 +168,12 @@ export function initiativeDeckCards(facts: readonly InitiativeDeckFact[], acts: 
         kind: "risk",
         title: f.name,
         why: f.overdue ? `Overdue · ${f.quarterLabel}` : `At risk: ${f.risk}`,
-        primary: fix(f),
-        secondary: f.canDraft && acts.draftProjects ? { label: `Open ${f.name}`, run: () => acts.open(f.id) } : undefined,
+        // Overdue is a schedule fact, so its answer is a quarter; "at risk" is
+        // about what's under it, so its answer stays Suggest projects / Open
+        primary: f.overdue && f.moveTo && acts.move ? { verb: "Move to", name: f.moveTo.label, run: (el) => acts.move!(f.id, el) } : fix(f),
+        // a bet at risk is late, done, or no longer wanted, like a project (D-256)
+        done: acts.complete ? { label: "Mark complete", run: () => acts.complete!(f.id) } : undefined,
+        secondary: parkAct(acts, f.id) ?? (f.canDraft && acts.draftProjects ? { label: `Open ${f.name}`, run: () => acts.open(f.id) } : undefined),
         projectId: null,
       });
   for (const f of near)

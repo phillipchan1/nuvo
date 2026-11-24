@@ -58,6 +58,7 @@ export function ReadyStackSheet({ cards, onClose }: { cards: readonly ReadyCard[
                   onPress={(el) => press(c, "primary", el)}
                   onNotNow={c.secondary?.label === "Not now" ? () => press(c, "secondary", null) : undefined}
                   onDone={c.done ? () => press(c, "done", null) : undefined}
+                  doneLabel={c.done?.label}
                   secondary={
                     c.secondary && c.secondary.label !== "Not now"
                       ? { label: c.secondary.label, onPress: () => press(c, "secondary", null) }

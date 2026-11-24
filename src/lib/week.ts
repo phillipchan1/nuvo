@@ -87,6 +87,27 @@ export function weekName(
   return `Week of ${format(weekStartOf(d), "MMM d")}`;
 }
 
+/** Where a move to a week goes, said so it follows "Move to": "next week" ·
+ *  "2 weeks out" · "3 weeks out" — projects are thought of in weeks, so the
+ *  destination is a count of weeks, never a date (D-256). Only past the far
+ *  horizon (`within`, default 12) does it fall back to "the week of Dec 28".
+ *  ("In 2 weeks" reads wrong after a verb: "Move to In 2 weeks".) */
+export function weekDestination(
+  d: Date | string,
+  opts?: { ref?: Date | string; within?: number; asWeekStart?: boolean },
+): string {
+  const n = weeksFrom(d, opts?.ref ?? new Date(), opts?.asWeekStart);
+  if (n <= 0) return "this week";
+  if (n === 1) return "next week";
+  if (n <= (opts?.within ?? 12)) return `${n} weeks out`;
+  return `the week of ${format(weekStartOf(d), "MMM d")}`;
+}
+
+/** The same for a bet: "next quarter" · "2 quarters out" (`n` quarters from now). */
+export function quarterDestination(n: number): string {
+  return n <= 0 ? "this quarter" : n === 1 ? "next quarter" : `${n} quarters out`;
+}
+
 /** "Aug 10–16", or "Aug 31–Sep 6" when the week crosses a month. The date line
  *  that rides under `weekName` — this is what actually locates a reader. */
 export function weekSpan(d: Date | string = new Date()): string {

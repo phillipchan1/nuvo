@@ -26,7 +26,7 @@ import { useMaxPerWeek, useCoverageHidden, useCoverageCollapsed, useDeckByDomain
 import { useRecordContextMenu } from "../RecordContextMenu";
 import { domainById, isOpenStatus, type Domain, type Project } from "../../lib/vertical";
 import { readOnDeck, sprintSpanFor, weekIndexIn } from "../../lib/onDeck";
-import { weekName, weekSpan as weekDates } from "../../lib/week";
+import { weekDestination, weekName, weekSpan as weekDates } from "../../lib/week";
 import { noticeIfUnready } from "../../lib/readyNotice";
 import ShippedStrip from "../floors/ShippedStrip";
 import InlineAdd from "./InlineAdd";
@@ -98,7 +98,7 @@ export default function OnDeckPlanner({
 } = {}) {
   const { data, updateProject, addProject } = useVertical();
   const defer = useDeferProject();
-  const { onContextMenu, menu } = useRecordContextMenu();
+  const { onContextMenu, menu, ship } = useRecordContextMenu();
   const { byWeek, weeklyAvgMins } = useCapacity();
   const { openRecord, openFloorModal, setProjectView } = useAppNavigation();
   const [maxPerWeek] = useMaxPerWeek();
@@ -639,9 +639,10 @@ export default function OnDeckPlanner({
             gap: l.gaps[0]?.label ?? null,
             wontFit: l.axes.fits === false,
             crowded: crowdedPick.get(l.project.id) ?? null,
-            // a destination is named as the deck names its columns ("Nov 23"), so
-            // "Move to" never reads "Move to In 2 weeks"
-            moveTo: to != null && board.weeks[to] ? { label: format(board.weeks[to].weekStart, "MMM d") } : null,
+            // a destination is a count of weeks — "next week", "2 weeks out" — never
+            // a date: projects are thought of in weeks (D-256), and it reads after
+            // "Move to" ("Move to In 2 weeks" did not)
+            moveTo: to != null && board.weeks[to] ? { label: weekDestination(board.weeks[to].weekStart, { asWeekStart: true }) } : null,
             draft: drafts[l.project.id] ?? null,
           };
         }),
@@ -663,6 +664,11 @@ export default function OnDeckPlanner({
             if (!p || to == null || !board.weeks[to]) return;
             void reachToCrown(from, DECK_REACH_KEY);
             moveProject(p, { ...weekSpan(p, board.weeks[to].weekStart), status: "in_progress" }, "Moved");
+          },
+          ship: (id) => ship(id),
+          park: (id) => {
+            const p = projectById.get(id);
+            if (p) moveProject(p, { status: "waiting" }, "Parked");
           },
         },
       ),

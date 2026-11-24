@@ -97,6 +97,9 @@ export function useReadyStack(cards: readonly ReadyCard[], max = READY_MAX) {
       if (which === "primary") card.primary.run(from);
       else if (which === "done") card.done?.run();
       else card.secondary?.run();
+      // An act that opens the thing to finish (the ship assessment) leaves the
+      // card where it is: a cancel there must not cost you the card.
+      if (which === "done" && card.done?.opens) return;
       // A card that opens a mode doesn't leave: the mode replaces this one.
       if (which === "primary" && card.opensMode) return;
       const index = Math.max(0, visible.findIndex((c) => c.key === card.key));
@@ -234,6 +237,7 @@ export default function GetReadyRail({
                 onPoint={(on) => setPointed((p) => (on ? c.key : p === c.key ? null : p))}
                 preview={c.at ? { label: c.title, start: instantAt(c.at.dayISO, c.at.startMin), end: instantAt(c.at.dayISO, c.at.startMin + c.at.durationMin) } : null}
                 onDone={c.done ? () => press(c, "done") : undefined}
+                doneLabel={c.done?.label}
                 onPress={(el) => press(c, "primary", el)}
                 onNotNow={c.secondary?.label === "Not now" ? () => press(c, "secondary") : undefined}
                 secondary={c.secondary && c.secondary.label !== "Not now" ? { label: c.secondary.label, onPress: () => press(c, "secondary") } : undefined}

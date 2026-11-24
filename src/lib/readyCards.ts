@@ -81,7 +81,15 @@ export interface ReadyCard {
   placeAt?: (at: Where, from: HTMLElement | null) => void;
   /** "It's done — nobody ticked it" (D-255): finishes the card's work. Present
    *  only when the card stands for tasks; a card about shaping has none. */
-  done?: { run: () => void };
+  done?: {
+    run: () => void;
+    /** what the act is called when "Done" isn't the word — a project *ships*,
+     *  a bet is *marked complete* (the deck cards, D-256) */
+    label?: string;
+    /** the act opens something to be finished there (the ship assessment), so
+     *  the card stays until the data says it's gone — a cancel leaves it */
+    opens?: boolean;
+  };
   /** Where the thing is now: pointing at the card rings it on the Schedule
    *  (D-226's locate) — a repair has two places, and the act's own preview
    *  shows only the second (D-255) */

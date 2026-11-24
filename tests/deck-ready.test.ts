@@ -62,12 +62,12 @@ describe("the project deck's acts that write (D-207)", () => {
     const cards = projectDeckCards(
       [
         fact({ id: "g", gap: "no outcome", weekIdx: 0 }),
-        fact({ id: "c", name: "Crowd", weekIdx: 1, crowded: { load: 5, cap: 2 }, moveTo: { label: "In 2 weeks" } }),
+        fact({ id: "c", name: "Crowd", weekIdx: 1, crowded: { load: 5, cap: 2 }, moveTo: { label: "2 weeks out" } }),
       ],
       acts,
     );
     expect(cards[0]).toMatchObject({ key: "deck:crowd:c", why: "Nov 16 holds 5 · room for 2" });
-    expect(cards[0].primary).toMatchObject({ verb: "Move to", name: "In 2 weeks" });
+    expect(cards[0].primary).toMatchObject({ verb: "Move to", name: "2 weeks out" });
     cards[0].primary.run(null);
     expect(acts.move).toHaveBeenCalledWith("c", null);
     expect(deckLine(cards, "project")).toMatchObject({ text: "Nov 16 holds 5, room for 2", then: "Project needs shaping" });
@@ -75,8 +75,8 @@ describe("the project deck's acts that write (D-207)", () => {
 
   it("moves a project that won't fit, when a later week has room", () => {
     const acts = { open: vi.fn(), draftPath: vi.fn(), move: vi.fn() };
-    const [card] = projectDeckCards([fact({ wontFit: true, moveTo: { label: "Next week" } })], acts);
-    expect(card.primary).toMatchObject({ verb: "Move to", name: "Next week" });
+    const [card] = projectDeckCards([fact({ wontFit: true, moveTo: { label: "next week" } })], acts);
+    expect(card.primary).toMatchObject({ verb: "Move to", name: "next week" });
   });
 });
 
@@ -113,5 +113,68 @@ describe("the decks' line", () => {
     expect(draftProjects).toHaveBeenCalledWith("a", null);
     card.secondary!.run();
     expect(open).toHaveBeenCalledWith("a");
+  });
+
+  it("an overdue project can be rescheduled, shipped or parked — not just opened (D-256)", () => {
+    const acts = { open: vi.fn(), draftPath: vi.fn(), move: vi.fn(), ship: vi.fn(), park: vi.fn() };
+    const [card] = projectDeckCards([fact({ id: "late", name: "LA Solar refund", overdueDays: 5, moveTo: { label: "2 weeks out" } })], acts);
+    expect(card.primary).toMatchObject({ verb: "Move to", name: "2 weeks out" });
+    card.primary.run(null);
+    expect(acts.move).toHaveBeenCalledWith("late", null);
+    // shipping is a judgment: the act opens the assessment, and the card stays until the data says it's gone
+    expect(card.done).toMatchObject({ label: "Ship it…", opens: true });
+    card.done!.run();
+    expect(acts.ship).toHaveBeenCalledWith("late");
+    expect(card.secondary?.label).toBe("Park it");
+    card.secondary!.run();
+    expect(acts.park).toHaveBeenCalledWith("late");
+  });
+
+  it("with no later week that has room, an overdue project still opens, ships or parks", () => {
+    const acts = { open: vi.fn(), draftPath: vi.fn(), ship: vi.fn(), park: vi.fn() };
+    const [card] = projectDeckCards([fact({ id: "late", overdueDays: 5, moveTo: null })], acts);
+    expect(card.primary.verb).toBe("Open");
+    expect(card.done?.label).toBe("Ship it…");
+  });
+
+  it("shaping cards get no Ship or Park — nothing about them has happened (D-256)", () => {
+    const acts = { open: vi.fn(), draftPath: vi.fn(), ship: vi.fn(), park: vi.fn() };
+    const cards = projectDeckCards([fact({ id: "g", gap: "no outcome" }), fact({ id: "t", thin: "20m of 3h held" })], acts);
+    for (const c of cards) {
+      expect(c.done).toBeUndefined();
+      expect(c.secondary).toBeUndefined();
+    }
+  });
+
+  it("an at-risk bet can be completed or parked, and a gap card can't (D-256)", () => {
+    const acts = { open: vi.fn(), draftPath: vi.fn(), park: vi.fn(), complete: vi.fn() };
+    const [risk, gap] = initiativeDeckCards(
+      [
+        { id: "b", name: "Staff rigor", quarterIdx: 0, quarterLabel: "Q4", risk: "no project on deck", overdue: false, gap: null, stateWord: null },
+        { id: "a", name: "Grow", quarterIdx: 1, quarterLabel: "Q1", risk: null, overdue: false, gap: "no key results", stateWord: null },
+      ],
+      acts,
+    );
+    expect(risk.done).toMatchObject({ label: "Mark complete" });
+    risk.done!.run();
+    expect(acts.complete).toHaveBeenCalledWith("b");
+    risk.secondary!.run();
+    expect(acts.park).toHaveBeenCalledWith("b");
+    expect(gap.done).toBeUndefined();
+  });
+
+  it("an overdue bet moves a quarter, in words; one that is merely at risk keeps its own fix (D-256)", () => {
+    const acts = { open: vi.fn(), draftPath: vi.fn(), move: vi.fn(), park: vi.fn(), complete: vi.fn() };
+    const [late, risky] = initiativeDeckCards(
+      [
+        { id: "l", name: "Grow", quarterIdx: 0, quarterLabel: "This quarter", risk: null, overdue: true, gap: null, stateWord: null, moveTo: { label: "next quarter" } },
+        { id: "r", name: "Rigor", quarterIdx: 1, quarterLabel: "Next quarter", risk: "no project on deck", overdue: false, gap: null, stateWord: null, moveTo: { label: "2 quarters out" } },
+      ],
+      acts,
+    );
+    expect(late.primary).toMatchObject({ verb: "Move to", name: "next quarter" });
+    late.primary.run(null);
+    expect(acts.move).toHaveBeenCalledWith("l", null);
+    expect(risky.primary.verb).toBe("Open");
   });
 });

@@ -25,6 +25,8 @@ import { getQuarter, getYear } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { useRecordContextMenu } from "../RecordContextMenu";
+import { sealInitiative } from "../../lib/celebrate";
+import { quarterDestination } from "../../lib/week";
 import { useMaxPerQuarter, useCoverageHidden, useCoverageCollapsed, useDeckByDomain } from "../../hooks/usePlannerPrefs";
 import { weeksBetween } from "../../lib/week";
 import {
@@ -432,11 +434,29 @@ export default function InitiativeDeck({ startIn }: { /** a harness's way into t
               gap: l.gaps[0]?.label ?? null,
               stateWord: l.state === "needs_okrs" || l.state === "idea" || l.state === "needs_shaping" ? INITIATIVE_STATE_LABEL[l.state] : null,
               canDraft: canDraftProjects(data, l),
+              // a count of quarters, never a date; none past the horizon
+              moveTo: board.quarters[Math.max(l.quarterIdx ?? 0, 0) + 1] ? { label: quarterDestination(Math.max(l.quarterIdx ?? 0, 0) + 1) } : null,
             };
           }),
         {
           open: (id) => openRecord("initiative", id),
           draftPath: () => {},
+          move: (id) => {
+            const i = initiativeById.get(id);
+            const lane = board.lanes.find((x) => x.initiative.id === id);
+            const col = board.quarters[Math.max(lane?.quarterIdx ?? 0, 0) + 1];
+            if (i && col) moveInitiative(i, { targetDate: quarterEndISO(col.start), status: "in_progress" }, "Moved");
+          },
+          park: (id) => {
+            const i = initiativeById.get(id);
+            if (i) moveInitiative(i, { status: "waiting" }, "Parked");
+          },
+          complete: (id) => {
+            const i = initiativeById.get(id);
+            if (!i) return;
+            moveInitiative(i, { status: "complete" }, "Completed");
+            requestAnimationFrame(() => sealInitiative(id));
+          },
           draftProjects: (id, el) => {
             const lane = board.lanes.find((x) => x.initiative.id === id);
             if (lane) onDraftProjects(lane, el?.getBoundingClientRect() ?? null);

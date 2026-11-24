@@ -10010,3 +10010,47 @@ to one account.
 `get-ready-rail.test.tsx`, `locate.test.ts`. Driven in the Get ready harness (`?rail=ready`,
 `?rail=ready-phone` at 375px: Done at 44px, no overflow). **Not driven on the live Schedule** — the
 ring and the day filter in `CalendarPane` have no test and were not seen on a real grid.*
+
+**D-256 · 2026-11-24 · A deck card says what you can do about it: Move · Ship · Park, in weeks and quarters.**
+*(Operator, on the project deck's Get ready: the Schedule's cards each had one action I could take;
+"for projects and initiatives the buttons here are just Open, which is way more nebulous." Then:
+"use language, not specific dates — we're thinking in weeks for projects and quarters for
+initiatives.")*
+
+→ **Finding first.** The deck cards that matter most — an overdue project, a bet at risk — offered
+only **Open**, the one act the card itself already does (R1; `rowOffers` already refuses to chip an
+Open). An overdue project is late, finished, or no longer wanted, and the card could answer none of
+the three.
+
+→ **Overdue project:** **Move to next week / 2 weeks out** (the nearest later week with room, the
+drag's own write, ⌘Z), **Ship it…** (the card's `done` slot — it opens the ship assessment and
+writes nothing itself, so shipping stays a judgment and the card stays if you cancel), **Park it**.
+**Overdue bet:** **Move to next quarter / 2 quarters out**, **Mark complete**, **Park it**. A bet that
+is merely *at risk* keeps Suggest projects / Open as its answer (it's about what's under it, not the
+calendar) plus Mark complete and Park it. Shaping cards (a gap, a thin path) get none of these:
+nothing about them has happened.
+
+→ **Language, not dates.** A destination is a count in the altitude's own unit — `weekDestination`
+("next week", "2 weeks out"; "the week of Dec 28" only past 12 weeks) and `quarterDestination`
+("next quarter", "2 quarters out"). It replaces the deck's "Nov 23"-style label, which also fixes
+"Move to In 2 weeks" (the old `weekName` read badly after a verb). Crowded and won't-fit cards use the
+same label.
+
+→ **Correction to what I told you.** I said nothing ruled out these acts. `OnDeckPlanner` carries a
+standing note that the deck has *no completion control* because shipping is a judgment (D-023's "the
+timeline decides, the deck does", D-048 removed the card's check). Ship it… on a Get ready card is
+consistent with that — it opens the same assessment the right-click menu does — but it is the first
+completion act reachable from a deck *rail*, and that should be a conscious call. At rest the
+overdue project's "Move to …" now also rides its row as a chip (R6), since it names a place.
+
+**Anchor.** Serves **Q1** (on pace, or quietly dying?) and **W3** (what to drop). Strains **R1**
+(only what's hard to do yourself) — held by naming the week with room, which the deck computes, and
+by Ship/Park having no drag at all — and **P8** lightly (three acts on one card). Four no's: no pool,
+no new name (Ship, Park, Move to exist), nothing that needs clean data (no later week with room →
+Ship and Park only), nothing tuned to one account.
+
+*Status: built 2026-11-24 — `lib/deckReady`, `lib/week`, both decks, `RecordContextMenu`'s `ship`.
+`tests/deck-ready.test.ts`, `week-names.test.ts`, `get-ready-rail.test.tsx`. Driven in `?decks`: the
+overdue card's Move to 2 weeks out, Ship it… (the assessment opened; Esc left the card), Park it (card
+and bar left the deck). Not driven: the bet deck's new cards (the fixtures have no overdue bet), the
+phone sheet, Mark complete's celebration, and any of it on a live account.*

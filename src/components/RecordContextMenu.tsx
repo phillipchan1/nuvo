@@ -77,7 +77,11 @@ export function useRecordContextMenu() {
     </>
   );
 
-  return { onContextMenu, askDelete, menu, closeMenu: close, open: state !== null || shipId !== null };
+  /** open the ship assessment for a project, without a menu (a Get ready card's
+   *  "Ship it…", D-256) */
+  const ship = useCallback((id: string) => setShipId(id), []);
+
+  return { onContextMenu, askDelete, menu, closeMenu: close, ship, open: state !== null || shipId !== null };
 }
 
 function RecordMenu({ state, onClose, onShip }: { state: OpenState; onClose: () => void; onShip: (id: string) => void }) {
