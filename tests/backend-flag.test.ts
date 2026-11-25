@@ -3,6 +3,7 @@ import {
   apiBaseUrl,
   apiConfigured,
   calendarOauthStartHref,
+  notionOauthStartHref,
   edgeFunctionUrl,
   entitlementUrl,
   resetWorkersEnabledForTests,
@@ -68,5 +69,22 @@ describe("calendarOauthStartHref", () => {
 
   it("returns null when the API base is not baked, rather than a dead host", () => {
     expect(calendarOauthStartHref("google", "ba-token", "https://app.nuvo.day")).toBeNull();
+  });
+});
+
+describe("notionOauthStartHref (D-257)", () => {
+  it("points Notion start at the Worker, not the deleted Supabase project", () => {
+    vi.stubEnv("VITE_API_BASE_URL", "https://api.nuvo.day/api");
+    vi.stubEnv("VITE_SUPABASE_URL", "https://gone.supabase.co");
+    const href = notionOauthStartHref("ba-token", "https://app.nuvo.day");
+    expect(href).toBe(
+      "https://api.nuvo.day/api/notion-oauth?action=start&token=ba-token&redirect=https%3A%2F%2Fapp.nuvo.day",
+    );
+  });
+
+  it("returns null without a baked API base or a token, rather than a dead host", () => {
+    expect(notionOauthStartHref("ba-token", "https://app.nuvo.day")).toBeNull();
+    vi.stubEnv("VITE_API_BASE_URL", "https://api.nuvo.day/api");
+    expect(notionOauthStartHref("", "https://app.nuvo.day")).toBeNull();
   });
 });

@@ -57,6 +57,16 @@ export function calendarOauthStartHref(
   return `${base}?${params.toString()}`;
 }
 
+/** Start URL for Notion's consent screen (D-257): the Worker's `notion-oauth`
+ *  from the baked API base, like calendar OAuth. Null when no base is baked —
+ *  never `VITE_SUPABASE_URL`, whose project is gone (a dead host fails quietly). */
+export function notionOauthStartHref(token: string, redirect: string): string | null {
+  const base = edgeFunctionUrl("notion-oauth");
+  if (!base || !token) return null;
+  const params = new URLSearchParams({ action: "start", token, redirect });
+  return `${base}?${params.toString()}`;
+}
+
 /** The Worker's `/api` root from the baked base. Callers gate on `workersEnabled`. */
 export function authBaseUrl(): string {
   const raw = apiBaseUrl();

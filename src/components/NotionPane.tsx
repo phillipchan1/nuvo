@@ -23,6 +23,8 @@ export function NotionPane() {
   const { data: source, isLoading } = useNotionSource();
   const { setFeed, refresh, disconnect } = useNotionActions();
 
+  const connect = () => void startNotionConnect().catch((e: Error) => toast.error(e.message));
+
   if (isLoading) return <PaneHeader title="Notion" />;
 
   if (!source) {
@@ -38,7 +40,7 @@ export function NotionPane() {
             <div className="set-row-desc">What's assigned to you lands in your inbox.</div>
           </div>
           <div className="set-row-ctl">
-            <Button kind="primary" className="tap" onClick={() => void startNotionConnect()}>
+            <Button kind="primary" className="tap" onClick={connect}>
               Connect
             </Button>
           </div>
@@ -111,7 +113,7 @@ export function NotionPane() {
             </span>
           </span>
           {source.needs_reconnect ? (
-            <Button size="sm" kind="danger" className="tap" onClick={() => void startNotionConnect()}>
+            <Button size="sm" kind="danger" className="tap" onClick={connect}>
               Reconnect
             </Button>
           ) : (
@@ -142,7 +144,7 @@ export function NotionPane() {
         </div>
         <div className="mt-2 flex flex-wrap gap-2">
           {/* Notion's own picker is the only place page access changes. */}
-          <Button kind="ghost" className="tap -ml-2" onClick={() => void startNotionConnect()}>
+          <Button kind="ghost" className="tap -ml-2" onClick={connect}>
             Choose pages in Notion
           </Button>
           <Button
