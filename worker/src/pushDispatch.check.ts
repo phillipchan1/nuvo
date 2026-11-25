@@ -12,6 +12,14 @@ import { runCronJob } from "./cronJobs.ts";
 import { PG_TYPES } from "./db.ts";
 import { installPushFetchForTests, runPushDispatch } from "./pushDispatch.ts";
 import { sendWebPush, webPushConfigured, webPushSelfTest } from "./lib/webpush.ts";
+import {
+  apnsConfigured,
+  apnsJwt,
+  apnsSelfTest,
+  parseApnsEndpoint,
+  resetApnsJwtCache,
+  sendApns,
+} from "./lib/apns.ts";
 
 const fails: string[] = [];
 let checks = 0;
@@ -42,10 +50,11 @@ function exportedFunctions(src: string): { name: string; body: string }[] {
   }));
 }
 
-const SENDER_CALL = /(?:runPushDispatch|sendWebPush)\(/;
+const SENDER_CALL = /(?:runPushDispatch|sendWebPush|sendApns)\(/;
 const allowedSenderFiles = new Set([
   join(here, "pushDispatch.ts"),
   join(here, "lib/webpush.ts"),
+  join(here, "lib/apns.ts"),
   join(here, "cronJobs.ts"),
 ]);
 for (const file of walkTs(here)) {
@@ -513,6 +522,116 @@ const alias = await app.request("http://localhost:8787/functions/v1/push-dispatc
   body: JSON.stringify({ selfTest: true }),
 }, flippedEnv);
 ok(alias.status === 200, `functions/v1/push-dispatch: ${alias.status}`);
+
+// ── APNs: the native iPhone app (D-258) ────────────────────────────────────
+{
+  const pair = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
+    "sign",
+    "verify",
+  ])) as CryptoKeyPair;
+  const pkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", pair.privateKey));
+  const b64 = btoa(String.fromCharCode(...pkcs8));
+  // As pasted from the .p8 file — and once more with its newlines flattened to
+  // literal "\n", the way a dashboard secret field sometimes stores it.
+  const pem = `-----BEGIN PRIVATE KEY-----\n${b64.match(/.{1,64}/g)!.join("\n")}\n-----END PRIVATE KEY-----`;
+  const apnsEnv = { ...env, APNS_KEY_P8: pem, APNS_KEY_ID: "KEYID12345", APNS_TEAM_ID: "TEAMID1234" };
+  const TOKEN = "ab".repeat(32);
+
+  ok(!apnsConfigured(env), "apns: unset secrets are not configured");
+  ok(apnsConfigured(apnsEnv), "apns: three secrets are configured");
+  ok(parseApnsEndpoint(`apns://sandbox/${TOKEN}`)?.environment === "sandbox", "apns: parses a sandbox endpoint");
+  ok(parseApnsEndpoint(`apns://production/${TOKEN.toUpperCase()}`)?.token === TOKEN, "apns: token lowercased");
+  ok(parseApnsEndpoint("https://push.example.test/a") === null, "apns: a Web Push URL is not APNs");
+  ok(parseApnsEndpoint("apns://staging/abcd") === null, "apns: unknown environment rejected");
+
+  resetApnsJwtCache();
+  const jwt = await apnsJwt(apnsEnv, nowMs);
+  const [h, c, s] = jwt.split(".");
+  const dec = (part: string) => JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/")));
+  ok(dec(h).alg === "ES256" && dec(h).kid === "KEYID12345", "apns jwt: ES256 header with kid");
+  ok(dec(c).iss === "TEAMID1234" && dec(c).iat === Math.floor(nowMs / 1000), "apns jwt: iss + iat");
+  const sigBytes = Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (ch) => ch.charCodeAt(0));
+  ok(
+    await crypto.subtle.verify(
+      { name: "ECDSA", hash: "SHA-256" },
+      pair.publicKey,
+      sigBytes,
+      new TextEncoder().encode(`${h}.${c}`),
+    ),
+    "apns jwt: signature verifies against the key's public half",
+  );
+  ok((await apnsJwt(apnsEnv, nowMs + 10 * 60_000)) === jwt, "apns jwt: reused inside its window");
+  ok((await apnsJwt(apnsEnv, nowMs + 45 * 60_000)) !== jwt, "apns jwt: re-minted before Apple's hour");
+  resetApnsJwtCache();
+  ok((await apnsSelfTest({ ...apnsEnv, APNS_KEY_P8: pem.replace(/\n/g, "\\n") })).ok, "apns selfTest: survives flattened newlines");
+  ok((await apnsSelfTest({ ...apnsEnv, APNS_KEY_P8: "nope" })).ok === false, "apns selfTest: a bad key fails");
+
+  const apnsPosts: { url: string; headers: Headers; body: string }[] = [];
+  let apnsReply: { status: number; reason?: string } = { status: 200 };
+  const apnsFetch = async (input: string, init?: RequestInit) => {
+    apnsPosts.push({ url: input, headers: new Headers(init?.headers), body: String(init?.body ?? "") });
+    const { status, reason } = apnsReply;
+    return new Response(reason ? JSON.stringify({ reason }) : "", { status });
+  };
+  const sub = { id: "x", endpoint: `apns://sandbox/${TOKEN}`, p256dh: "", auth: "" };
+  const longKey = `task:${"x".repeat(80)}:start`;
+  const sent = await sendApns(apnsEnv, sub, { title: "Men's lunch", body: "in a week", key: longKey }, apnsFetch, nowMs);
+  const req = apnsPosts[0]!;
+  ok(sent.ok && !sent.gone, "sendApns: 200 is ok");
+  ok(req.url === `https://api.sandbox.push.apple.com/3/device/${TOKEN}`, `sendApns: sandbox host + token path (${req.url})`);
+  ok(req.headers.get("authorization")?.startsWith("bearer ") === true, "sendApns: bearer provider token");
+  ok(req.headers.get("apns-topic") === "day.nuvo.app", "sendApns: default topic is the iOS bundle id");
+  ok(req.headers.get("apns-push-type") === "alert", "sendApns: alert push type");
+  ok((req.headers.get("apns-collapse-id") ?? "").length <= 64, "sendApns: collapse id within 64 bytes");
+  const sentBody = JSON.parse(req.body);
+  ok(sentBody.aps?.alert?.title === "Men's lunch" && sentBody.aps?.alert?.body === "in a week", "sendApns: alert title + body");
+  await sendApns(apnsEnv, { ...sub, endpoint: `apns://production/${TOKEN}` }, { title: "t", key: "k" }, apnsFetch, nowMs);
+  ok(apnsPosts[1]!.url.startsWith("https://api.push.apple.com/"), "sendApns: production host");
+
+  apnsReply = { status: 410, reason: "Unregistered" };
+  ok((await sendApns(apnsEnv, sub, { title: "t", key: "k" }, apnsFetch, nowMs)).gone, "sendApns: 410 is gone");
+  apnsReply = { status: 400, reason: "BadDeviceToken" };
+  ok((await sendApns(apnsEnv, sub, { title: "t", key: "k" }, apnsFetch, nowMs)).gone, "sendApns: BadDeviceToken is gone");
+  apnsReply = { status: 403, reason: "InvalidProviderToken" };
+  const forbidden = await sendApns(apnsEnv, sub, { title: "t", key: "k" }, apnsFetch, nowMs);
+  ok(!forbidden.ok && !forbidden.gone, "sendApns: a provider-token problem is not the device's fault");
+  apnsReply = { status: 200 };
+
+  // Through the dispatcher: A's only device is the iPhone app.
+  await db.query(`DELETE FROM push_subscriptions WHERE user_id = $1`, [A]);
+  await db.query(`DELETE FROM reminder_deliveries WHERE user_id = $1`, [A]);
+  await db.query(`UPDATE user_settings SET reminder_prefs = $2::jsonb WHERE user_id = $1`, [
+    A,
+    JSON.stringify({ enabled: true, block_leads: [5] }),
+  ]);
+  await db.query(
+    `INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth) VALUES ($1, $2, $3, '', '')`,
+    ["aaaaaaaa-fffc-4000-8000-000000000001", A, `apns://sandbox/${TOKEN}`],
+  );
+  const claimsA = async () =>
+    Number((await db.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM reminder_deliveries WHERE user_id = $1`, [A])).rows[0]?.n ?? 0);
+
+  // Without APNs secrets the phone is not an audience — and nothing is claimed,
+  // so an app opening a minute later can still say it.
+  apnsPosts.length = 0;
+  const noKeys = await runPushDispatch(sql, env, { nowMs, fetchImpl: apnsFetch, userIds: [A] });
+  ok(noKeys.notified === 0 && apnsPosts.length === 0, "dispatch without APNs secrets: nothing sent");
+  ok((await claimsA()) === 0, "dispatch without APNs secrets: nothing claimed");
+
+  apnsPosts.length = 0;
+  const withKeys = await runPushDispatch(sql, apnsEnv, { nowMs, fetchImpl: apnsFetch, userIds: [A] });
+  ok(withKeys.notified === 1, `dispatch with APNs: notified (got ${withKeys.notified})`);
+  ok(apnsPosts.some((p) => p.url.endsWith(`/3/device/${TOKEN}`) && p.body.includes("A standup")), "dispatch with APNs: the standup reached the phone");
+  ok((await claimsA()) === 1, "dispatch with APNs: claimed once");
+
+  // A dead token is pruned like a 410 Web Push endpoint.
+  await db.query(`DELETE FROM reminder_deliveries WHERE user_id = $1`, [A]);
+  apnsReply = { status: 400, reason: "BadDeviceToken" };
+  await runPushDispatch(sql, apnsEnv, { nowMs, fetchImpl: apnsFetch, userIds: [A] });
+  apnsReply = { status: 200 };
+  const leftA = Number((await db.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM push_subscriptions WHERE user_id = $1`, [A])).rows[0]?.n ?? 0);
+  ok(leftA === 0, "dispatch with APNs: BadDeviceToken deletes the row");
+}
 
 restorePushFetch();
 restore();

@@ -15,8 +15,9 @@ import { isTypingIn } from "../lib/a11y";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { takeNotionReturn } from "../lib/notionReturn";
 import { useEventRouter } from "../hooks/useEventRouter";
-import { useReminderDelivery } from "../hooks/useReminders";
-import type { PlannedReminder } from "../../supabase/functions/_shared/reminderRules.ts";
+import { useNotifyPermission, usePushRegistration, useReminderDelivery } from "../hooks/useReminders";
+import { useSettings } from "../hooks/useSettings";
+import { DEFAULT_REMINDER_PREFS, type PlannedReminder } from "../../supabase/functions/_shared/reminderRules.ts";
 // Split points: the phone shell never executes on desktop (and vice versa),
 // and the rituals are open-on-demand ceremony — none of them belong in the
 // entry chunk both shells parse at boot.
@@ -144,6 +145,16 @@ function ShellEffects() {
       [openOverlay, navigate],
     ),
   });
+
+  // Keep this device subscribed for background delivery on every launch, not
+  // only while Settings is open (D-258) — a native token that rotated, or a
+  // time zone that changed, is re-recorded here.
+  const { settings: shellSettings } = useSettings();
+  const { permission: notifyPermission } = useNotifyPermission();
+  usePushRegistration(
+    (shellSettings?.reminder_prefs ?? DEFAULT_REMINDER_PREFS).enabled,
+    notifyPermission,
+  );
 
   return null;
 }

@@ -173,6 +173,11 @@ jobs:
         name: Initialize iOS project
         env:
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          # Background reminders over APNs (D-258). Empty until the Push
+          # Notifications capability is on for App ID day.nuvo.app — set the
+          # repo variable NUVO_IOS_PUSH=production then. Set without the
+          # capability, signing fails; unset, the app reminds only while open.
+          NUVO_IOS_PUSH: ${{ vars.NUVO_IOS_PUSH }}
         run: |
           set -euo pipefail
           if [ -z "${APPLE_DEVELOPMENT_TEAM:-}" ]; then

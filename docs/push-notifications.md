@@ -1,7 +1,9 @@
 # Background reminders — how they work, and how to turn them on
 
-**Status:** live — VAPID secrets set and verified 2026-08-13. Untested against a
-real device; see §4's checklist and §6.
+**Status:** Web Push live — VAPID secrets set and verified 2026-08-13. Untested against a
+real device; see §4's checklist and §6. **Native apps (D-258), built 2026-11-25, not
+deployed:** the Mac app posts real OS notifications while it runs; the iPhone app
+registers for APNs and the Worker sends to it once the APNs key is set (§4b).
 **Decisions:** [D-102](./product/decisions.md) (what may be said) ·
 [D-105](./product/decisions.md) (push is allowed with consent) ·
 [D-138](./product/decisions.md) (several leads; all-day; horizon may be a day or a week)
@@ -67,11 +69,11 @@ minutes is a worse failure than the same meeting announced twice.
 |---|---|---|
 | **Installed iOS PWA** | ✅ iOS 16.4+ | Web Push → service worker. **Only when added to the Home Screen** — Safari in a tab cannot subscribe. |
 | **Desktop browsers** | ✅ | Web Push → service worker. |
-| **Tauri macOS app** | ⚠️ while running | No service worker by design (custom protocol, and Tauri owns its updater). It shows reminders in-app whenever the process is alive, which for a desktop app is most of the working day. |
-| **Tauri iOS app** | ❌ | Same — no service worker. True quit-state delivery here needs **APNs** and a native plugin, which is a different piece of work (§6). |
+| **Tauri macOS app** | ⚠️ while running | No service worker by design (custom protocol, and Tauri owns its updater). Since D-258 `tauri-plugin-notification` gives it a `window.Notification`, so a reminder is a real macOS notification, not an in-app toast. ⌘W hides the app rather than quitting it, so "while running" is most of the day. Quit or asleep past a reminder's grace window: missed. |
+| **Tauri iOS app** | ✅ once §4b is done | **APNs**, not Web Push (D-258). The `nuvo-push` plugin hands over the device token, stored as `apns://<production\|sandbox>/<token>` in the same `push_subscriptions` table; `worker/src/lib/apns.ts` sends. Until the key is set, the row is skipped and the app reminds only while open. |
 
-The honest read: **the phone PWA is what background push is for.** The Mac app is
-usually running, and when it is, it is the one that claims and speaks.
+The honest read: **background push is for the phone** — the PWA or the app. The
+Mac app is usually running, and when it is, it is the one that claims and speaks.
 
 Settings → Reminders says which of these applies, in words, rather than implying
 it works everywhere.
@@ -87,8 +89,11 @@ it works everywhere.
 | `_shared/webpush.ts` | VAPID (RFC 8292) + aes128gcm encryption (RFC 8291) on Deno's WebCrypto |
 | `supabase/functions/push-dispatch/` | the every-minute dispatcher |
 | `src/sw.ts` | the service worker's `push` + `notificationclick` |
-| `src/lib/push.ts` | subscribe / unsubscribe / status |
-| `src/hooks/useReminders.ts` | claim-before-show, and keeping the subscription in step with the toggle |
+| `src/lib/push.ts` | subscribe / unsubscribe / status — Web Push, or APNs in the iPhone app |
+| `src/lib/notify.ts` | the one place an OS notification is posted, on all three runtimes (D-258) |
+| `src/hooks/useReminders.ts` | claim-before-show, and keeping the subscription in step with the toggle (mounted in `ShellEffects`, so it runs every launch) |
+| `src-tauri/plugins/nuvo-push/` | the iPhone's APNs token (`register`) and which APNs host it belongs to |
+| `worker/src/lib/apns.ts` | ES256 provider token + the send; `sendable()` in `pushDispatch.ts` skips a device the deployment can't reach *before* claiming |
 
 Two things that are **not** in the outbox, deliberately:
 `push_subscriptions` (minted by a live registration that exists on one device —
@@ -164,6 +169,42 @@ wrong are fine:
 4. If nothing arrives: `supabase functions logs push-dispatch`, and check
    `select * from push_subscriptions` has a row.
 
+## 4b · Turning on the iPhone app (APNs, D-258)
+
+In this order — each step is safe on its own, and the app keeps reminding while
+open until all four are done.
+
+1. **Apple Developer → Identifiers → `day.nuvo.app` → enable Push Notifications.**
+   (Before this, a build carrying the entitlement fails to sign — which is why
+   it's opt-in, step 3.)
+2. **Apple Developer → Keys → new key with Apple Push Notifications service.**
+   Download the `.p8` (once — Apple won't show it again). Then set it on the API
+   Worker, with its Key ID and your Team ID:
+   ```bash
+   npx wrangler secret put APNS_KEY_P8 --env=""
+   ```
+   ```bash
+   npx wrangler secret put APNS_KEY_ID --env=""
+   ```
+   ```bash
+   npx wrangler secret put APNS_TEAM_ID --env=""
+   ```
+   Paste the whole `.p8` text for the first. `APNS_TOPIC` defaults to `day.nuvo.app`.
+3. **GitHub → Settings → Variables → `NUVO_IOS_PUSH` = `production`.**
+   `ios-release.yml` passes it to `scripts/ios-siwa.rb`, which adds
+   `aps-environment` to the app's entitlements. For a local dev-signed build,
+   `NUVO_IOS_PUSH=development`.
+4. **Deploy the Worker, then ship an iOS release.** On first launch with
+   reminders on and notifications allowed, the app registers; Settings →
+   Reminders → "When Nuvo is closed" reads *This device hears them even when
+   Nuvo is closed.*
+
+Check the key before waiting on a reminder: `push-dispatch` with
+`{"selfTest":true}` now returns `selfTest.apns.ok`. **Unproven until the first
+live send:** APNs speaks only HTTP/2, and whether a Worker's `fetch` reaches it is
+something only a real send answers. If it fails, the dispatcher counts it as
+transient and the row's `failure_count` climbs — look there first.
+
 ---
 
 ## 5 · What it is allowed to say
@@ -186,10 +227,11 @@ one.
 
 ## 6 · Known limits
 
-- **The Tauri shells get no Web Push.** Native notifications while running would
-  need `tauri-plugin-notification`; quit-state delivery on iOS would need APNs,
-  an Apple push certificate and a native plugin. Neither is built. The Mac app
-  being usually-open makes this much less pressing than it sounds.
+- **The Mac app has no quit-state delivery.** It speaks while running (D-258);
+  APNs for a Developer-ID Mac app is more signing setup than the gap is worth
+  while ⌘W hides instead of quitting.
+- **A native notification can't be clicked through to its item.** The plugin
+  returns no handle; a click opens Nuvo, not the named task.
 - **Never exercised against a live push service.** The keypair is set and
   *proven to sign* (§4's self-test passes, and the client/server keys match),
   but no notification has actually been delivered to a device — that needs a

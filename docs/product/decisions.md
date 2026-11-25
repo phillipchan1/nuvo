@@ -10097,3 +10097,56 @@ applied to Neon), Settings → **Notion** (`NotionPane.tsx`, `hooks/useNotion.ts
 `tests/notion-feeds.test.ts`. Driven in the dev app on desktop and at 375px against a fake source
 row. Needs a Notion public integration and `NOTION_CLIENT_ID` / `NOTION_CLIENT_SECRET` on the
 Worker — see [`notion-source.md`](../notion-source.md). Not yet run against a real Notion workspace.*
+
+---
+
+**D-258 · 2026-11-25 · Reminders reach the native apps: real OS notifications on the Mac, APNs
+on the iPhone.**
+
+D-105 allowed push with consent and built it — but only as Web Push, which needs a service
+worker, and the Mac and iOS apps have none by design. So in the two shells Phil actually uses,
+a reminder could only ever be an in-app toast: WKWebView has no `window.Notification`, and the
+"native notifications while running" that `push.ts` promised (`lib/notify.ts`) was never written.
+A week-before reminder for an event fired only if the app happened to be open within its grace
+window, and on the phone it effectively never was. Phil: *"I've never actually seen it work."*
+
+**What changes — the transport, nothing else.** `reminderRules.ts` is untouched; what may be
+said is exactly D-102's three anchors.
+
+- **Mac app:** `tauri-plugin-notification` gives the webview a `window.Notification` that posts a
+  real macOS notification. The app hides on ⌘W rather than quitting, so the existing foreground
+  loop is alive most of the day; it now *speaks*. `lib/notify.ts` is the one place that posts.
+- **iPhone app:** a `nuvo-push` plugin hands over the APNs device token, stored in
+  `push_subscriptions` as `apns://<production|sandbox>/<token>` — the same table, the same
+  dispatcher, the same per-person claim and prune path as Web Push. `worker/src/lib/apns.ts`
+  signs an ES256 provider token and sends. No schema change.
+- **A device the deployment can't reach is not an audience.** Without APNs secrets, an `apns://`
+  row is skipped *before* the claim, so the dispatcher never claims a reminder it then can't
+  deliver (which would silence the app that opens a minute later).
+- Push registration now runs on every launch (`ShellEffects`), not only while Settings is open,
+  and waits for settings to load so a launch never unsubscribes a device on the default `false`.
+
+**Rejected: scheduling each reminder as a local notification on the device.** No server, works
+offline, quit-state on both platforms — but every device would schedule its own copy, so a Mac
+and a phone would both buzz (D-105's unit is the *person*), a device that hadn't opened since an
+event moved would fire at the old time, and iOS caps pending notifications at 64. The dispatcher
+already knows the current calendar and already claims once.
+
+**Not done:** quit-state delivery on the Mac (it would need APNs for a Developer-ID app — more
+signing setup than the gap is worth while the app hides instead of quitting), and tapping a
+native notification landing on the named item (the plugin gives no click handle; it opens the
+app).
+
+**Anchor.** Closes toward **A2** (the delivery half). Strains **P9** — transport only, behind the
+same opt-in. Already decided in spirit by **D-105**; this is its unbuilt half (push-notifications
+§6). Four no's: no pool, no new name, works on any event/task/slot, and works for any account
+that turns reminders on.
+
+*Status: built 2026-11-25, not deployed. Mac notifications ship with the next desktop release.
+iPhone background delivery needs, in order: the Push Notifications capability on App ID
+`day.nuvo.app`; an APNs auth key (.p8) set on the API Worker as `APNS_KEY_P8` / `APNS_KEY_ID` /
+`APNS_TEAM_ID`; the repo variable `NUVO_IOS_PUSH=production` so the release build carries the
+entitlement; then a Worker deploy and an iOS release. Not yet delivered to a real device —
+whether a Worker's `fetch` reaches APNs (HTTP/2 only) is proven only by the first live send; the
+self-test at `push-dispatch {selfTest:true}` checks the key signs. See
+[`push-notifications.md`](../push-notifications.md).*

@@ -13,13 +13,18 @@
  *                        the Settings copy says "install first" rather than
  *                        showing an error nobody can act on.
  *   desktop browsers     yes.
- *   Tauri (Mac / iOS)    no service worker by design, so no Web Push. Those
- *                        shells use native notifications while running — see
- *                        `notifyNative` in `lib/notify.ts`.
+ *   Tauri macOS          no service worker by design, so no Web Push. The app
+ *                        hides on ⌘W rather than quitting, so it reminds you
+ *                        with real OS notifications while it runs (`lib/notify.ts`).
+ *   Tauri iOS            APNs, not Web Push (D-258). The `nuvo-push` plugin hands
+ *                        over the device token; it is stored in the same table as
+ *                        an `apns://<environment>/<token>` endpoint, so the
+ *                        dispatcher, the claim and every prune path stay one.
  */
 
 import { supabase } from "./supabase";
 import { detectDeviceTz } from "./timezone";
+import { isTauriIOS } from "./platform";
 
 /** Baked in at build time. Public by definition — it is the key clients encrypt
  *  TO; the private half never leaves the edge function's secrets. Absent in a
@@ -28,12 +33,21 @@ import { detectDeviceTz } from "./timezone";
 export const VAPID_PUBLIC_KEY: string = import.meta.env.VITE_VAPID_PUBLIC_KEY ?? "";
 
 export function pushConfigured(): boolean {
+  // The native iPhone's transport is configured server-side (APNs secrets on
+  // the Worker), where the client can't see it.
+  if (isTauriIOS()) return true;
   return VAPID_PUBLIC_KEY.length > 0;
 }
 
-/** Whether this runtime could ever subscribe. False in Tauri (no SW), in an
- *  insecure context, and in browsers without the API. */
+/** Whether this runtime could ever subscribe. True in the native iPhone app
+ *  (APNs); false in the Mac app (no SW), an insecure context, and browsers
+ *  without the API. */
 export function pushSupported(): boolean {
+  if (isTauriIOS()) return true;
+  return webPushSupported();
+}
+
+function webPushSupported(): boolean {
   return (
     typeof window !== "undefined" &&
     "serviceWorker" in navigator &&
@@ -106,6 +120,7 @@ export type SubscribeOutcome =
  * which is how every installed phone heals on its first launch after a rotation.
  */
 export async function subscribeToPush(): Promise<SubscribeOutcome> {
+  if (isTauriIOS()) return subscribeNative();
   if (!pushSupported()) return { ok: false, reason: "unsupported" };
   if (!pushConfigured()) return { ok: false, reason: "unconfigured" };
   if (typeof Notification === "undefined" || Notification.permission !== "granted") {
@@ -166,6 +181,7 @@ export async function subscribeToPush(): Promise<SubscribeOutcome> {
  * without unsubscribing leaves the browser holding a subscription nobody uses.
  */
 export async function unsubscribeFromPush(): Promise<void> {
+  if (isTauriIOS()) return unsubscribeNative();
   if (!pushSupported()) return;
   try {
     const registration = await navigator.serviceWorker.ready;
@@ -181,11 +197,96 @@ export async function unsubscribeFromPush(): Promise<void> {
 
 /** Is THIS device currently set up to receive background reminders? */
 export async function hasPushSubscription(): Promise<boolean> {
+  if (isTauriIOS()) return Boolean(readNativeEndpoint());
   if (!pushSupported()) return false;
   try {
     const registration = await navigator.serviceWorker.ready;
     return Boolean(await registration.pushManager.getSubscription());
   } catch {
     return false;
+  }
+}
+
+// ── The native iPhone: APNs (D-258) ─────────────────────────────────────────
+
+/** The endpoint this device last recorded — so a rotated token replaces its
+ *  row instead of leaving the old one to be rejected forever. */
+const NATIVE_ENDPOINT_KEY = "nuvo.push.apnsEndpoint";
+
+function readNativeEndpoint(): string | null {
+  try {
+    return localStorage.getItem(NATIVE_ENDPOINT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeNativeEndpoint(endpoint: string | null) {
+  try {
+    if (endpoint) localStorage.setItem(NATIVE_ENDPOINT_KEY, endpoint);
+    else localStorage.removeItem(NATIVE_ENDPOINT_KEY);
+  } catch {
+    /* storage gone: the next launch re-registers anyway */
+  }
+}
+
+/** `apns://production/<hex>` — the shape `worker/src/lib/apns.ts` parses. */
+export function apnsEndpoint(environment: string | undefined, token: string): string {
+  const env = environment === "sandbox" ? "sandbox" : "production";
+  return `apns://${env}/${token.toLowerCase()}`;
+}
+
+type NativeRegistration = { supported: boolean; token?: string; environment?: string; error?: string };
+
+async function subscribeNative(): Promise<SubscribeOutcome> {
+  const internals = (window as unknown as {
+    __TAURI_INTERNALS__?: { invoke?: (cmd: string, args?: unknown) => Promise<unknown> };
+  }).__TAURI_INTERNALS__;
+  if (!internals?.invoke) return { ok: false, reason: "unsupported" };
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") {
+    return { ok: false, reason: "denied" };
+  }
+  try {
+    const reg = (await internals.invoke("plugin:nuvo-push|register")) as NativeRegistration;
+    if (!reg.supported) return { ok: false, reason: "unsupported" };
+    if (!reg.token) return { ok: false, reason: "failed", detail: reg.error ?? "no device token" };
+
+    const endpoint = apnsEndpoint(reg.environment, reg.token);
+    const { data: u } = await supabase.auth.getUser();
+    const userId = u.user?.id;
+    if (!userId) return { ok: false, reason: "failed", detail: "not signed in" };
+
+    const previous = readNativeEndpoint();
+    if (previous && previous !== endpoint) {
+      await supabase.from("push_subscriptions").delete().eq("endpoint", previous);
+    }
+    const { error } = await supabase.from("push_subscriptions").upsert(
+      {
+        user_id: userId,
+        endpoint,
+        // Web Push's encryption keys. APNs is TLS to Apple and needs none.
+        p256dh: "",
+        auth: "",
+        label: /iPad/.test(navigator.userAgent) ? "iPad · Nuvo app" : "iPhone · Nuvo app",
+        time_zone: detectDeviceTz(),
+      },
+      { onConflict: "user_id,endpoint" },
+    );
+    if (error) return { ok: false, reason: "failed", detail: error.message };
+    writeNativeEndpoint(endpoint);
+    return { ok: true, endpoint };
+  } catch (e) {
+    return { ok: false, reason: "failed", detail: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+async function unsubscribeNative(): Promise<void> {
+  const endpoint = readNativeEndpoint();
+  if (!endpoint) return;
+  try {
+    await supabase.from("push_subscriptions").delete().eq("endpoint", endpoint);
+    writeNativeEndpoint(null);
+  } catch {
+    /* pruned server-side on its first rejected send */
   }
 }

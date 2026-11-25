@@ -311,7 +311,7 @@
       "file": "ios-release.yml",
       "job": "testflight",
       "id": "ios-init",
-      "sha256": "051d0a3f552bf064e208f8ad18ac784ad3020fc9ba12ae48d685c1e56d1a69b8"
+      "sha256": "58a2bc163733df14aba664e0ffb8ceb5965716ae0545980c92471174f2c594e6"
     },
     {
       "file": "ios-release.yml",

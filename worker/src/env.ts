@@ -77,6 +77,16 @@ export interface Env {
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_KEY?: string;
   VAPID_SUBJECT?: string;
+  /**
+   * APNs token auth (D-258) — the native iPhone app's background reminders.
+   * The .p8 key's PEM text, its Key ID, and the Apple Team ID. Unset → APNs
+   * devices are skipped and the rest of push-dispatch runs as before.
+   */
+  APNS_KEY_P8?: string;
+  APNS_KEY_ID?: string;
+  APNS_TEAM_ID?: string;
+  /** The iOS bundle id pushes are addressed to. Defaults to `day.nuvo.app`. */
+  APNS_TOPIC?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   /** Notion public integration (D-257). Redirect URI: <worker>/functions/v1/notion-oauth. */

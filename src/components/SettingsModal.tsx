@@ -58,7 +58,7 @@ import { DEFAULT_REMINDER_PREFS } from "../../supabase/functions/_shared/reminde
 import { ReminderList } from "./ReminderSelect";
 import { detectDeviceTz, supportedTimeZones, tzAbbrev, tzCity, tzStatus } from "../lib/timezone";
 import { useUpdater } from "../hooks/useUpdater";
-import { isDesktopTauri, offerMacDownload } from "../lib/platform";
+import { isDesktopTauri, isTauriIOS, offerMacDownload } from "../lib/platform";
 import { openDevTools, useDeveloperMode } from "../lib/devtools";
 import { clearErrorLog, formatErrorLog, useErrorLog } from "../lib/appError";
 import { loadChangelog, isMinor, notableNotes, type ChangelogEntry } from "../lib/changelog";
@@ -1182,7 +1182,11 @@ function RemindersPane({
                   : "This browser can't. On iPhone, add Nuvo to your Home Screen first."
                 : pushState === "on"
                   ? "This device hears them even when Nuvo is closed."
-                  : "Setting this device up…"
+                  : isTauriIOS()
+                    ? // The app's APNs registration can fail outright (a
+                      // build without the push entitlement); don't promise.
+                      "This iPhone hears them while Nuvo is open."
+                    : "Setting this device up…"
           }
         >
           <span className="text-caption text-muted">

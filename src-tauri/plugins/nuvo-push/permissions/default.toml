@@ -1,0 +1,11 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = """
+Default permissions for the nuvo-push plugin.
+
+Lets the app's own webview ask iOS for this device's APNs token, so the reminder
+dispatcher can reach the phone while Nuvo is closed. The token is only an
+address; what may be sent to it is decided server-side by reminderRules.ts.
+"""
+permissions = ["allow-register"]
