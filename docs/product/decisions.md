@@ -10054,3 +10054,46 @@ Ship and Park only), nothing tuned to one account.
 overdue card's Move to 2 weeks out, Ship it… (the assessment opened; Esc left the card), Park it (card
 and bar left the deck). Not driven: the bet deck's new cards (the fixtures have no overdue bet), the
 phone sheet, Mark complete's celebration, and any of it on a live account.*
+
+**D-257 · 2026-11-24 · The first task source is Notion: one-way, "assigned to me and still open",
+into the inbox.** *(Asked by the operator: "I do want a Notion connector… I would just identify
+which databases trigger things that move into inbox… only those that are assigned to me.")*
+
+→ Work that lives in someone else's tool reaches the week through the inbox, one source, one rule.
+**The strain, named rather than buried:** the source was picked from the builder's own stack, not
+from what paying users' work lives in (**P16**); Notion has no standard "assigned to me"; and every
+source is a sync path with its own token upkeep and provider review. The operator decided anyway.
+**Revisit** if, once there are a dozen paying accounts, fewer than two have connected it — that is
+the P16 failure showing.
+
+**The shape — simpler than Akiflow's on purpose (no rules engine, no direction to choose):**
+- **Connect** through Notion's public OAuth (`owner=user`). Notion's own consent screen is where
+  pages are picked; Nuvo never builds a page picker. The token response names the Notion user,
+  which is what "me" means.
+- **Switch databases on.** That is the only setting. A database's work arrives only when it is
+  **assigned to you** (a *people* field — one named like Assignee/Owner, else the first; a Select
+  appears only when there are several) **and still open** (not in the status's last group — Notion
+  fixes the groups as To-do → In progress → Complete, so this survives renamed options; else an
+  unticked Done checkbox; else nothing excluded). A database with no people field can't be switched
+  on, and says why. The missing "assigned to me" standard is answered by reading the schema, not by
+  asking the person to configure it.
+- **Lands once, in the inbox, as yours.** Title from the page, notes `From Notion · <database>`
+  plus the link (tappable via `recognize`). `task_source_items` remembers every page ever imported,
+  keyed by user — so finishing, deleting or disconnecting never brings it back.
+- **One-way, in both directions.** Ticking it in Nuvo doesn't touch Notion; closing it in Notion
+  doesn't touch Nuvo (the copy is yours — the P12 mitigation). Writeback stays open.
+- Polled every 10 minutes (`*/10 * * * *`, `notion-poll`); switching a database on pulls at once.
+  At most 50 new per source per run.
+
+**Anchor.** Closes toward **W1** (the demand side of the week), **A3**, **A1**. Strains **P16**
+(above) and **P12** (a shared object, mitigated by the copy-you-own rule). Four no's: no pool (the
+inbox), no new name ("Notion" is the tool's; imports are *tasks*), clean data not required (a
+database without a people field is skipped and says so), P16 — **yes, by decision**. The pattern
+gets a general name only at a second source (P10).
+
+*Status: built 2026-11-24, not deployed — `worker/src/notion/` (`feeds.ts` pure, `index.ts`
+OAuth + sync + routes), `task_sources` / `task_source_items` in `worker/schema/neon.sql` (not yet
+applied to Neon), Settings → **Notion** (`NotionPane.tsx`, `hooks/useNotion.ts`),
+`tests/notion-feeds.test.ts`. Driven in the dev app on desktop and at 375px against a fake source
+row. Needs a Notion public integration and `NOTION_CLIENT_ID` / `NOTION_CLIENT_SECRET` on the
+Worker — see [`notion-source.md`](../notion-source.md). Not yet run against a real Notion workspace.*

@@ -129,6 +129,13 @@ export const REST_TABLES: Readonly<Record<string, Policy>> = {
     ops: ["select"],
     read: ["id", "user_id", "kind", "login", "avatar_url", "repos", "needs_reconnect", "last_synced_at", "created_at", "updated_at"],
   },
+  // Notion → inbox (D-257). Read-only here; every write goes through /notion
+  // so a switch can't name a people field the schema doesn't have.
+  task_sources: {
+    owner: "user_id",
+    ops: ["select"],
+    read: ["id", "user_id", "kind", "account_name", "feeds", "needs_reconnect", "last_synced_at", "created_at", "updated_at"],
+  },
   activity_bindings: { owner: "user_id", ops: ALL },
   activity_units: { owner: "user_id", ops: ["select"] },
   push_subscriptions: { owner: "user_id", ops: ALL },

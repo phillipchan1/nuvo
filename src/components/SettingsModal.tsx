@@ -37,6 +37,7 @@ import { Field, PaneHeader, TextInput, TimeInput, Select, Toggle, Stepper, Segme
 import { Avatar, Button, Chip, IconButton, NuvoMark, SectionHeader } from "./kit";
 import { AppsDevicesPane } from "./AppsDevicesPane";
 import { InboxAddressPane } from "./InboxAddress";
+import { NotionPane } from "./NotionPane";
 import { BillingPane } from "./billing/BillingPane";
 import { DeleteAccount } from "./account/DeleteAccount";
 import { useSubscription } from "../hooks/useSubscription";
@@ -72,7 +73,7 @@ const DOWNLOAD_MAC_URL =
   "https://github.com/phillipchan1/nuvo-releases/releases/latest/download/Nuvo.dmg";
 
 // ── Section registry ──────────────────────────────────────────────────────
-type SectionId = "appearance" | "schedule" | "reminders" | "connections" | "inbound" | "apps" | "labels" | "shortcuts" | "account" | "billing" | "about";
+type SectionId = "appearance" | "schedule" | "reminders" | "connections" | "inbound" | "notion" | "apps" | "labels" | "shortcuts" | "account" | "billing" | "about";
 
 const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
   { id: "appearance", label: "Appearance", icon: <Icon name="sun" size={16} /> },
@@ -83,6 +84,9 @@ const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
   // a forwarding address under a heading about HTTP tokens. Same reason
   // Apps isn't under Calendars.
   { id: "inbound", label: "Inbox address", icon: <Icon name="mail" size={16} /> },
+  // The second door into the inbox (D-257). Its own row, named for the tool,
+  // because that's the word a person looks for.
+  { id: "notion", label: "Notion", icon: <Icon name="agenda" size={16} /> },
   // Its own row rather than a block under Calendars: nobody looks for a
   // watch's token under a heading about calendars.
   { id: "apps", label: "Apps & devices", icon: <Icon name="package" size={16} /> },
@@ -1554,6 +1558,7 @@ export default function SettingsModal({
   updateSettings,
   accounts,
   section,
+  drilled: startDrilled,
   onClose,
   onOpenUpkeep,
 }: {
@@ -1561,6 +1566,8 @@ export default function SettingsModal({
   updateSettings: (patch: Partial<UserSettings>) => void;
   accounts: CalendarAccount[];
   section: SettingsSection;
+  /** Phone only: open inside `section` rather than on the section list. */
+  drilled?: boolean;
   onClose: () => void;
   /** Mobile only — the phone's Calendar has no ⋯ overflow to hold this, so
    *  Schedule carries the door instead of the Calendar's busiest row. */
@@ -1577,7 +1584,7 @@ export default function SettingsModal({
   const [active, setActive] = useState<SectionId>(section as SectionId);
   useEffect(() => setActive(section as SectionId), [section]);
   // On a phone, start at the index list rather than dropped inside a pane.
-  const [drilled, setDrilled] = useState(!isMobile);
+  const [drilled, setDrilled] = useState(!isMobile || Boolean(startDrilled));
 
   const select = (id: SectionId) => {
     setActive(id);
@@ -1600,6 +1607,7 @@ export default function SettingsModal({
         <ConnectionsPane settings={settings} updateSettings={updateSettings} accounts={accounts} />
       )}
       {active === "inbound" && <InboxAddressPane />}
+      {active === "notion" && <NotionPane />}
       {/* Calendars are what Nuvo reads; these tokens are what writes into it.
           Named apart so "connection" never means two things (P11). */}
       {active === "apps" && <AppsDevicesPane />}

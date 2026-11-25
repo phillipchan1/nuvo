@@ -16,7 +16,7 @@ export const AES_KEY_BYTES = 32;
 export const GCM_IV_BYTES = 12;
 export const GCM_TAG_BITS = 128;
 
-export const TOKEN_TABLES = ["calendar_accounts", "activity_sources", "apple_identities"] as const;
+export const TOKEN_TABLES = ["calendar_accounts", "activity_sources", "apple_identities", "task_sources"] as const;
 export type TokenTable = (typeof TOKEN_TABLES)[number];
 
 export interface TokenAad {

@@ -968,3 +968,39 @@ CREATE TABLE IF NOT EXISTS public.handoffs (
 CREATE INDEX IF NOT EXISTS handoffs_open_by_connection_idx ON public.handoffs (connection_id) WHERE outcome = 'open';
 CREATE INDEX IF NOT EXISTS handoffs_task_idx ON public.handoffs (task_id);
 CREATE INDEX IF NOT EXISTS handoffs_user_idx ON public.handoffs (user_id);
+
+-- ── Task sources (D-257): Notion → inbox, one-way ───────────────────────────
+-- One row per connected workspace. `feeds` is the person's switches over the
+-- databases Notion shared with us; `me_id` is the Notion user "assigned to me"
+-- means. Token sealed with AAD `task_sources:<id>:<user_id>`.
+CREATE TABLE IF NOT EXISTS public.task_sources (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  account_name TEXT,
+  me_id TEXT,
+  token_enc BYTEA,
+  token_iv BYTEA,
+  key_version SMALLINT,
+  feeds JSONB NOT NULL DEFAULT '[]'::jsonb,
+  needs_reconnect BOOLEAN NOT NULL DEFAULT FALSE,
+  last_synced_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, kind, account_id)
+);
+CREATE INDEX IF NOT EXISTS task_sources_user_idx ON public.task_sources (user_id);
+
+-- Every item ever imported, so a page lands once: deleting or finishing the
+-- task in Nuvo never brings it back, and neither does reconnecting. Keyed by
+-- user + kind, not source, so it outlives a disconnect on purpose.
+CREATE TABLE IF NOT EXISTS public.task_source_items (
+  user_id UUID NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  source_id UUID,
+  task_id UUID REFERENCES public.tasks (id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, kind, external_id)
+);

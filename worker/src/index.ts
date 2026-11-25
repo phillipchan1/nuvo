@@ -53,6 +53,7 @@ import { handleRest, REST_CORS, REST_PREFIX } from "./rest.ts";
 import { handleRouteEvents } from "./routeEventsHttp.ts";
 import { requestIo, requireStore } from "./session.ts";
 import { registerCalendarRoutes } from "./calendar/http.ts";
+import { registerNotionRoutes } from "./notion/index.ts";
 import { registerGoogleRoutes } from "./google/routes.ts";
 import { handleSlotMirror } from "./slotMirror.ts";
 import { handleTaskMirror } from "./taskMirror.ts";
@@ -533,6 +534,11 @@ registerGoogleRoutes(app, {
 registerCalendarRoutes(app, {
   requireUser: requirePlanner,
   requestIo,
+  refuseIfFrozen,
+});
+
+registerNotionRoutes(app, {
+  requireUser: requirePlanner,
   refuseIfFrozen,
 });
 

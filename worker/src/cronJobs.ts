@@ -30,6 +30,7 @@ import { cutoverSkipBody, gateCron } from "./cutoverFlip.ts";
 import { closeSql, openSql, type Sql } from "./db.ts";
 import type { Env } from "./env.ts";
 import { runGithubPoll, runTrimSyncLog } from "./githubActivity.ts";
+import { NOTION_POLL_CRON, runNotionPoll } from "./notion/index.ts";
 import { runIcloudContacts, runIcloudSync } from "./calendar/icloud.ts";
 import { runIcsSync } from "./calendar/icsFeed.ts";
 import { runM365Sync } from "./calendar/m365.ts";
@@ -98,6 +99,7 @@ export const CRON_BY_SCHEDULE: Record<string, readonly string[]> = {
   "5 8 * * *": ["rollover"],
   "15 9 * * *": ["google-renew"],
   "20 9 * * *": ["github-poll"],
+  [NOTION_POLL_CRON]: ["notion-poll"],
   "0 10 * * SUN": ["trim-sync-log"],
   "30 4 * * *": ["reminder-deliveries-prune"],
   "0 4 * * *": ["purge-trash"],
@@ -285,6 +287,11 @@ export async function runCronJob(job: string, env: Env, sql: Sql | null): Promis
     if (!sql) return blocked(name);
     const out = await runGithubPoll(sql, env);
     return { job: name, status: 200, stay_on_supabase: false, enqueued: out.synced };
+  }
+  if (name === "notion-poll") {
+    if (!sql) return blocked(name);
+    const out = await runNotionPoll(sql, env);
+    return { job: name, status: 200, stay_on_supabase: false, enqueued: out.added };
   }
   if (name === "trim-sync-log") {
     if (!sql) return blocked(name);
@@ -579,6 +586,10 @@ export async function handleCron(c: Context<AppEnv>, jobName?: string): Promise<
   if (name === "github-poll") {
     const out = await runGithubPoll(sql, c.env);
     return json(out, 200, OPEN_CORS);
+  }
+
+  if (name === "notion-poll") {
+    return json(await runNotionPoll(sql, c.env), 200, OPEN_CORS);
   }
 
   if (name === "trim-sync-log") {

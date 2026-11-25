@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useMemory } from "../../hooks/useMemory";
 import { Icon } from "../Icon";
 import { IconButton } from "../kit";
+import { takeNotionReturn } from "../../lib/notionReturn";
 import { TouchSegmented, SegCount } from "./touch";
 import { PhoneNav, PhoneTopBar } from "./ShellChrome";
 import { format } from "date-fns";
@@ -222,7 +223,13 @@ export default function MobileShell() {
   const [taskId, setTaskId] = useState<string | null>(null);
   const [calendarTap, setCalendarTap] = useState<CalendarTap | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<"appearance" | "apps">("appearance");
+  const [settingsSection, setSettingsSection] = useState<"appearance" | "apps" | "notion">("appearance");
+  // Back from Notion's consent screen (D-257): straight into Settings → Notion.
+  useEffect(() => {
+    if (!takeNotionReturn()) return;
+    setSettingsSection("notion");
+    setSettingsOpen(true);
+  }, []);
   const [upkeepOpen, setUpkeepOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   // A strategic-vertical detail to open in the shared Sheet — from a tab row or a
@@ -905,6 +912,7 @@ export default function MobileShell() {
           updateSettings={updateSettings}
           accounts={accounts}
           section={settingsSection}
+          drilled={settingsSection === "notion"}
           onClose={() => {
             setSettingsOpen(false);
             setSettingsSection("appearance");

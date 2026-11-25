@@ -79,6 +79,9 @@ export interface Env {
   VAPID_SUBJECT?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  /** Notion public integration (D-257). Redirect URI: <worker>/functions/v1/notion-oauth. */
+  NOTION_CLIENT_ID?: string;
+  NOTION_CLIENT_SECRET?: string;
   MS_CLIENT_ID?: string;
   MS_CLIENT_SECRET?: string;
   /** SPA origin for OAuth redirects after consent. */

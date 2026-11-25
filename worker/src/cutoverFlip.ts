@@ -22,6 +22,7 @@ export function cutoverFlipped(value: unknown): boolean {
  */
 export const POST_FLIP_CRON_JOBS: readonly string[] = [
   "github-poll",
+  "notion-poll",
   "trim-sync-log",
   "calendar-dispatch",
   "google-renew",

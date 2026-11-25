@@ -13,6 +13,7 @@ import { installTouchContextMenu } from "../lib/touchContextMenu";
 import type { Shortcut } from "../lib/shortcuts";
 import { isTypingIn } from "../lib/a11y";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { takeNotionReturn } from "../lib/notionReturn";
 import { useEventRouter } from "../hooks/useEventRouter";
 import { useReminderDelivery } from "../hooks/useReminders";
 import type { PlannedReminder } from "../../supabase/functions/_shared/reminderRules.ts";
@@ -102,6 +103,16 @@ function ShellEffects() {
     openOverlay("settings");
   }, [openOverlay, setSettingsSection]);
   useParkedAlert(openSync);
+
+  // Back from Notion's consent screen (D-257): land where you left, on the
+  // databases you can now switch on. The flag is read once and dropped.
+  // The phone opens its own Settings sheet (MobileShell), so only the desktop reads it here.
+  const isMobileShell = useIsMobile();
+  useEffect(() => {
+    if (isMobileShell || !takeNotionReturn()) return;
+    setSettingsSection("notion");
+    openOverlay("settings");
+  }, [isMobileShell, openOverlay, setSettingsSection]);
 
   // The one place the app speaks first. Mounted here so both shells share it —
   // a phone and a desktop must not disagree about whether you were told.
