@@ -40,7 +40,7 @@ tauri-plugin-process = "2"
 # Held at 2.5.x, with @tauri-apps/plugin-opener ~2.5.5 in package.json: 2.6+
 # requires tauri 2.12, and `tauri build` refuses a crate/npm minor mismatch.
 tauri-plugin-opener = "~2.5"
-# Reminders as real OS notifications in the Mac and iOS shells (D-258). The
+# Reminders as real OS notifications in the Mac and iOS shells (D-259). The
 # WKWebView has no `window.Notification`, so without this a reminder in the
 # native apps could only ever be an in-app toast. Held at 2.3.x with
 # @tauri-apps/plugin-notification ~2.3.3 — same crate/npm minor rule as opener.
@@ -64,7 +64,7 @@ tauri-plugin-nuvo-iap = { path = "plugins/nuvo-iap" }
 # substance; desktop commands are no-ops reporting `supported: false`, so the
 # SPA falls back to the web OAuth flow without a platform branch.
 tauri-plugin-nuvo-siwa = { path = "plugins/nuvo-siwa" }
-# The iPhone's APNs device token, for background reminders (D-258). iOS-only in
+# The iPhone's APNs device token, for background reminders (D-259). iOS-only in
 # substance; on desktop `register` reports `supported: false`.
 tauri-plugin-nuvo-push = { path = "plugins/nuvo-push" }
 

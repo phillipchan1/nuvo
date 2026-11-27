@@ -1,6 +1,6 @@
-// Inbox address — the forwarding door. One component, two mounts: Settings
-// (copy + rotate) and an empty inbox (copy only). Not a mailbox, not a second
-// inbox, not a token — those live in Apps & devices.
+// Inbox address — the forwarding door. One component, two mounts: its page in
+// Settings → Apps & devices (copy + rotate) and an empty inbox (copy only).
+// Not a mailbox, not a second inbox, not a key.
 
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -94,7 +94,7 @@ export function InboxAddressCard({ rotate = false }: { rotate?: boolean }) {
   );
 }
 
-/** Settings → Inbox address. */
+/** Settings → Apps & devices → Inbox address (a page of that pane, D-258). */
 export function InboxAddressPane() {
   return (
     <div>

@@ -78,7 +78,7 @@ export interface Env {
   VAPID_PRIVATE_KEY?: string;
   VAPID_SUBJECT?: string;
   /**
-   * APNs token auth (D-258) — the native iPhone app's background reminders.
+   * APNs token auth (D-259) — the native iPhone app's background reminders.
    * The .p8 key's PEM text, its Key ID, and the Apple Team ID. Unset → APNs
    * devices are skipped and the rest of push-dispatch runs as before.
    */

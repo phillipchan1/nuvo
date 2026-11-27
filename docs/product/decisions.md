@@ -10098,9 +10098,51 @@ applied to Neon), Settings → **Notion** (`NotionPane.tsx`, `hooks/useNotion.ts
 row. Needs a Notion public integration and `NOTION_CLIENT_ID` / `NOTION_CLIENT_SECRET` on the
 Worker — see [`notion-source.md`](../notion-source.md). Not yet run against a real Notion workspace.*
 
+**D-258 · 2026-11-27 · Apps & devices is everything connected, grouped by what it can do; each
+thing opens its own page.** *(Operator, looking at Settings: "the apps and devices and Notion in
+the settings should probably be redesigned. It feels confusing because Notion is an app, but the
+other one, there's so much going on.")*
+
+→ **Three sections became one.** Inbox address, Notion and Apps & devices all meant "something
+outside Nuvo connected to it", so where a thing lived depended on how it was built, not on what it
+does. Settings → **Apps & devices** now lists all of it except calendars, in two groups named by
+the two key kinds that already existed — **Inbox** (can only add to your inbox: the Inbox address,
+Notion, an Inbox key) and **Full account** (sees and acts as you, over MCP). No new name (P11):
+"agents" stays refused (D-250).
+
+→ **The list is an inventory; each row opens a page.** The old pane expanded every agent's
+hand-off switch and doorbell inline (about 150px of form per agent) and kept the key form and the
+wiring steps on the same page — three questions on one surface (P8). Now a row is one line
+(name · what it is · when it was used) with a chevron; the agent's switch, doorbell and **Set up**
+steps live on its page, with Revoke at the foot. **Add** replaces the key form and *Next steps*:
+*An agent or app*, *A device or shortcut*, or Notion; a new key lands on its own page, shown once,
+with its setup open. The Inbox address keeps **Copy** on its row.
+
+→ **Overrides D-134's placement.** D-134 kept the address out of this pane because "nobody looks
+for a forwarding address under a heading about keys". The pane is no longer about keys, so that
+reason no longer holds; the address is the first row under Inbox. The old section ids (`inbound`,
+`notion`) stay as deep links — the Marquee, the return from Notion's consent screen — and open the
+pane on that page.
+
+→ **The phone.** The Sheet's header is the page's back and name (one back, one title — the pane's
+own back hides), stepping up a level rather than out to the section list.
+
+**Anchor.** Closes toward **O6** (is the setup worth it — a newcomer can see what's connected and
+add one thing in one place). Strains **P8** less than before; reverses D-134 (above). Four no's:
+no pool, no new name, no clean data needed (empty groups don't draw), nothing that only holds for
+the builder's account (every account has the Inbox address row).
+
+*Status: built 2026-11-27 — `AppsDevicesPane.tsx` (list, Add, new key, key page), `LinkRow` in
+`form.tsx`, `SettingsModal.tsx` (sections and deep-link aliases), `tests/inbox-address.test.tsx`.
+Driven in the dev app on the local Worker: desktop list, Grok Bot's page (hand-offs and doorbell),
+Add → device → a key created, shown once, revoked; `?notion=connected` on desktop and at 375px
+(Sheet header reads Notion, back lands on the list, no horizontal overflow, 55px rows). A fake
+Notion source row was used and deleted. The connected Inbox address row was not seen with a real
+address (the local account has none); a test covers it.*
+
 ---
 
-**D-258 · 2026-11-25 · Reminders reach the native apps: real OS notifications on the Mac, APNs
+**D-259 · 2026-11-25 · Reminders reach the native apps: real OS notifications on the Mac, APNs
 on the iPhone.**
 
 D-105 allowed push with consent and built it — but only as Web Push, which needs a service

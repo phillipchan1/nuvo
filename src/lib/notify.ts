@@ -1,8 +1,8 @@
 /**
- * Saying a reminder out loud — the OS notification, on every shell (D-258).
+ * Saying a reminder out loud — the OS notification, on every shell (D-259).
  *
  * A browser has `window.Notification`. The Mac and iOS apps run in WKWebView,
- * which has none, so until D-258 a reminder in the native apps could only ever
+ * which has none, so until D-259 a reminder in the native apps could only ever
  * be an in-app toast — invisible unless you happened to be looking at Nuvo.
  * `tauri-plugin-notification` (registered in src-tauri/src/lib.rs) installs a
  * `window.Notification` of its own that posts a real OS notification, so the

@@ -213,7 +213,7 @@ export { notifyPermission };
  * yes. Mounted in the shell (`ShellEffects`) so it re-runs cheaply on every
  * launch — which is what keeps the stored timezone fresh when someone travels
  * (a deadline has to speak at 9am somewhere, and the server needs to know
- * where), and what re-records a native token that rotated (D-258). Until D-258
+ * where), and what re-records a native token that rotated (D-259). Until D-259
  * it lived only in Settings, so a device subscribed only while that pane was
  * open.
  */
@@ -410,7 +410,7 @@ export function useReminderDelivery(options: ReminderDeliveryOptions = {}) {
     // device (or the dispatcher) already told them.
     if (!(await claimReminder(r))) return;
 
-    // A real OS notification — in a browser, and since D-258 in the Mac and
+    // A real OS notification — in a browser, and since D-259 in the Mac and
     // iOS apps too (lib/notify.ts). The tag keeps it one per anchor.
     if (
       showSystemNotification({

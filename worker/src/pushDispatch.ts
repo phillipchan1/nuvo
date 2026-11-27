@@ -66,7 +66,7 @@ export interface PushDispatchResult {
    */
   next: Record<string, number | null>;
   selfTest?: Awaited<ReturnType<typeof webPushSelfTest>> & {
-    /** The native iPhone transport (D-258), checked the same way. */
+    /** The native iPhone transport (D-259), checked the same way. */
     apns?: Awaited<ReturnType<typeof apnsSelfTest>>;
   };
 }
@@ -402,7 +402,7 @@ export function sendable(env: Env, sub: PushSubscriptionRow): boolean {
   return isApnsEndpoint(sub.endpoint) ? apnsConfigured(env) : webPushConfigured(env);
 }
 
-/** One message, one device, whichever transport its endpoint names (D-258). */
+/** One message, one device, whichever transport its endpoint names (D-259). */
 async function sendTo(
   env: Env,
   sub: PushSubscriptionRow,

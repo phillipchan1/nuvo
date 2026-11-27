@@ -523,7 +523,7 @@ const alias = await app.request("http://localhost:8787/functions/v1/push-dispatc
 }, flippedEnv);
 ok(alias.status === 200, `functions/v1/push-dispatch: ${alias.status}`);
 
-// ── APNs: the native iPhone app (D-258) ────────────────────────────────────
+// ── APNs: the native iPhone app (D-259) ────────────────────────────────────
 {
   const pair = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
     "sign",

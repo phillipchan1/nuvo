@@ -205,13 +205,13 @@ export const MARQUEE_TARGETS: MarqueeTargetDef[] = [
     label: "Settings",
     nav: { kind: "settings", section: "inbound" },
     spotlight: "inbox-address",
-    describe: "Settings → Inbox address. Point here when the user asks how to email a task in, or to copy the forwarding address.",
+    describe: "Settings → Apps & devices → Inbox address. Point here when the user asks how to email a task in, or to copy the forwarding address.",
   },
   {
     key: "apps",
     label: "Settings",
     nav: { kind: "settings", section: "apps" },
-    describe: "Settings → Apps & devices. Tokens for a shortcut, a watch, or a teammate. Point here to mint a key — not for forwarding mail (that's Inbox address).",
+    describe: "Settings → Apps & devices. Everything connected to Nuvo except calendars: the inbox address, Notion, keys for a shortcut, a watch or an agent. Point here to add a key or manage an agent's hand-offs.",
   },
 ];
 

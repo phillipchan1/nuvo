@@ -16,7 +16,7 @@
  *   Tauri macOS          no service worker by design, so no Web Push. The app
  *                        hides on ⌘W rather than quitting, so it reminds you
  *                        with real OS notifications while it runs (`lib/notify.ts`).
- *   Tauri iOS            APNs, not Web Push (D-258). The `nuvo-push` plugin hands
+ *   Tauri iOS            APNs, not Web Push (D-259). The `nuvo-push` plugin hands
  *                        over the device token; it is stored in the same table as
  *                        an `apns://<environment>/<token>` endpoint, so the
  *                        dispatcher, the claim and every prune path stay one.
@@ -207,7 +207,7 @@ export async function hasPushSubscription(): Promise<boolean> {
   }
 }
 
-// ── The native iPhone: APNs (D-258) ─────────────────────────────────────────
+// ── The native iPhone: APNs (D-259) ─────────────────────────────────────────
 
 /** The endpoint this device last recorded — so a rotated token replaces its
  *  row instead of leaving the old one to be rejected forever. */

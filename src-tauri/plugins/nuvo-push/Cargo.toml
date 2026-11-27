@@ -1,5 +1,5 @@
 # The phone's APNs device token, for background reminders in the native iOS app
-# (D-258). A plugin crate for the same reason as nuvo-watch: it is the only way
+# (D-259). A plugin crate for the same reason as nuvo-watch: it is the only way
 # Tauri v2 calls Swift (`ios_path` → swift_rs → linked into libapp.a).
 #
 # `links` must equal the package name (tauri-plugin's build helper requires it).

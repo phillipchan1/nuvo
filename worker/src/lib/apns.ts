@@ -1,5 +1,5 @@
 /**
- * APNs — the native iPhone app's background reminders (D-258).
+ * APNs — the native iPhone app's background reminders (D-259).
  *
  * The iOS shell has no service worker, so Web Push can't reach it. Apple's push
  * service can. A device registers through the `nuvo-push` plugin and is stored

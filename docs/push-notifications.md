@@ -1,7 +1,7 @@
 # Background reminders — how they work, and how to turn them on
 
 **Status:** Web Push live — VAPID secrets set and verified 2026-08-13. Untested against a
-real device; see §4's checklist and §6. **Native apps (D-258), built 2026-11-25, not
+real device; see §4's checklist and §6. **Native apps (D-259), built 2026-11-25, not
 deployed:** the Mac app posts real OS notifications while it runs; the iPhone app
 registers for APNs and the Worker sends to it once the APNs key is set (§4b).
 **Decisions:** [D-102](./product/decisions.md) (what may be said) ·
@@ -69,8 +69,8 @@ minutes is a worse failure than the same meeting announced twice.
 |---|---|---|
 | **Installed iOS PWA** | ✅ iOS 16.4+ | Web Push → service worker. **Only when added to the Home Screen** — Safari in a tab cannot subscribe. |
 | **Desktop browsers** | ✅ | Web Push → service worker. |
-| **Tauri macOS app** | ⚠️ while running | No service worker by design (custom protocol, and Tauri owns its updater). Since D-258 `tauri-plugin-notification` gives it a `window.Notification`, so a reminder is a real macOS notification, not an in-app toast. ⌘W hides the app rather than quitting it, so "while running" is most of the day. Quit or asleep past a reminder's grace window: missed. |
-| **Tauri iOS app** | ✅ once §4b is done | **APNs**, not Web Push (D-258). The `nuvo-push` plugin hands over the device token, stored as `apns://<production\|sandbox>/<token>` in the same `push_subscriptions` table; `worker/src/lib/apns.ts` sends. Until the key is set, the row is skipped and the app reminds only while open. |
+| **Tauri macOS app** | ⚠️ while running | No service worker by design (custom protocol, and Tauri owns its updater). Since D-259 `tauri-plugin-notification` gives it a `window.Notification`, so a reminder is a real macOS notification, not an in-app toast. ⌘W hides the app rather than quitting it, so "while running" is most of the day. Quit or asleep past a reminder's grace window: missed. |
+| **Tauri iOS app** | ✅ once §4b is done | **APNs**, not Web Push (D-259). The `nuvo-push` plugin hands over the device token, stored as `apns://<production\|sandbox>/<token>` in the same `push_subscriptions` table; `worker/src/lib/apns.ts` sends. Until the key is set, the row is skipped and the app reminds only while open. |
 
 The honest read: **background push is for the phone** — the PWA or the app. The
 Mac app is usually running, and when it is, it is the one that claims and speaks.
@@ -90,7 +90,7 @@ it works everywhere.
 | `supabase/functions/push-dispatch/` | the every-minute dispatcher |
 | `src/sw.ts` | the service worker's `push` + `notificationclick` |
 | `src/lib/push.ts` | subscribe / unsubscribe / status — Web Push, or APNs in the iPhone app |
-| `src/lib/notify.ts` | the one place an OS notification is posted, on all three runtimes (D-258) |
+| `src/lib/notify.ts` | the one place an OS notification is posted, on all three runtimes (D-259) |
 | `src/hooks/useReminders.ts` | claim-before-show, and keeping the subscription in step with the toggle (mounted in `ShellEffects`, so it runs every launch) |
 | `src-tauri/plugins/nuvo-push/` | the iPhone's APNs token (`register`) and which APNs host it belongs to |
 | `worker/src/lib/apns.ts` | ES256 provider token + the send; `sendable()` in `pushDispatch.ts` skips a device the deployment can't reach *before* claiming |
@@ -169,7 +169,7 @@ wrong are fine:
 4. If nothing arrives: `supabase functions logs push-dispatch`, and check
    `select * from push_subscriptions` has a row.
 
-## 4b · Turning on the iPhone app (APNs, D-258)
+## 4b · Turning on the iPhone app (APNs, D-259)
 
 In this order — each step is safe on its own, and the app keeps reminding while
 open until all four are done.
@@ -227,7 +227,7 @@ one.
 
 ## 6 · Known limits
 
-- **The Mac app has no quit-state delivery.** It speaks while running (D-258);
+- **The Mac app has no quit-state delivery.** It speaks while running (D-259);
   APNs for a Developer-ID Mac app is more signing setup than the gap is worth
   while ⌘W hides instead of quitting.
 - **A native notification can't be clicked through to its item.** The plugin

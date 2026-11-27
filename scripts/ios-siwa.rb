@@ -73,7 +73,7 @@ fail!("could not read #{ENTITLEMENTS_SRC} as a plist") if wanted.nil?
 fail!("#{ENTITLEMENTS_SRC} is not a plist dictionary") unless wanted.is_a?(Hash)
 fail!("#{ENTITLEMENTS_SRC} declares nothing") if wanted.empty?
 
-# APNs (D-258): background reminders on the native iPhone app. Opt-in by env,
+# APNs (D-259): background reminders on the native iPhone app. Opt-in by env,
 # NOT in Nuvo.entitlements, because declaring aps-environment before the Push
 # Notifications capability is enabled on the App ID fails signing outright —
 # the same trap as Sign in with Apple. `development` for a dev-signed local

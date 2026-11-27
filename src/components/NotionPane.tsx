@@ -1,4 +1,4 @@
-// Settings → Notion (D-257). One rule, no rules engine: a database you switch
+// Settings → Apps & devices → Notion (D-257, D-258). One rule, no rules engine: a database you switch
 // on sends what's **assigned to you and still open** to the inbox, once, as
 // your task. Which pages Nuvo can see is chosen on Notion's own screen; the
 // only choice here is which of those databases count — and, when a database
@@ -10,7 +10,7 @@ import { PaneHeader, Select, Toggle } from "./form";
 import { Button, Chip, SectionHeader } from "./kit";
 import { startNotionConnect, useNotionActions, useNotionSource, type NotionFeed } from "../hooks/useNotion";
 
-function syncedAgo(iso: string | null): string {
+export function syncedAgo(iso: string | null): string {
   if (!iso) return "Not synced yet";
   const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
   if (mins < 1) return "Synced just now";
@@ -22,6 +22,8 @@ function syncedAgo(iso: string | null): string {
 export function NotionPane() {
   const { data: source, isLoading } = useNotionSource();
   const { setFeed, refresh, disconnect } = useNotionActions();
+
+  const connect = () => void startNotionConnect().catch((e: Error) => toast.error(e.message));
 
   if (isLoading) return <PaneHeader title="Notion" />;
 
@@ -38,7 +40,7 @@ export function NotionPane() {
             <div className="set-row-desc">What's assigned to you lands in your inbox.</div>
           </div>
           <div className="set-row-ctl">
-            <Button kind="primary" className="tap" onClick={() => void startNotionConnect()}>
+            <Button kind="primary" className="tap" onClick={connect}>
               Connect
             </Button>
           </div>
@@ -111,7 +113,7 @@ export function NotionPane() {
             </span>
           </span>
           {source.needs_reconnect ? (
-            <Button size="sm" kind="danger" className="tap" onClick={() => void startNotionConnect()}>
+            <Button size="sm" kind="danger" className="tap" onClick={connect}>
               Reconnect
             </Button>
           ) : (
@@ -142,7 +144,7 @@ export function NotionPane() {
         </div>
         <div className="mt-2 flex flex-wrap gap-2">
           {/* Notion's own picker is the only place page access changes. */}
-          <Button kind="ghost" className="tap -ml-2" onClick={() => void startNotionConnect()}>
+          <Button kind="ghost" className="tap -ml-2" onClick={connect}>
             Choose pages in Notion
           </Button>
           <Button

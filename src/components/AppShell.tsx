@@ -147,7 +147,7 @@ function ShellEffects() {
   });
 
   // Keep this device subscribed for background delivery on every launch, not
-  // only while Settings is open (D-258) — a native token that rotated, or a
+  // only while Settings is open (D-259) — a native token that rotated, or a
   // time zone that changed, is re-recorded here.
   const { settings: shellSettings } = useSettings();
   const { permission: notifyPermission } = useNotifyPermission();

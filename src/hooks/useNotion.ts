@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
 import { formatAppError } from "../lib/appError";
+import { notionOauthStartHref } from "../lib/backend";
 
 /** One Notion database the person can switch on (D-257). Mirrors worker/src/notion/feeds.ts. */
 export interface NotionFeed {
@@ -50,14 +51,15 @@ async function invoke<T>(body: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
-/** Off to Notion's consent screen — where the person picks which pages Nuvo may see. */
+/** Off to Notion's consent screen — where the person picks which pages Nuvo may see.
+ *  Throws when it can't start, so the pane says so instead of doing nothing. */
 export async function startNotionConnect(): Promise<void> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
-  if (!token) return;
-  const base = import.meta.env.VITE_SUPABASE_URL;
-  const redirect = encodeURIComponent(window.location.origin);
-  window.location.href = `${base}/functions/v1/notion-oauth?action=start&token=${token}&redirect=${redirect}`;
+  if (!token) throw new Error("Sign in again to connect Notion.");
+  const href = notionOauthStartHref(token, window.location.origin);
+  if (!href) throw new Error("Notion can't be connected from this build.");
+  window.location.href = href;
 }
 
 export function useNotionActions() {

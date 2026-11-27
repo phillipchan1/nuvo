@@ -23,7 +23,8 @@ import { cx } from "./kit/cx";
    Toggle     — kit Switch, with a touch-sized hit area
    Checkbox   — kit Checkbox with its label
    Stepper    — −  value  +  for bounded numbers
-   Segmented  — kit Segmented                                                 */
+   Segmented  — kit Segmented
+   LinkRow    — a row that opens its own page: mark, name, one line, a chevron */
 
 /** The heading at the top of a settings pane. Lives here rather than in
  *  SettingsModal so a pane split into its own file wears the same crown. */
@@ -33,6 +34,52 @@ export function PaneHeader({ title, sub }: { title: string; sub?: string }) {
       <h2 className="set-title">{title}</h2>
       {sub && <p className="set-sub">{sub}</p>}
     </>
+  );
+}
+
+/** A settings row that opens a page of its own (Apps & devices, D-258): the
+ *  thing's mark, its name, one line about it, an optional control that acts
+ *  without opening (Copy), and a chevron. Enter or Space opens it. */
+export function LinkRow({
+  mark,
+  title,
+  desc,
+  trailing,
+  onOpen,
+}: {
+  mark: ReactNode;
+  title: ReactNode;
+  desc?: ReactNode;
+  trailing?: ReactNode;
+  onOpen: () => void;
+}) {
+  return (
+    <div
+      className="set-row set-link"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+    >
+      {mark}
+      <div className="set-row-label">
+        <span className="set-row-title">{title}</span>
+        {desc != null && <div className="set-row-desc">{desc}</div>}
+      </div>
+      {trailing && (
+        // A control on the row acts on its own; it doesn't also open the page.
+        <div className="set-row-ctl" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          {trailing}
+        </div>
+      )}
+      <Icon name="chevron-right" size={14} className="set-link-chev" />
+    </div>
   );
 }
 

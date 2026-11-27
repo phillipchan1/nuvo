@@ -10,8 +10,8 @@ databases on, and that is the whole configuration.
 
 ## What the person does
 
-1. Settings → **Notion** → **Connect**. Notion's own screen picks which pages Nuvo may see.
-2. Back in Settings → **Notion**, every database Notion shared is listed, off. Switch on the ones
+1. Settings → **Apps & devices** → **Add** → **Notion** → **Connect**. Notion's own screen picks which pages Nuvo may see.
+2. Back in Settings → Apps & devices → **Notion** (D-258), every database Notion shared is listed, off. Switch on the ones
    that count. Work arrives at once, then every 10 minutes.
 3. If a database has several person fields, a select picks the one that means "assigned to".
    One with no person field can't be switched on, and says so.
@@ -27,7 +27,7 @@ databases on, and that is the whole configuration.
 | OAuth, listing, sync, `/notion` actions, cron runner | `worker/src/notion/index.ts` |
 | Tables | `task_sources` (one row per workspace: sealed token, `me_id`, `feeds` JSONB), `task_source_items` (every page ever imported, keyed `user_id, kind, external_id`) in `worker/schema/neon.sql` |
 | Cron | `*/10 * * * *` → `notion-poll` (`cronJobs.ts`, `wrangler.jsonc`; post-flip only) |
-| Client | `src/hooks/useNotion.ts`, `src/components/NotionPane.tsx`; `AppShell` reopens Settings → Notion on `?notion=` |
+| Client | `src/hooks/useNotion.ts`, `src/components/NotionPane.tsx`; `AppShell` / `MobileShell` reopen Settings → Apps & devices → Notion on `?notion=` |
 
 - **"Open"** = not in the status property's **last group** (Notion fixes groups as To-do →
   In progress → Complete; only names change). Else an unticked checkbox named like Done. Else

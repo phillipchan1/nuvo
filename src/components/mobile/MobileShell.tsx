@@ -224,7 +224,7 @@ export default function MobileShell() {
   const [calendarTap, setCalendarTap] = useState<CalendarTap | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<"appearance" | "apps" | "notion">("appearance");
-  // Back from Notion's consent screen (D-257): straight into Settings → Notion.
+  // Back from Notion's consent screen (D-257): straight into Settings → Apps & devices → Notion.
   useEffect(() => {
     if (!takeNotionReturn()) return;
     setSettingsSection("notion");
