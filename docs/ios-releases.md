@@ -442,7 +442,7 @@ step) at `app-icon.svg` directly.
 |---|---|
 | Workflow fails at signing | Check `APPLE_TEAM_ID`; try manual `IOS_*` secrets |
 | "No profiles for day.nuvo.app" | Create App Store provisioning profile; wait for App ID propagation |
-| Upload rejected (SDK too old) | Bump `runs-on:` to `macos-26` in `ios-release.yml` |
+| Upload rejected or ITMS-90725 warning (SDK too old) | Point `runs-on:` in `ios-release.yml` at a runner image whose **default** Xcode ships the required SDK — currently `xcode-27` (iOS 27 SDK; required for uploads from April 2027). Check the image's Xcode table in `actions/runner-images` (`images/macos/*-Readme.md`); the build log's `/Applications/Xcode_<ver>.app` paths show which one actually ran |
 | Build not in TestFlight | App Store Connect → Activity; check email for compliance questions |
 | Wrong icon in TestFlight (Tauri circles) | Run `npm run tauri:icon`; ensure `ios-postinit.sh` copies `icons/ios/` |
 | Upload fails: "Invalid large app icon...alpha channel" (90717) | An `icons/ios/*.png` was committed without going through `npm run tauri:icon` (which renders alpha-free via `gen-ios-icons.sh`). Rerun it and recommit; `ios-postinit.sh` now fails the build before upload if this regresses. |
