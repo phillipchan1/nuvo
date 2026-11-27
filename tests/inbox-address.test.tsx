@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { AppsDevicesPane } from "../src/components/AppsDevicesPane";
@@ -12,6 +12,12 @@ vi.mock("../src/hooks/useSettings", () => ({
     isLoading: false,
     update: vi.fn(),
   }),
+}));
+
+vi.mock("../src/hooks/useNotion", () => ({
+  useNotionSource: () => ({ data: null, isLoading: false }),
+  useNotionActions: () => ({}),
+  startNotionConnect: vi.fn(),
 }));
 
 vi.mock("../src/lib/supabase", () => ({
@@ -42,19 +48,32 @@ describe("Settings → Inbox address", () => {
   });
 });
 
-describe("Settings → Apps & devices", () => {
-  it("does not bury the forwarding address under HTTP tokens", () => {
-    const { container } = wrap(<AppsDevicesPane />);
-    expect(container.textContent).not.toContain("@inbox.nuvo.day");
+describe("Settings → Apps & devices (D-258)", () => {
+  it("lists what's connected, grouped by what it can do — one line each", async () => {
+    wrap(<AppsDevicesPane />);
     expect(screen.getByText("Apps & devices")).toBeTruthy();
+    // The inbox address is a door into the inbox, so it lives here now — as a row.
+    expect(await screen.findByText("a1b2c3d4e5f6@inbox.nuvo.day")).toBeTruthy();
+    expect(screen.getByText("Inbox")).toBeTruthy();
+    // An inventory, not a form: no key form or doorbell on the list.
+    expect(screen.queryByRole("button", { name: /Create key/i })).toBeNull();
+    expect(screen.queryByPlaceholderText(/Doorbell/i)).toBeNull();
+    expect(screen.queryByText("Wire Grok Bot")).toBeNull();
   });
 
-  it("is an inventory, not a Grok tutorial — wiring sits behind Next steps", () => {
+  it("adds through one door: an agent, a device, or Notion", async () => {
     wrap(<AppsDevicesPane />);
-    expect(screen.getByText("Next steps")).toBeTruthy();
-    expect(screen.queryByText("Wire Grok Bot")).toBeNull();
-    expect(screen.getByRole("radio", { name: /Full account/i })).toBeTruthy();
-    expect(screen.getByRole("radio", { name: /Inbox/i })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Create token/i })).toBeTruthy();
+    fireEvent.click(await screen.findByText("Add"));
+    expect(screen.getByText("An agent or app")).toBeTruthy();
+    expect(screen.getByText("A device or shortcut")).toBeTruthy();
+    expect(screen.getByText("Notion")).toBeTruthy();
+    fireEvent.click(screen.getByText("An agent or app"));
+    expect(screen.getByRole("button", { name: /Create key/i })).toBeTruthy();
+  });
+
+  it("opens straight on a page when a deep link names one", () => {
+    wrap(<AppsDevicesPane start="address" />);
+    expect(screen.getByText("Get a new address")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Apps & devices/i })).toBeTruthy();
   });
 });

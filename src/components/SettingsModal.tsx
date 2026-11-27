@@ -35,9 +35,7 @@ import { Modal } from "./ui";
 import Sheet from "./mobile/Sheet";
 import { Field, PaneHeader, TextInput, TimeInput, Select, Toggle, Stepper, Segmented } from "./form";
 import { Avatar, Button, Chip, IconButton, NuvoMark, SectionHeader } from "./kit";
-import { AppsDevicesPane } from "./AppsDevicesPane";
-import { InboxAddressPane } from "./InboxAddress";
-import { NotionPane } from "./NotionPane";
+import { AppsDevicesPane, type AppsNav, type AppsStart } from "./AppsDevicesPane";
 import { BillingPane } from "./billing/BillingPane";
 import { DeleteAccount } from "./account/DeleteAccount";
 import { useSubscription } from "../hooks/useSubscription";
@@ -73,22 +71,25 @@ const DOWNLOAD_MAC_URL =
   "https://github.com/phillipchan1/nuvo-releases/releases/latest/download/Nuvo.dmg";
 
 // ── Section registry ──────────────────────────────────────────────────────
-type SectionId = "appearance" | "schedule" | "reminders" | "connections" | "inbound" | "notion" | "apps" | "labels" | "shortcuts" | "account" | "billing" | "about";
+type SectionId = "appearance" | "schedule" | "reminders" | "connections" | "apps" | "labels" | "shortcuts" | "account" | "billing" | "about";
+
+/** The Inbox address and Notion were sections of their own; they are pages of
+ *  Apps & devices now (D-258). Their old ids stay as deep links — the empty
+ *  inbox, the Marquee and the return from Notion still name them. */
+function sectionOf(section: SettingsSection): { id: SectionId; apps: AppsStart } {
+  if (section === "inbound") return { id: "apps", apps: "address" };
+  if (section === "notion") return { id: "apps", apps: "notion" };
+  return { id: section as SectionId, apps: "list" };
+}
 
 const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
   { id: "appearance", label: "Appearance", icon: <Icon name="sun" size={16} /> },
   { id: "schedule", label: "Schedule", icon: <Icon name="clock" size={16} /> },
   { id: "reminders", label: "Reminders", icon: <Icon name="bell" size={16} /> },
   { id: "connections", label: "Calendars", icon: <Icon name="calendar" size={16} /> },
-  // Its own row rather than a block under Apps & devices: nobody looks for
-  // a forwarding address under a heading about HTTP tokens. Same reason
-  // Apps isn't under Calendars.
-  { id: "inbound", label: "Inbox address", icon: <Icon name="mail" size={16} /> },
-  // The second door into the inbox (D-257). Its own row, named for the tool,
-  // because that's the word a person looks for.
-  { id: "notion", label: "Notion", icon: <Icon name="agenda" size={16} /> },
-  // Its own row rather than a block under Calendars: nobody looks for a
-  // watch's token under a heading about calendars.
+  // Everything outside Nuvo that's connected to it, except calendars — the
+  // Inbox address, Notion, devices and agents, grouped by what each can do
+  // (D-258). Not under Calendars: nobody looks for a watch's key there.
   { id: "apps", label: "Apps & devices", icon: <Icon name="package" size={16} /> },
   { id: "labels", label: "Labels", icon: <Icon name="tag" size={16} /> },
   // The keyboard's list lives here, not as a `?` on the spine (the `?` key
@@ -1581,13 +1582,25 @@ export default function SettingsModal({
   // from the nav (deep-links / URL), the mobile shell mounts at the section list.
   // (The mobile shell can't drive `section` through global nav, so relying on the
   // prop alone left tapping a section a no-op — hence local state.)
-  const [active, setActive] = useState<SectionId>(section as SectionId);
-  useEffect(() => setActive(section as SectionId), [section]);
+  const start = sectionOf(section);
+  const [active, setActive] = useState<SectionId>(start.id);
+  const [appsStart, setAppsStart] = useState<AppsStart>(start.apps);
+  useEffect(() => {
+    const next = sectionOf(section);
+    setActive(next.id);
+    setAppsStart(next.apps);
+  }, [section]);
   // On a phone, start at the index list rather than dropped inside a pane.
   const [drilled, setDrilled] = useState(!isMobile || Boolean(startDrilled));
 
+  // A page inside Apps & devices (phone only reads it): the Sheet's header
+  // names the page and steps back up one level instead of to the sections.
+  const [appsNav, setAppsNav] = useState<AppsNav>(null);
+
   const select = (id: SectionId) => {
     setActive(id);
+    setAppsStart("list");
+    setAppsNav(null);
     setSettingsSection(id); // keep desktop nav / URL in sync
     setDrilled(true);
   };
@@ -1606,11 +1619,9 @@ export default function SettingsModal({
       {active === "connections" && (
         <ConnectionsPane settings={settings} updateSettings={updateSettings} accounts={accounts} />
       )}
-      {active === "inbound" && <InboxAddressPane />}
-      {active === "notion" && <NotionPane />}
       {/* Calendars are what Nuvo reads; these tokens are what writes into it.
           Named apart so "connection" never means two things (P11). */}
-      {active === "apps" && <AppsDevicesPane />}
+      {active === "apps" && <AppsDevicesPane start={appsStart} onNav={isMobile ? setAppsNav : undefined} />}
       {active === "labels" && <LabelsPane />}
       {active === "shortcuts" && (
         <div>
@@ -1627,17 +1638,18 @@ export default function SettingsModal({
   // ── Mobile: a bottom Sheet (the house overlay — CLAUDE.md's golden rule),
   //    iOS-style list → drill into pane, swipe-down dismissible. ──
   if (isMobile) {
+    const inPage = active === "apps" && appsNav;
     const titleNode = drilled ? (
       <div className="flex min-w-0 items-center gap-1">
         <IconButton
-          label="Back to settings sections"
+          label={inPage ? "Back" : "Back to settings sections"}
           icon={<Icon name="chevron-left" size={18} />}
-          onClick={() => setDrilled(false)}
+          onClick={() => (inPage ? appsNav.back() : setDrilled(false))}
           onPointerDown={(e) => e.stopPropagation()}
           className="tap -ml-2"
         />
         <span className="min-w-0 flex-1 truncate">
-          {sections.find((s) => s.id === active)?.label ?? "Settings"}
+          {inPage ? appsNav.title : sections.find((s) => s.id === active)?.label ?? "Settings"}
         </span>
       </div>
     ) : (

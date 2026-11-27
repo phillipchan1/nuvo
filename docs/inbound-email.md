@@ -73,7 +73,7 @@ Auth is the signature plus the unguessable local-part. `verify_jwt` is off:
 Resend cannot send a Supabase JWT. Unknown tokens return 200 so Resend does
 not retry mail we cannot route. 30 mails per account per minute, then 429.
 
-The address is shown in **Settings → Inbox address**, and on an empty inbox.
+The address is shown in **Settings → Apps & devices** (the Inbox address row, D-258), and on an empty inbox.
 Copy it. "Get a new address" (Settings only) calls `rotate_inbound_token()`;
 the old local-part dies. Direct client writes to `inbound_token` are reverted
 by trigger. It is not under Apps & devices — that pane is HTTP tokens.

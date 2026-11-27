@@ -1,29 +1,39 @@
-// Apps & devices — the bearer tokens that let something you own talk to Nuvo
-// over HTTP: the Capture API (`inbox:write`) and MCP (`account`).
+// Apps & devices — everything outside Nuvo that is connected to it, except
+// calendars (D-258). One list, grouped by what a thing can do:
 //
-// Deliberately NOT called "connections" in the UI even though the table is
-// `connections`: the Settings section already uses that word for calendar
-// accounts, and one word must not mean two things (Principle 11).
+//   Inbox         — it can only add to your inbox: the Inbox address, Notion,
+//                   and Inbox keys (a watch, a shortcut).
+//   Full account  — it sees and acts as you, over MCP (Grok Bot, Cursor), and
+//                   may take hand-offs.
 //
-// The token is shown exactly once. We store `sha256(token)` and the last four
-// characters — never the token — so a leaked database row cannot be replayed
-// and this screen can never show a token again. That is the same reason
-// revoking is a timestamp, not a delete: a revoked row still explains where a
-// task came from.
+// Each row is one line and opens a page of its own; the agent's switches, its
+// doorbell and its setup steps live on that page, not on the list. There was a
+// pane for each door (Inbox address, Notion, Apps & devices) and the list
+// expanded every agent's doorbell inline — three sections that all meant
+// "something connected", and a page that answered three questions at once.
 //
-// This pane is an inventory, not a tutorial. Wiring steps live behind
-// Next steps so a specific teammate (Grok Bot, Cursor, …) is not the page.
-// The forwarding address is Settings → Inbox address, not here.
+// The keys are bearer tokens in the `connections` table — deliberately NOT
+// called "connections" in the UI: that word is the calendar accounts' (P11).
+// A token is shown exactly once. We store `sha256(token)` and the last four
+// characters — never the token — so a leaked row cannot be replayed and this
+// screen can never show it again. Revoking is a timestamp, not a delete: a
+// revoked row still explains where a task came from.
 
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { inboundAddress } from "../../supabase/functions/_shared/inboundEmail.ts";
 import { supabase } from "../lib/supabase";
 import { edgeFunctionUrl } from "../lib/backend";
+import { liveInboundMailDomain } from "../lib/maintenance";
 import { randomUrlSafeToken as mintToken, sha256Hex } from "../lib/webcrypto";
+import { useSettings } from "../hooks/useSettings";
+import { useNotionSource } from "../hooks/useNotion";
 import { Icon, type IconName } from "./Icon";
-import { PaneHeader, TextInput } from "./form";
-import { Button, SectionHeader, Segmented, Switch } from "./kit";
+import { LinkRow, PaneHeader, TextInput } from "./form";
+import { Button, SectionHeader, Switch } from "./kit";
+import { InboxAddressPane } from "./InboxAddress";
+import { NotionPane, syncedAgo } from "./NotionPane";
 import { HANDOFF_AGENTS_QK, ringDoorbell, setDoorbell } from "../hooks/useHandoff";
 import { at as clockAt } from "./mobile/dayPlan";
 
@@ -51,22 +61,27 @@ const KIND_SCOPES: Record<TokenKind, string[]> = {
   account: ["account"],
 };
 
-const KINDS: {
-  id: TokenKind;
-  icon: IconName;
-  label: string;
-  hint: string;
-}[] = [
-  { id: "account", icon: "user", label: "Full account", hint: "A teammate that sees and acts" },
-  { id: "inbox", icon: "package", label: "Inbox", hint: "A watch, shortcut, or app" },
-];
+/** The two kinds of key, as the Add page offers them. The kind's name rides
+ *  as the line under — the thing a person is adding is the title. */
+const KINDS: Record<TokenKind, { icon: IconName; label: string; offer: string; can: string; placeholder: string }> = {
+  account: {
+    icon: "user",
+    label: "Full account",
+    offer: "An agent or app",
+    can: "Sees and acts as you, over MCP",
+    placeholder: "Cursor, Grok Bot",
+  },
+  inbox: {
+    icon: "package",
+    label: "Inbox",
+    offer: "A device or shortcut",
+    can: "Adds tasks; can't read your week",
+    placeholder: "Apple Watch, shortcut",
+  },
+};
 
 function kindOf(scopes: string[]): TokenKind {
   return scopes.includes("account") ? "account" : "inbox";
-}
-
-function kindMeta(scopes: string[]) {
-  return KINDS.find((k) => k.id === kindOf(scopes)) ?? KINDS[1];
 }
 
 /** "lead_well" from "Lead Well" — the machine key the capture payload reports
@@ -77,10 +92,7 @@ const machineKey = (name: string) =>
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
 
-/** The address an outside app is given. On the Worker it is `api.nuvo.day/api/<fn>`. */
-function edgeEndpoint(fn: "mcp" | "capture"): string {
-  return edgeFunctionUrl(fn);
-}
+const usedLine = (c: Connection) => (c.last_used_at ? `used ${fmtDate(c.last_used_at)}` : "never used");
 
 async function copyText(text: string, ok: string) {
   try {
@@ -91,25 +103,17 @@ async function copyText(text: string, ok: string) {
   }
 }
 
-function Mark({ icon }: { icon: IconName; tone?: "accent" | "quiet" }) {
+function Mark({ icon, children }: { icon?: IconName; children?: ReactNode }) {
   return (
     <span aria-hidden className="set-acct-mark">
-      <Icon name={icon} size={14} />
+      {icon ? <Icon name={icon} size={14} /> : children}
     </span>
   );
 }
 
-function CopyBtn({
-  onClick,
-  children,
-  kind = "ghost",
-}: {
-  onClick: () => void;
-  children: ReactNode;
-  kind?: "primary" | "ghost";
-}) {
+function CopyBtn({ onClick, children, primary }: { onClick: () => void; children: ReactNode; primary?: boolean }) {
   return (
-    <Button kind={kind === "primary" ? "primary" : "secondary"} className="tap shrink-0" icon={<Icon name="copy" size={13} />} onClick={onClick}>
+    <Button kind={primary ? "primary" : "secondary"} className="tap shrink-0" icon={<Icon name="copy" size={13} />} onClick={onClick}>
       {children}
     </Button>
   );
@@ -125,16 +129,16 @@ function StepList({ steps }: { steps: string[] }) {
   );
 }
 
-export function AppsDevicesPane() {
-  const qc = useQueryClient();
-  const [name, setName] = useState("");
-  const [kind, setKind] = useState<TokenKind>("account");
-  const stepsRef = useRef<HTMLDetailsElement>(null);
-  // Held in memory only, and only until the user dismisses it. Never persisted,
-  // never re-derivable — this is the one moment the token exists outside a hash.
-  const [fresh, setFresh] = useState<{ name: string; token: string; kind: TokenKind } | null>(null);
+function Back({ to, onBack }: { to: string; onBack: () => void }) {
+  return (
+    <Button kind="ghost" size="sm" className="tap set-back" icon={<Icon name="chevron-left" size={14} />} onClick={onBack}>
+      {to}
+    </Button>
+  );
+}
 
-  const { data: connections = [], isLoading } = useQuery({
+function useConnections() {
+  return useQuery({
     queryKey: QK,
     queryFn: async (): Promise<Connection[]> => {
       const base = "id, app, name, scopes, last_four, created_at, last_used_at, revoked_at";
@@ -149,197 +153,199 @@ export function AppsDevicesPane() {
       return (data ?? []) as Connection[];
     },
   });
+}
 
-  const create = useMutation({
-    mutationFn: async ({ label, tokenKind }: { label: string; tokenKind: TokenKind }) => {
-      const { data: session } = await supabase.auth.getSession();
-      const userId = session.session?.user.id;
-      if (!userId) throw new Error("Not signed in");
-      const token = mintToken();
-      const { error } = await supabase.from("connections").insert({
-        user_id: userId,
-        app: machineKey(label),
-        name: label.trim(),
-        scopes: KIND_SCOPES[tokenKind],
-        token_hash: await sha256Hex(token),
-        last_four: token.slice(-4),
-      });
-      if (error) throw error;
-      return { name: label.trim(), token, kind: tokenKind };
-    },
-    onSuccess: (t) => {
-      setFresh(t);
-      setName("");
-      if (stepsRef.current) stepsRef.current.open = true;
-      qc.invalidateQueries({ queryKey: QK });
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
+/** Where the pane opens. Settings' old Inbox address and Notion sections are
+ *  deep links into it now (the empty inbox, the return from Notion). */
+export type AppsStart = "list" | "address" | "notion";
 
-  const revoke = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from("connections")
-        .update({ revoked_at: new Date().toISOString() })
-        .eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      toast.success("Token revoked");
-      qc.invalidateQueries({ queryKey: QK });
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
+type Page =
+  | { kind: "list" }
+  | { kind: "address" }
+  | { kind: "notion" }
+  | { kind: "add" }
+  | { kind: "new"; tokenKind: TokenKind }
+  | { kind: "key"; id: string };
 
+/** A page inside the pane, as the phone's Sheet header wants it: its name, and
+ *  the way up one level. The phone hides the page's own back and title and
+ *  says both in the Sheet's header — one back, one name (D-258). */
+export type AppsNav = { title: string; back: () => void } | null;
+
+export function AppsDevicesPane({ start = "list", onNav }: { start?: AppsStart; onNav?: (nav: AppsNav) => void }) {
+  const [page, setPage] = useState<Page>({ kind: start });
+  useEffect(() => setPage({ kind: start }), [start]);
+  const { data: connections } = useConnections();
+  const keyName = page.kind === "key" ? connections?.find((c) => c.id === page.id)?.name : undefined;
+  // Held in memory only, and only until the page is left. Never persisted,
+  // never re-derivable — this is the one moment the token exists outside a hash.
+  const [fresh, setFresh] = useState<{ id: string; token: string } | null>(null);
+  const go = (p: Page) => {
+    if (p.kind !== "key") setFresh(null);
+    setPage(p);
+  };
+  const toList = () => go({ kind: "list" });
+
+  useEffect(() => {
+    if (!onNav) return;
+    const up = (p: Page) => () => go(p);
+    switch (page.kind) {
+      case "list":
+        return onNav(null);
+      case "address":
+        return onNav({ title: "Inbox address", back: up({ kind: "list" }) });
+      case "notion":
+        return onNav({ title: "Notion", back: up({ kind: "list" }) });
+      case "add":
+        return onNav({ title: "Add", back: up({ kind: "list" }) });
+      case "new":
+        return onNav({ title: KINDS[page.tokenKind].offer, back: up({ kind: "add" }) });
+      case "key":
+        return onNav({ title: keyName ?? "Apps & devices", back: up({ kind: "list" }) });
+    }
+  }, [page, keyName, onNav]);
+  const back = <Back to="Apps & devices" onBack={toList} />;
+
+  let body: ReactNode;
+  switch (page.kind) {
+    case "list":
+      body = <AppsList go={go} />;
+      break;
+    case "address":
+      body = (
+        <>
+          {back}
+          <InboxAddressPane />
+        </>
+      );
+      break;
+    case "notion":
+      body = (
+        <>
+          {back}
+          <NotionPane />
+        </>
+      );
+      break;
+    case "add":
+      body = <AddPage back={back} go={go} />;
+      break;
+    case "new":
+      body = (
+        <NewKeyPage
+          tokenKind={page.tokenKind}
+          onBack={() => go({ kind: "add" })}
+          onCreated={(id, token) => {
+            setFresh({ id, token });
+            setPage({ kind: "key", id });
+          }}
+        />
+      );
+      break;
+    case "key":
+      body = <KeyPage id={page.id} back={back} fresh={fresh?.id === page.id ? fresh.token : null} onGone={toList} />;
+      break;
+  }
+  // Each page is its own scroll position and its own entrance.
+  return (
+    <div key={page.kind === "key" ? page.id : page.kind} className="floor-enter">
+      {body}
+    </div>
+  );
+}
+
+// ── The list ───────────────────────────────────────────────────────────────
+
+function AppsList({ go }: { go: (p: Page) => void }) {
+  const { data: connections = [], isLoading } = useConnections();
+  const { data: notion } = useNotionSource();
+  const { settings } = useSettings();
+  const [showRevoked, setShowRevoked] = useState(false);
+
+  const address = settings?.inbound_token
+    ? inboundAddress(settings.inbound_token, liveInboundMailDomain() ?? import.meta.env.VITE_INBOUND_MAIL_DOMAIN)
+    : null;
   const live = connections.filter((c) => !c.revoked_at);
   const revoked = connections.filter((c) => c.revoked_at);
-  const placeholder = kind === "account" ? "e.g. Cursor, Grok Bot" : "e.g. Apple Watch, shortcut";
-  const mcpUrl = edgeEndpoint("mcp");
-  const captureUrl = edgeEndpoint("capture");
+  const inboxKeys = live.filter((c) => kindOf(c.scopes) === "inbox");
+  const accountKeys = live.filter((c) => kindOf(c.scopes) === "account");
+  const notionOn = notion ? notion.feeds.filter((f) => f.on).length : 0;
+
+  const keyRow = (c: Connection) => {
+    const account = kindOf(c.scopes) === "account";
+    return (
+      <LinkRow
+        key={c.id}
+        mark={<Mark icon={account ? "user" : "package"} />}
+        title={c.name}
+        desc={account && c.takes_handoffs ? `Takes hand-offs · ${usedLine(c)}` : `…${c.last_four ?? "····"} · ${usedLine(c)}`}
+        onOpen={() => go({ kind: "key", id: c.id })}
+      />
+    );
+  };
 
   return (
     <div>
       <PaneHeader title="Apps & devices" />
 
-      {isLoading ? (
-        <p className="set-note">Loading…</p>
-      ) : live.length === 0 ? (
-        <div className="set-row">
-          <Mark icon="package" />
-          <span className="set-note flex-1">No keys yet</span>
-        </div>
-      ) : (
-        <div className="set-list">
-          {live.map((c) => {
-            const meta = kindMeta(c.scopes);
-            return (
-              <div key={c.id} className="set-row">
-                <Mark icon={meta.icon} />
-                <div className="set-row-label">
-                  <span className="set-row-title">{c.name}</span>
-                  <div className="set-row-desc">
-                    {meta.label}
-                    {c.last_four && <> · …{c.last_four}</>}
-                    {" · "}added {fmtDate(c.created_at)} · {c.last_used_at ? `used ${fmtDate(c.last_used_at)}` : "never used"}
-                  </div>
-                </div>
-                <div className="set-row-ctl">
-                  <Button kind="danger" className="tap" disabled={revoke.isPending} onClick={() => revoke.mutate(c.id)}>
-                    Revoke
-                  </Button>
-                </div>
-                {meta.label === "Full account" && c.takes_handoffs !== undefined && <HandoffControls c={c} />}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <SectionHeader title="New key" className="set-group" />
-      <div className="grid gap-3">
-        <Segmented
-          label="What this token can do"
-          value={kind}
-          onChange={setKind}
-          className="fm-seg self-start"
-          options={KINDS.map((k) => ({ value: k.id, label: k.label, icon: <Icon name={k.icon} size={12} />, title: k.hint }))}
+      <SectionHeader title="Inbox" className="set-group" />
+      <div className="set-list">
+        <LinkRow
+          mark={<Mark icon="mail" />}
+          title="Inbox address"
+          desc={address ?? "Forward a mail; the subject becomes a task"}
+          trailing={
+            address ? (
+              <Button kind="secondary" size="sm" className="tap" icon={<Icon name="copy" size={13} />} onClick={() => void copyText(address, "Address copied")}>
+                Copy
+              </Button>
+            ) : undefined
+          }
+          onOpen={() => go({ kind: "address" })}
         />
-        <p className="set-note">{KINDS.find((k) => k.id === kind)?.hint}</p>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <TextInput
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={placeholder}
-            onKeyDown={(e) => e.key === "Enter" && name.trim() && create.mutate({ label: name, tokenKind: kind })}
-            aria-label="Name this app or device"
+        {notion && (
+          <LinkRow
+            mark={<Mark>N</Mark>}
+            title="Notion"
+            desc={[
+              notion.account_name,
+              notion.needs_reconnect
+                ? "Paused — reconnect"
+                : `${notionOn === 1 ? "1 database" : `${notionOn} databases`} · ${syncedAgo(notion.last_synced_at).toLowerCase()}`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+            onOpen={() => go({ kind: "notion" })}
           />
-          <Button
-            kind="primary"
-            size="md"
-            className="tap shrink-0"
-            disabled={!name.trim() || create.isPending}
-            onClick={() => create.mutate({ label: name, tokenKind: kind })}
-          >
-            {create.isPending ? "Creating…" : "Create token"}
-          </Button>
-        </div>
+        )}
+        {inboxKeys.map(keyRow)}
       </div>
 
-      {fresh && (
-        <div className="set-well">
-          <div className="set-well-title">Token for {fresh.name} — copy it now</div>
-          <p className="set-note">Shown once. Treat it like a password; lose it and you revoke and mint another.</p>
-          <code className="block break-all rounded-[var(--r-ctl)] bg-[var(--raised)] p-3 text-caption shadow-[0_0_0_1px_var(--line-1)]" data-selectable>
-            {fresh.token}
-          </code>
-          <div className="flex flex-wrap gap-2">
-            <CopyBtn kind="primary" onClick={() => void copyText(fresh.token, "Token copied")}>
-              Copy token
-            </CopyBtn>
-            {fresh.kind === "account" && (
-              <CopyBtn
-                onClick={() =>
-                  void copyText(`URL: ${mcpUrl}\nAuthorization: Bearer ${fresh.token}`, "URL + token copied")
-                }
-              >
-                Copy URL + token
-              </CopyBtn>
-            )}
-            <Button kind="ghost" className="tap" onClick={() => setFresh(null)}>
-              Done
-            </Button>
-          </div>
-        </div>
+      {accountKeys.length > 0 && (
+        <>
+          <SectionHeader title="Full account" className="set-group" />
+          <div className="set-list">{accountKeys.map(keyRow)}</div>
+        </>
       )}
 
-      <details ref={stepsRef} className="mt-4 border-t border-[var(--line-1)]">
-        <summary className="tap-h flex min-h-[44px] items-center text-body font-medium text-ink">Next steps</summary>
-        <div className="grid gap-5 pb-2">
-          <div className="grid gap-2">
-            <div className="set-row-title">Full account</div>
-            <p className="set-note">
-              A teammate — Grok Bot, Cursor, anything that speaks MCP — uses the same tools Nuvo does. Destructive acts still
-              ask first. The token is this account; never drop it into a team-wide connector.
-            </p>
-            <StepList
-              steps={[
-                "Create a Full account token — shown once.",
-                "In that app, add a custom connector. Not a team one.",
-                "Paste the endpoint URL and Authorization: Bearer <token>.",
-                "Skip any login card. This is a Bearer token, not OAuth.",
-              ]}
-            />
-            <div>
-              <CopyBtn onClick={() => void copyText(mcpUrl, "Endpoint copied")}>Copy URL</CopyBtn>
-            </div>
-          </div>
-
-          <div className="grid gap-2">
-            <div className="set-row-title">Inbox</div>
-            <p className="set-note">A watch, shortcut, or app you own. It can add tasks. It cannot read your week.</p>
-            <StepList
-              steps={[
-                "Create an Inbox token — shown once.",
-                "POST to the capture endpoint with Authorization: Bearer <token>.",
-              ]}
-            />
-            <div>
-              <CopyBtn onClick={() => void copyText(captureUrl, "Endpoint copied")}>Copy URL</CopyBtn>
-            </div>
-          </div>
-        </div>
-      </details>
+      <div className="set-list mt-6">
+        <LinkRow mark={<Mark icon="plus" />} title="Add" desc={isLoading ? undefined : "An agent, a device, or Notion"} onOpen={() => go({ kind: "add" })} />
+      </div>
 
       {revoked.length > 0 && (
-        <details className="border-t border-[var(--line-1)]">
-          <summary className="tap-h flex min-h-[44px] items-center text-caption text-muted">{revoked.length} revoked</summary>
-          <div className="set-list">
-            {revoked.map((c) => {
-              const meta = kindMeta(c.scopes);
-              return (
+        <>
+          <SectionHeader
+            title={`${revoked.length} revoked`}
+            collapsed={!showRevoked}
+            onToggle={() => setShowRevoked((v) => !v)}
+            className="set-group"
+          />
+          {showRevoked && (
+            <div className="set-list">
+              {revoked.map((c) => (
                 <div key={c.id} className="set-list-row" data-off="">
                   <span className="opacity-50">
-                    <Mark icon={meta.icon} />
+                    <Mark icon={kindOf(c.scopes) === "account" ? "user" : "package"} />
                   </span>
                   <span className="set-list-main">
                     <span className="set-list-title">
@@ -349,11 +355,202 @@ export function AppsDevicesPane() {
                     <span className="set-list-meta">Revoked {fmtDate(c.revoked_at!)}</span>
                   </span>
                 </div>
-              );
-            })}
-          </div>
-        </details>
+              ))}
+            </div>
+          )}
+        </>
       )}
+    </div>
+  );
+}
+
+// ── Add ────────────────────────────────────────────────────────────────────
+
+function AddPage({ back, go }: { back: ReactNode; go: (p: Page) => void }) {
+  const { data: notion } = useNotionSource();
+  return (
+    <div>
+      {back}
+      <PaneHeader title="Add" />
+      <div className="set-list">
+        {(["account", "inbox"] as const).map((k) => (
+          <LinkRow
+            key={k}
+            mark={<Mark icon={KINDS[k].icon} />}
+            title={KINDS[k].offer}
+            desc={`${KINDS[k].label} · ${KINDS[k].can}`}
+            onOpen={() => go({ kind: "new", tokenKind: k })}
+          />
+        ))}
+        {!notion && (
+          <LinkRow
+            mark={<Mark>N</Mark>}
+            title="Notion"
+            desc="What's assigned to you lands in your inbox"
+            onOpen={() => go({ kind: "notion" })}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function NewKeyPage({
+  tokenKind,
+  onBack,
+  onCreated,
+}: {
+  tokenKind: TokenKind;
+  onBack: () => void;
+  onCreated: (id: string, token: string) => void;
+}) {
+  const qc = useQueryClient();
+  const [name, setName] = useState("");
+  const meta = KINDS[tokenKind];
+
+  const create = useMutation({
+    mutationFn: async (label: string) => {
+      const { data: session } = await supabase.auth.getSession();
+      const userId = session.session?.user.id;
+      if (!userId) throw new Error("Not signed in");
+      const id = crypto.randomUUID();
+      const token = mintToken();
+      const { error } = await supabase.from("connections").insert({
+        id,
+        user_id: userId,
+        app: machineKey(label),
+        name: label.trim(),
+        scopes: KIND_SCOPES[tokenKind],
+        token_hash: await sha256Hex(token),
+        last_four: token.slice(-4),
+      });
+      if (error) throw error;
+      return { id, token };
+    },
+    onSuccess: async ({ id, token }) => {
+      await qc.invalidateQueries({ queryKey: QK });
+      onCreated(id, token);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const submit = () => name.trim() && !create.isPending && create.mutate(name);
+
+  return (
+    <div>
+      <Back to="Add" onBack={onBack} />
+      <PaneHeader title={meta.offer} sub={`${meta.label} · ${meta.can}`} />
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <TextInput
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={meta.placeholder}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+          aria-label="Name this app or device"
+          autoFocus
+        />
+        <Button kind="primary" size="md" className="tap shrink-0" disabled={!name.trim() || create.isPending} onClick={submit}>
+          {create.isPending ? "Creating…" : "Create key"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ── One key ────────────────────────────────────────────────────────────────
+
+const SETUP: Record<TokenKind, string[]> = {
+  account: [
+    "In that app, add a custom connector. Not a team one.",
+    "Paste the endpoint URL and Authorization: Bearer <key>.",
+    "Skip any login card. This is a Bearer key, not OAuth.",
+  ],
+  inbox: ["POST to the capture endpoint with Authorization: Bearer <key>."],
+};
+
+function KeyPage({ id, back, fresh, onGone }: { id: string; back: ReactNode; fresh: string | null; onGone: () => void }) {
+  const qc = useQueryClient();
+  const { data: connections, isLoading } = useConnections();
+  const c = connections?.find((x) => x.id === id);
+  const [setupOpen, setSetupOpen] = useState(Boolean(fresh));
+
+  const revoke = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from("connections").update({ revoked_at: new Date().toISOString() }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success(`${c?.name ?? "Key"} revoked`);
+      qc.invalidateQueries({ queryKey: QK });
+      qc.invalidateQueries({ queryKey: HANDOFF_AGENTS_QK });
+      onGone();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  if (!c) {
+    return (
+      <div>
+        {back}
+        {!isLoading && <p className="set-note">This key is gone</p>}
+      </div>
+    );
+  }
+
+  const kind = kindOf(c.scopes);
+  const endpoint = edgeFunctionUrl(kind === "account" ? "mcp" : "capture");
+
+  return (
+    <div>
+      {back}
+      <PaneHeader
+        title={c.name}
+        sub={`${KINDS[kind].label} · …${c.last_four ?? "····"} · added ${fmtDate(c.created_at)} · ${usedLine(c)}`}
+      />
+
+      {fresh && (
+        <div className="set-well">
+          <div className="set-well-title">Copy the key now</div>
+          <p className="set-note">Shown once. Treat it like a password; lose it and you revoke and add another.</p>
+          <code className="block break-all rounded-[var(--r-ctl)] bg-[var(--raised)] p-3 text-caption shadow-[0_0_0_1px_var(--line-1)]" data-selectable>
+            {fresh}
+          </code>
+          <div className="flex flex-wrap gap-2">
+            <CopyBtn primary onClick={() => void copyText(fresh, "Key copied")}>
+              Copy key
+            </CopyBtn>
+            {kind === "account" && (
+              <CopyBtn onClick={() => void copyText(`URL: ${endpoint}\nAuthorization: Bearer ${fresh}`, "URL + key copied")}>
+                Copy URL + key
+              </CopyBtn>
+            )}
+          </div>
+        </div>
+      )}
+
+      {kind === "account" && c.takes_handoffs !== undefined && <HandoffControls c={c} />}
+
+      <SectionHeader title="Set up" collapsed={!setupOpen} onToggle={() => setSetupOpen((v) => !v)} className="set-group" />
+      {setupOpen && (
+        <div className="grid gap-2 pb-2">
+          {kind === "account" && (
+            <p className="set-note">
+              Uses the same tools Nuvo does; destructive acts still ask first. The key is this account — never drop it into a
+              team-wide connector.
+            </p>
+          )}
+          <StepList steps={SETUP[kind]} />
+          <div>
+            <CopyBtn onClick={() => void copyText(endpoint, "Endpoint copied")}>Copy URL</CopyBtn>
+          </div>
+        </div>
+      )}
+
+      <div className="set-foot border-t border-[var(--line-1)] mt-4">
+        <Button kind="danger" className="tap" disabled={revoke.isPending} onClick={() => revoke.mutate()}>
+          {revoke.isPending ? "Revoking…" : `Revoke ${c.name}`}
+        </Button>
+      </div>
     </div>
   );
 }
@@ -442,7 +639,7 @@ function HandoffControls({ c }: { c: Connection }) {
   };
 
   return (
-    <div className="grid w-full basis-full gap-2 pt-2">
+    <div className="grid gap-2 pt-2">
       <label className="flex min-h-[44px] items-center justify-between gap-3">
         <span className="text-body">Takes hand-offs</span>
         <Switch checked={Boolean(c.takes_handoffs)} onChange={(v) => void toggle(v)} label={`${c.name} takes hand-offs`} />

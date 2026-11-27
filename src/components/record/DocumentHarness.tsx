@@ -206,7 +206,7 @@ function harnessSink(store: VerticalStore): TaskCaptureSink {
 
 type Mode = "project" | "initiative" | "new-project" | "new-initiative" | "settings" | "shortcuts" | "ship" | "upkeep";
 
-const SECTIONS: SettingsSection[] = ["appearance", "schedule", "reminders", "connections", "inbound", "apps", "labels", "account", "billing", "about"] as SettingsSection[];
+const SECTIONS: SettingsSection[] = ["appearance", "schedule", "reminders", "connections", "apps", "labels", "account", "billing", "about"] as SettingsSection[];
 
 
 export default function DocumentHarness() {

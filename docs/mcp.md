@@ -41,7 +41,7 @@ no Phil backdoor, and a `user_id` in a tool argument is stripped.
 Do not put this token in a Grok Bot *team* connector. Each operator mints their
 own in their own Settings. A copied token is that operator, not a seat.
 
-Settings → **Apps & devices** → **Full account**. The token is shown once; we
+Settings → **Apps & devices** → **Add** → **An agent or app** (a **Full account** key). The key is shown once; we
 store `sha256` + last four. Revoke is a timestamp.
 
 | Scope | What it opens |
@@ -103,11 +103,11 @@ stamp. Apply 86 by hand when you want the index; do not apply it from CI.
 ## 4 · Wiring a teammate
 
 Grok Bot is one consumer of MCP, not the Settings page. The pane is an
-inventory of keys; the numbered wiring lives under **Next steps**.
+inventory (D-258); the numbered wiring lives on each key's own page, under **Set up**.
 
 1. Deploy: `npx supabase functions deploy mcp --no-verify-jwt`
-2. In the running app: Settings → Apps & devices → **Full account** → name it
-   → Create token → **Copy URL + token** (or **Copy URL** under Next steps)
+2. In the running app: Settings → Apps & devices → **Add** → **An agent or app** → name it
+   → Create key → **Copy URL + key** (or **Copy URL** under the key's **Set up**)
 3. In the teammate (Grok Bot, Cursor, …): custom connector, that URL,
    `Authorization: Bearer <token>`
 
