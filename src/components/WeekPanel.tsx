@@ -33,10 +33,6 @@
 //      weight left, pace, and what has no time.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { useThinPaths } from "../hooks/useThinPaths";
-import { PathOffer, pathCandidates } from "./nuvo/RailOffers";
-import type { RailOfferCandidate } from "../lib/railOffers";
-import type { ThinPath } from "../lib/thinPath";
 import { useRecordContextMenu } from "./RecordContextMenu";
 import { Icon } from "./Icon";
 import { useVertical } from "../hooks/useVertical";
@@ -49,7 +45,7 @@ import { MARQUEE_OPEN_EVENT } from "../lib/marquee";
 import { deckWeight } from "../lib/pace";
 import { ProjectShipAssess } from "./record/ShipAssess";
 import type { EmblemSpec } from "../lib/weekEmblem";
-import { Button, Chip, CrownLine, DayCrown, IconButton, MarkLabel, MarkSet, OfferChip, SectionHeader, Stop } from "./kit";
+import { Button, Chip, CrownLine, DayCrown, IconButton, MarkLabel, MarkSet, SectionHeader, Stop } from "./kit";
 import { ProgressRing } from "./progress/ProgressRing";
 import { WEEK_REACH_KEY, reachArrivalDelay } from "../lib/motion";
 import { mondayOf } from "../../supabase/functions/_shared/planningRules.ts";
@@ -59,12 +55,6 @@ import { dayNextTask, marksReady, movingIds, readDay, weekMarks } from "../lib/m
 import { useSettings } from "../hooks/useSettings";
 import type { Slot, Task } from "../lib/types";
 import type { CrownLineData } from "../lib/crownLine";
-import { readyKey, type ReadyCard } from "../lib/readyCards";
-import { notNow } from "./nuvo/offerSnooze";
-import { instantAt } from "./plan/destinations";
-import { OtherTimes } from "./nuvo/OtherTimes";
-import { useWeekComposer } from "../hooks/useFindTime";
-import { costFor } from "../lib/offerChoices";
 import { useTaskListKeys, type TaskListKeyActs } from "./tasks/useTaskListKeys";
 
 /** The week door's lifecycle, owned by Planner and worn by this header. */
@@ -121,12 +111,9 @@ export default function WeekPanel({
   renderTask,
   line,
   onLine,
-  offers,
-  onPathCandidates,
   today,
   dayOutside = false,
   deck,
-  rowCards,
   keys,
 }: {
   door?: WeekDoor;
@@ -137,13 +124,6 @@ export default function WeekPanel({
   /** Pressing the line opens Get ready. Omitted (a harness), the old week door
    *  rides the eyebrow instead. */
   onLine?: () => void;
-  /** The rail's offer budget (D-205): a project row whose id is here carries
-   *  Draft the path. The host decides the budget; this only draws it. */
-  offers?: ReadonlyMap<string, RailOfferCandidate>;
-  /** Which open rows COULD carry Draft the path — reported up so the host can
-   *  rank them against the day's offers. Empty while the list is folded: the
-   *  shut crown never carries a chip. */
-  onPathCandidates?: (cands: RailOfferCandidate[]) => void;
   /** Today's tasks as the rail lists them (slot children included) — the day's
    *  reading (D-209). Omitted (a harness), the crown draws no day. */
   today?: readonly Task[];
@@ -153,10 +133,6 @@ export default function WeekPanel({
    *  present it stands where the line would; the line still speaks when
    *  there's no card to show (Handle's "Nuvo moved N · Review"). */
   deck?: ReactNode;
-  /** The Get ready cards. Each "loose" card — a project's work with no time
-   *  this week, and the composer's fit for it — rides its project's row as a
-   *  chip instead of a card above the list (D-216, R6). */
-  rowCards?: readonly ReadyCard[];
   /** the rail's keyboard (D-222); omitted (a harness, the phone), no keys */
   keys?: CrownKeys;
 }) {
@@ -187,32 +163,6 @@ export default function WeekPanel({
   // Right-click a project for its lifecycle acts — the same menu every other
   // surface wears.
   const recordMenu = useRecordContextMenu();
-  // Draft the path's candidates (D-205): open, unlanded rows with a thin path.
-  // Reported up; the rail's budget decides which, if any, show.
-  const thin = useThinPaths();
-  // One time offer per project row: the first "loose" card for it (the cards
-  // arrive worst first, and the composer already kept two cards off one slot).
-  const timeOffers = useMemo(() => {
-    const m = new Map<string, ReadyCard>();
-    for (const c of rowCards ?? []) if (c.kind === "loose" && c.projectId && c.at && !m.has(c.projectId)) m.set(c.projectId, c);
-    return m;
-  }, [rowCards]);
-  const pathCands =
-    onPathCandidates && crown && listOpen
-      ? pathCandidates(
-          crown.rows.map((r) => ({ projectId: r.projectId, done: r.state === "shipped" || r.state === "landed" })),
-          thin,
-        )
-      : [];
-  const pathSig = pathCands.map((c) => c.key).join("|");
-  const reportRef = useRef(onPathCandidates);
-  reportRef.current = onPathCandidates;
-  const candsRef = useRef(pathCands);
-  candsRef.current = pathCands;
-  useEffect(() => {
-    reportRef.current?.(candsRef.current);
-  }, [pathSig]);
-  useEffect(() => () => reportRef.current?.([]), []);
   const { settings } = useSettings();
   const workEnd = settings?.work_end_minutes ?? 990;
   const day = useMemo(() => (today ? readDay(today, workEnd) : null), [today, workEnd]);
@@ -393,9 +343,8 @@ export default function WeekPanel({
     rows.length === 0 ? "No projects on this week yet" : `${landed} of ${rows.length} landed · ${crown.track.label}`;
 
 
-  // "N need a time" opens THOSE tasks, where they live: every project with
-  // work that has no time unfolds, each with its "Schedule …" offer when the
-  // composer found one. It can never be empty — it is the count's own data
+  // With an empty stack, "N need a time" opens THOSE tasks, where they live:
+  // every project with work that has no time unfolds. It can never be empty — it is the count's own data
   // (D-219; it used to open Get ready, which on a weekend found no time in a
   // week that was over and said "Ready." over two homeless tasks).
   const showNoTime = () => {
@@ -465,7 +414,12 @@ export default function WeekPanel({
                 // Scheduled — a card that gives work a time moves that dial.
                 attrsFor={weekMarkAttrs}
                 reachKeyFor={weekMarkReach}
-                acts={{ ready: () => setShapeOpen((v) => !v), placed: showNoTime }}
+                // "N need a time" is the door to their fix (D-259): with no chip
+                // on the rows, Get ready is where a time is offered, drawn and
+                // re-picked. Only with nothing in the stack does it fall back to
+                // unfolding the tasks themselves (D-219's "Ready." over homeless
+                // work can't happen: no line, no stack).
+                acts={{ ready: () => setShapeOpen((v) => !v), placed: line && onLine ? onLine : showNoTime }}
               />
               {shapeOpen && shapeItems.length > 0 && (
                 <div className="crown-shape-list" role="list" aria-label="Projects to shape">
@@ -509,9 +463,6 @@ export default function WeekPanel({
                   onOpen={() => openRecord("project", row.projectId)}
                   onContextMenu={recordMenu.onContextMenu("project", row.projectId)}
                   canPlace={canPlaceProjects}
-                  pathOffer={offers?.get(row.projectId)?.kind === "path" ? thin.get(row.projectId) ?? null : null}
-                  timeOffer={timeOffers.get(row.projectId) ?? null}
-                  onOpenProject={(id) => openRecord("project", id)}
                   expanded={openIds.has(row.rock.id)}
                   looseOnly={looseOnly.has(row.rock.id)}
                   lit={keys?.cursorId === projectKey(row.projectId)}
@@ -567,9 +518,6 @@ function ProjectStackRow({
   onOpen,
   onContextMenu,
   canPlace,
-  pathOffer,
-  timeOffer,
-  onOpenProject,
   expanded,
   looseOnly = false,
   lit = false,
@@ -583,12 +531,6 @@ function ProjectStackRow({
   onContextMenu: (e: ReactMouseEvent) => void;
   /** the Schedule is showing a time grid, so a sitting has somewhere to land */
   canPlace: boolean;
-  /** Draft the path, when the rail's budget gave this row the offer (D-205). */
-  pathOffer: ThinPath | null;
-  /** A time for this project's next loose piece (D-216): "Schedule Today
-   *  4:15–5pm". Never beside a path offer — one offer per row (R6). */
-  timeOffer: ReadyCard | null;
-  onOpenProject: (projectId: string) => void;
   expanded: boolean;
   /** unfolded by the Scheduled dial: just the work with no time */
   looseOnly?: boolean;
@@ -755,18 +697,6 @@ function ProjectStackRow({
         </div>
       </div>
 
-      {/* A project's offer (D-216 R6) — the path or a time — takes a line of its
-          own under the row, never a slot inside the one-line row: there it
-          squeezed the name to a few letters and spilled past the rail. */}
-      {!done && !shipped && !looksDone && pathOffer && (
-        <div className="crown-offer-line" data-tauri-drag-region="false">
-          <PathOffer thin={pathOffer} onOpenProject={onOpenProject} />
-        </div>
-      )}
-      {!done && !pathOffer && timeOffer && (
-        <TimeOfferLine card={timeOffer} task={loose.find((t) => t.id === timeOffer.taskId) ?? null} projectName={row.title} />
-      )}
-
       {/* Its work — ONE grammar. These are `TaskRow`s: the same check, the
           same context menu, the same drag as the day list below. Placed pieces
           first (the clock orders them), then what has no time. Each row says
@@ -838,58 +768,6 @@ function TimeChip({ startISO, slotTitle }: { startISO: string; slotTitle: string
   );
 }
 
-/** A project's next loose piece and where it would go (D-216): the piece's name,
- *  then the act with its day — "Write the runbook · Schedule Today 4:15–5pm".
- *  Pointing at the chip draws the block on the Schedule and dims the rest (R3);
- *  the evidence and the project ride its tooltip. Right-click / ⌫ is Not now. */
-function TimeOfferLine({ card, task, projectName }: { card: ReadyCard; task: Task | null; projectName: string }) {
-  const at = card.at!;
-  // What it costs (R5), read off the same busy time the composer used.
-  const { busy } = useWeekComposer(new Date(), mondayOf(at.dayISO));
-  const cost = costFor(at, busy);
-  const start = instantAt(at.dayISO, at.startMin);
-  const end = instantAt(at.dayISO, at.startMin + at.durationMin);
-  return (
-    <div className="crown-offer-line" data-tauri-drag-region="false">
-      <span className="crown-offer-task" title={card.title}>
-        {card.title}
-      </span>
-      {/* the chip and its second answer travel together — the same pair, the
-          same ⋯, as a task row's offer (one look for Other times on the rail) */}
-      <span className="offer-pair">
-        <OfferChip
-          verb={card.primary.verb}
-          name={card.primary.name}
-          whole
-          title={`${card.title} · ${card.why}`}
-          preview={{ label: card.title, start, end }}
-          onPress={(el) => card.primary.run(el)}
-          onDismiss={card.secondary ? () => card.secondary!.run() : undefined}
-        />
-        {task && card.placeAt && (
-          <OtherTimes
-            task={task}
-            first={at}
-            compact
-            onHold={card.placeAt}
-            noes={[
-              ...(card.secondary ? [{ label: "Not now · two weeks", run: card.secondary.run }] : []),
-              ...(card.projectId
-                ? [{ label: `No time offers for ${projectName} · two weeks`, run: () => notNow(readyKey.times(card.projectId!)) }]
-                : []),
-            ]}
-          />
-        )}
-      </span>
-      {/* what the time costs (R5) stands beside the time, not the title */}
-      {cost && (
-        <span className="crown-offer-cost" title={cost}>
-          {cost}
-        </span>
-      )}
-    </div>
-  );
-}
 
 /** "Measure wall at 4pm" — the day's next open task, while the day is open;
  *  one whose time passed undone is a repair, never "next" (D-232). */

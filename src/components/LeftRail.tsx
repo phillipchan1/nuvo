@@ -26,20 +26,7 @@ import ReminderSelect from "./ReminderSelect";
 import type { ReminderAnchorKind } from "../../supabase/functions/_shared/reminderRules.ts";
 import TaskRow, { type TaskMeta, type TaskRowHandle } from "./TaskRow";
 import type { CrownLineData } from "../lib/crownLine";
-import type { ReadyCard } from "../lib/readyCards";
 import WeekPanel, { RailDay, type WeekDoor } from "./WeekPanel";
-import {
-  FileOffer,
-  HoldOffer,
-  HoldsProbe,
-  fileCandidates,
-  holdCandidates,
-  holdable,
-  useOfferBudget,
-  useStableCandidates,
-} from "./nuvo/RailOffers";
-import { RAIL_OFFERS_MAX, type RailOfferCandidate } from "../lib/railOffers";
-import type { Placement } from "../lib/compose";
 import { InboxAddressHint } from "./InboxAddress";
 import { skipWhenAsleep } from "./KeepAlive";
 import { Button, Dot, FoldChevron, Input, IconButton, LIST_TAB_KEYS, listTabTitle, MenuLabel, Picker, Popover, SectionHeader, useListTabKeys } from "./kit";
@@ -93,7 +80,6 @@ function LeftRail({
   crownLine,
   onCrownLine,
   deck,
-  rowCards,
   events = NO_EVENTS,
 }: {
   tab: RailTab;
@@ -132,9 +118,6 @@ function LeftRail({
   onCrownLine?: () => void;
   /** The deck at rest (D-209): the Get ready stack's top card, under the crown. */
   deck?: React.ReactNode;
-  /** The Get ready cards, handed down so each one that gives a project's work a
-   *  time can ride that project's row as a chip (D-216). */
-  rowCards?: readonly ReadyCard[];
   /** The calendar's events in hand — focus says what comes after the block
    *  ("then OE stand-up at 9am"), through `toBusyBlocks`. Memoize it. */
   events?: readonly ExternalEvent[];
@@ -986,40 +969,12 @@ function LeftRail({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // ── Nuvo's offers at rest (D-205, docs/rail-modes.md §3) ─────────────────
-  // One chip per row, written as the destination, three at most across the
-  // whole rail — the crown's open rows first, then the face showing (Today's
-  // holds, earliest first; the Inbox's filings, top first). The budget is
-  // decided once (lib/railOffers `budgetOffers`); past it, nothing. The rail is
-  // only mounted at rest — Plan and Repair replace it — so it never offers
-  // while a mode owns it.
-  const [pathCands, setPathCands] = useState<RailOfferCandidate[]>([]);
-  const [holds, setHolds] = useState<Map<string, Placement>>(() => new Map());
-  const today0 = todayISO(now);
-  const holdPool = useMemo(
-    () => (tab === "today" ? holdable(todaySections.unblocked, today0) : []),
-    [tab, todaySections.unblocked, today0],
-  );
-  const offerCands = useStableCandidates([
-    ...pathCands,
-    ...(tab === "today" ? holdCandidates(holds).filter((c) => holdPool.some((t) => t.id === c.rowId)) : []),
-    ...(tab === "inbox" ? fileCandidates(inboxOrdered) : []),
-  ]);
-  const offers = useOfferBudget(offerCands, RAIL_OFFERS_MAX);
-  const homeOfProject = (id: string) => {
-    const p = projectById(vertical, id);
-    return p ? { initiativeId: p.initiativeId, domainId: p.domainId } : null;
-  };
-  const offerFor = (t: Task) => {
-    const o = offers.get(t.id);
-    if (!o) return undefined;
-    if (o.kind === "hold") {
-      const p = holds.get(t.id);
-      return p ? <HoldOffer task={t} placement={p} mutations={mutations} /> : undefined;
-    }
-    if (o.kind === "file") return <FileOffer task={t} mutations={mutations} homeOfProject={homeOfProject} />;
-    return undefined;
-  };
+  // ── No offers at rest (D-259, amends D-205 / D-216) ─────────────────────
+  // A row reports; it never carries a fix. Every act the rest chips offered
+  // (Schedule <time>, File in <place>, Draft the path) is a Get ready card,
+  // reached through the crown's line — one door, worked one card at a time,
+  // each card drawing where it would put the thing. A chip on every third row
+  // was the rail's noise.
 
   const rowProps = (t: Task) => ({
     ref: (el: TaskRowHandle | null) => {
@@ -1046,7 +1001,6 @@ function LeftRail({
     dragGroup: selectedIds.has(t.id) ? dragGroupStr : undefined,
     accent: accentOf(t),
     meta: metaOf(t),
-    offer: offerFor(t),
     onSelect: () => plainSelect(t.id),
     onOpen: (anchor: DOMRect) => {
       setSelectedIds(new Set());
@@ -1224,8 +1178,10 @@ function LeftRail({
         today={today}
         now={now}
         slots={slots}
-        // "1 needs a time" lights that task in Today's list, where its offer is
+        // "1 needs a time" opens Get ready, where its time is offered (D-259);
+        // with an empty stack it lights that task in Today's list instead.
         onLoose={(t) => {
+          if (crownLine && onCrownLine) return onCrownLine();
           claimKeys("rail");
           crownHasKeys.current = false;
           setCrownCursor(null);
@@ -1276,12 +1232,9 @@ function LeftRail({
           // The crown's line (D-207): the door to Get ready, said as a fact.
           line={crownLine}
           onLine={onCrownLine}
-          offers={offers}
-          onPathCandidates={setPathCands}
           today={today}
           dayOutside
           deck={deck}
-          rowCards={rowCards}
           keys={{
             enabled: () => railKeysOn && keyOwner() === "rail" && crownOwns(),
             cursorId: crownCursor,
@@ -1400,8 +1353,6 @@ function LeftRail({
         {/* Where a released row will land is drawn by useListReorder (the line
             and the "you're about to…" chip are plain DOM it repaints per frame)
             — the list never reflows to show it. */}
-
-        {holdPool.length > 0 && <HoldsProbe tasks={holdPool} now={now} onHolds={setHolds} />}
         {tab === "inbox" && (
           <>
             {inboxOrdered.map((t) => (

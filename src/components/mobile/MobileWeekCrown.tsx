@@ -37,10 +37,6 @@
 // crown pages horizontally, and a swipe-to-defer inside it would fight the pager.
 
 import { useMemo, useState, type ReactNode } from "react";
-import { useThinPaths } from "../../hooks/useThinPaths";
-import { PHONE_OFFERS_MAX } from "../../lib/railOffers";
-import type { ThinPath } from "../../lib/thinPath";
-import { PathOffer, pathCandidates, useOfferBudget, useStableCandidates } from "../nuvo/RailOffers";
 import { Icon } from "../Icon";
 import { Button, Chip, CrownLine, Dial, MarkSet, Stop } from "../kit";
 import { mondayOf } from "../../../supabase/functions/_shared/planningRules.ts";
@@ -129,23 +125,6 @@ export default function MobileWeekCrown({
   // Rows unfolded by "N need a time" show only that work (D-219).
   const [looseOnly, setLooseOnly] = useState<Set<string>>(new Set());
   const [planOpen, setPlanOpen] = useState(false);
-  // Draft the path on the open slate's rows (D-205) — the shut strip and the
-  // pinned pips never carry a chip. Two at most on a phone screen, through the
-  // same budget the rail uses.
-  const thin = useThinPaths();
-  const showing = open && expandable && !!crown;
-  const pathOffers = useOfferBudget(
-    useStableCandidates(
-      showing
-        ? pathCandidates(
-            crown.rows.map((r) => ({ projectId: r.projectId, done: r.state === "shipped" || r.state === "landed" })),
-            thin,
-          )
-        : [],
-    ),
-    PHONE_OFFERS_MAX,
-  );
-
   if (!crown) return null;
   const { rows, landed, total, looseCount, composed, weekISO, track } = crown;
   // No date range (D-219): the calendar's own header says the span.
@@ -272,9 +251,12 @@ export default function MobileWeekCrown({
             marks={marks}
             attrsFor={(k) => (k === "placed" ? { "data-crown-week": "", "data-crown-color": "var(--landed)" } : undefined)}
             acts={{
-              // The tasks themselves, unfolded under their projects (D-219) —
-              // never a sheet that can come up empty.
+              // Get ready, where each one's time is offered (D-259) — the same
+              // door as the desktop's dial. With an empty stack, the tasks
+              // themselves, unfolded under their projects (D-219), so it is
+              // never a sheet that comes up empty.
               placed: () => {
+                if (onGetReady && readyLine) return onGetReady();
                 const ids = rows.filter((r) => r.loose.length > 0 && r.state !== "shipped" && r.state !== "landed").map((r) => r.rock.id);
                 setOpenIds(new Set(ids));
                 setLooseOnly(new Set(ids));
@@ -317,8 +299,6 @@ export default function MobileWeekCrown({
                 });
               }}
               onOpen={() => onOpenProject(row.projectId)}
-              pathOffer={pathOffers.has(row.projectId) ? thin.get(row.projectId) ?? null : null}
-              onOpenProject={onOpenProject}
               onOpenDay={onOpenDay}
               renderTask={renderTask}
             />
@@ -348,8 +328,6 @@ function CrownRow({
   looseOnly = false,
   onExpand,
   onOpen,
-  pathOffer,
-  onOpenProject,
   onOpenDay,
   renderTask,
 }: {
@@ -361,8 +339,6 @@ function CrownRow({
   onOpen: () => void;
   /** Draft the path, when the budget gave this row the offer (D-205). It takes
    *  the track's place — never a second mark, never a taller row. */
-  pathOffer: ThinPath | null;
-  onOpenProject: (id: string) => void;
   onOpenDay: (d: Date) => void;
   renderTask: RenderCrownTask;
 }) {
@@ -408,7 +384,7 @@ function CrownRow({
             // A statement, not a button: shipping is the record sheet's act, and
             // a second ship path is how the two shells drift.
             <Chip tone="accent">Ready to ship</Chip>
-          ) : pathOffer ? null : (
+          ) : (
             <span className="flex shrink-0 items-center gap-1.5">
               {/* Carried — the same words the rail crown uses (D-108), because
                   the phone inherited the carry the moment the slate became a
@@ -422,7 +398,7 @@ function CrownRow({
               {work.total > 0 ? (
                 <span className="text-caption tabular-nums text-muted" aria-label={`${work.done} of ${work.total} done · ${placedLabel}`}>
                   {work.done}/{work.total}
-                  {loose.length > 0 && <span style={{ color: "var(--accent)" }}> · {loose.length} need{loose.length === 1 ? "s" : ""} a time</span>}
+                  {loose.length > 0 && <span> · {loose.length} need{loose.length === 1 ? "s" : ""} a time</span>}
                 </span>
               ) : (
                 <span className="text-caption text-muted">No tasks yet</span>
@@ -430,14 +406,6 @@ function CrownRow({
             </span>
           )}
         </button>
-
-        {/* The offer stands where the track stood — a sibling of the row's
-            button (a button can't hold a button), at the same height. */}
-        {pathOffer && !done && row.state !== "ready-to-ship" && (
-          <span className="flex shrink-0 items-center">
-            <PathOffer thin={pathOffer} onOpenProject={onOpenProject} phone />
-          </span>
-        )}
 
         {canExpand && (
           <button

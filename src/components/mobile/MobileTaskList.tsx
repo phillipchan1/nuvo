@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import type { Label, Slot, Task } from "../../lib/types";
 import { restoreFromTrashPatch } from "../../lib/types";
 import { TRASH_RETENTION_DAYS, type useTaskMutations } from "../../hooks/useTasks";
@@ -14,18 +14,6 @@ import {
 } from "../../lib/vertical";
 import TaskRow, { type TaskMeta } from "../TaskRow";
 import { undoAutoPatch } from "../../lib/grooming";
-import {
-  FileOffer,
-  HoldOffer,
-  HoldsProbe,
-  fileCandidates,
-  holdCandidates,
-  holdable,
-  useOfferBudget,
-  useStableCandidates,
-} from "../nuvo/RailOffers";
-import { PHONE_OFFERS_MAX } from "../../lib/railOffers";
-import type { Placement } from "../../lib/compose";
 import { InboxAddressHint } from "../InboxAddress";
 import SkeletonRows from "./Skeleton";
 import { Button } from "../kit";
@@ -118,40 +106,7 @@ export default function MobileTaskList({
 
   const selecting = !!selection && selection.ids.size > 0;
 
-  // ── Nuvo's offers at rest (D-205) — two per phone screen at most, ranked
-  // by the same budget the desktop rail uses (lib/railOffers). Today's holds,
-  // earliest first; the inbox's filings, top first. Never while selecting.
-  const todaySectionsForOffers = useMemo(() => buildTodaySections(today, now), [today, now]);
-  const today0 = todayISO(now);
-  const holdPool = useMemo(
-    () => (tab === "today" && !selecting ? holdable(todaySectionsForOffers.unblocked, today0) : []),
-    [tab, selecting, todaySectionsForOffers.unblocked, today0],
-  );
-  const [holds, setHolds] = useState<Map<string, Placement>>(() => new Map());
-  const offerCands = useStableCandidates(
-    selecting
-      ? []
-      : [
-          ...(tab === "today" ? holdCandidates(holds).filter((c) => holdPool.some((t) => t.id === c.rowId)) : []),
-          ...(tab === "inbox" ? fileCandidates(inbox) : []),
-        ],
-  );
-  const offers = useOfferBudget(offerCands, PHONE_OFFERS_MAX);
-  const homeOfProject = (id: string) => {
-    const p = projectById(vertical, id);
-    return p ? { initiativeId: p.initiativeId, domainId: p.domainId } : null;
-  };
-  const offerFor = (t: Task): ReactNode => {
-    const o = offers.get(t.id);
-    if (!o) return undefined;
-    if (o.kind === "hold") {
-      const p = holds.get(t.id);
-      return p ? <HoldOffer task={t} placement={p} mutations={mutations} phone /> : undefined;
-    }
-    if (o.kind === "file") return <FileOffer task={t} mutations={mutations} homeOfProject={homeOfProject} phone />;
-    return undefined;
-  };
-  const probe = holdPool.length > 0 ? <HoldsProbe tasks={holdPool} now={now} onHolds={setHolds} /> : null;
+  // No offers at rest (D-259): a row reports; Get ready repairs, from the crown.
 
   const rowProps = (t: Task, action?: React.ReactNode) => ({
     task: t,
@@ -162,7 +117,6 @@ export default function MobileTaskList({
     draggable: false,
     accent: taskDomainColor(vertical, t),
     meta: metaOf(t),
-    offer: offerFor(t),
     onSelect: () => {},
     onLongPress: selection ? () => selection.begin(t.id) : undefined,
     // While a selection is live, a tap toggles instead of opening — the
@@ -268,7 +222,6 @@ export default function MobileTaskList({
     if (pending && nothing) return <SkeletonRows />;
     return (
       <div>
-        {probe}
         {nothing && (filterNote ? <PhEmpty>Nothing matches {filterNote}</PhEmpty> : <PhEmpty icon="check">Nothing planned</PhEmpty>)}
         {todaySections.pinned.length > 0 && (
           <>

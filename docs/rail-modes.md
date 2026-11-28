@@ -57,7 +57,7 @@ The answer to "passive or actively shown" is: **always present, never pushed.**
 | The week's readings | the crown, shut to one line of pips; open it for the rows (D-203) | animating on load |
 | Work with no time | the crown's line: **"4 with no time · Plan the week ›"** | a count badge on the nav, a notification |
 | A broken week | the crown's line, replacing the above: **"Tue 10am broke: a meeting landed · Repair ›"** in `--warn` | `--signal` (that's *now*), a modal, a push (N-07) |
-| An offer for one row | a chip on that row, naming its destination: **"Hold 2–2:30pm"** on a today task with no time; **"File in Garage studio"** on an inbox item the router has a guess for | a section of offers, a card above the list, more than one chip per row |
+| An offer for one row | **nothing on the row** (D-259): the row keeps its own facts, and the offer is a Get ready card. ~~a chip on that row~~ (D-205, retired) | a chip, a section of offers, a card above the list |
 | Nothing to offer | nothing | an empty state about offers |
 
 ### Get ready (D-206)
@@ -67,6 +67,11 @@ worst first; each card names its destination, lands and Reaches when pressed, an
 it says "Ready." and hands the rail back. It replaces the crown's "N with no time · Plan the week"
 line; Plan and Repair are cards in it as well as modes. Mechanism: `lib/readyCards.ts`,
 `GetReadyRail`, phone `MobileGetReady`.
+
+> **Retired by D-259 (2026-11-27).** The budget below governed the rest chips, which are gone:
+> rows report, Get ready repairs. "N need a time" opens Get ready when the stack has a card (else
+> D-219's unfold), and the focused card draws where it would put the thing without a hover. Kept
+> for history; `budgetOffers` is unused until it's deleted.
 
 ### The balance budget (D-205, the operator: "it has to be elegant and balance all that is going on in the left")
 

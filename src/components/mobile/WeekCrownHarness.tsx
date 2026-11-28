@@ -26,8 +26,6 @@ import MobileCalendar from "./MobileCalendar";
 import WeekPanel from "../WeekPanel";
 import TaskRow from "../TaskRow";
 import { thinWindow } from "../../hooks/useThinPaths";
-import { useOfferBudget } from "../nuvo/RailOffers";
-import { RAIL_OFFERS_MAX, type RailOfferCandidate } from "../../lib/railOffers";
 
 const WEEK_ISO = planningWeekStartISO();
 const MONDAY = parseDateISO(WEEK_ISO);
@@ -264,8 +262,6 @@ export default function WeekCrownHarness() {
   const store = useHarnessStore(doneIds);
   const [log, setLog] = useState<string[]>([]);
   // The rail hosts the budget (D-205); here the crown is the whole rail.
-  const [pathCands, setPathCands] = useState<RailOfferCandidate[]>([]);
-  const pathOffers = useOfferBudget(pathCands, RAIL_OFFERS_MAX);
   const say = (s: string) => setLog((l) => [s, ...l].slice(0, 6));
   const tick = (t: Task) => {
     say(`toggle ${t.title}`);
@@ -363,8 +359,6 @@ export default function WeekCrownHarness() {
                           onToggleDone={() => tick(t)}
                         />
                       )}
-                      offers={pathOffers}
-                      onPathCandidates={setPathCands}
                       line={{ tone: "warn", glyph: "◌", text: "Draft board memo didn't happen (2pm)", act: "Get ready", then: "3 with no time" }}
                       onLine={() => say("get ready")}
                     />

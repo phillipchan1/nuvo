@@ -27,6 +27,7 @@ import { CardOtherTimes } from "../nuvo/OtherTimes";
 import { Icon } from "../Icon";
 import { landBlock, motionMs, motionOff } from "../../lib/motion";
 import { setLocate } from "../../lib/locate";
+import { clearOfferPreview, showOfferPreview } from "../../lib/offerPreview";
 import { instantAt } from "./destinations";
 import { READY_MAX, type ReadyCard } from "../../lib/readyCards";
 import PinnedCrown from "./PinnedCrown";
@@ -165,13 +166,28 @@ export default function GetReadyRail({
 
   // The ring follows the card under the pointer — and goes the moment that
   // card does (acted on, snoozed), or the rail does.
+  // With no pointer on a card, the FOCUSED card is the one being answered, so
+  // it shows its picture without a hover (D-259): where the thing is now (the
+  // ring) and where its act would put it (the drawn block). You work the stack
+  // one card at a time, so the screen should always be showing that card.
   const [pointed, setPointed] = useState<string | null>(null);
-  const pointedCard = s.visible.find((c) => c.key === pointed);
-  const ring = pointedCard && !s.lettingGo.has(pointedCard.key) ? pointedCard.locate ?? null : null;
+  const shownCard = s.visible.find((c) => c.key === pointed) ?? s.focused ?? null;
+  const live = shownCard && !s.lettingGo.has(shownCard.key) ? shownCard : null;
+  const ring = live?.locate ?? null;
   useEffect(() => {
     setLocate(ring);
   }, [ring]);
   useEffect(() => () => setLocate(null), []);
+  const at = live?.at ?? null;
+  const previewKey = live && at ? `${live.key}|${at.dayISO}|${at.startMin}|${at.durationMin}` : null;
+  useEffect(() => {
+    if (!live || !at) return;
+    const id = `ready:${live.key}`;
+    showOfferPreview({ id, label: live.title, start: instantAt(at.dayISO, at.startMin), end: instantAt(at.dayISO, at.startMin + at.durationMin) });
+    return () => clearOfferPreview(id);
+    // previewKey is the identity of what is drawn
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewKey]);
 
   const keys = useRef({ s, press, onClose });
   keys.current = { s, press, onClose };
@@ -235,7 +251,9 @@ export default function GetReadyRail({
                 arriving={s.arriving.has(c.key)}
                 onFocusCard={() => s.setFocusKey(c.key)}
                 onPoint={(on) => setPointed((p) => (on ? c.key : p === c.key ? null : p))}
-                preview={c.at ? { label: c.title, start: instantAt(c.at.dayISO, c.at.startMin), end: instantAt(c.at.dayISO, c.at.startMin + c.at.durationMin) } : null}
+                // The rail draws the shown card's spot itself (above), so the
+                // act's own hover-preview would only fight it.
+                preview={null}
                 onDone={c.done ? () => press(c, "done") : undefined}
                 doneLabel={c.done?.label}
                 onPress={(el) => press(c, "primary", el)}
