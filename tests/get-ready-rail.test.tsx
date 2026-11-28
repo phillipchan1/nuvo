@@ -182,30 +182,37 @@ describe("Get ready — the Planner's third mode, and Rhythm's new door", () => 
     void container;
   });
 
-  it("pointing at a card rings where it is now, on its day — and lets go when the pointer does (D-255)", () => {
-    const ring = { taskIds: ["t1"], dayISO: "2026-11-24" };
-    const { container } = render(<Host initial={[{ ...card(1), locate: ring }, card(2)]} onClose={() => {}} />);
-    const first = container.querySelector(".k-offer-card") as HTMLElement;
-    act(() => void fireEvent.pointerEnter(first, { pointerType: "mouse" }));
-    expect(getLocate()).toEqual(ring);
-    act(() => void fireEvent.pointerLeave(first, { pointerType: "mouse" }));
+  it("the focused card rings where it is now without a hover; pointing at another switches, leaving returns (D-255, D-259)", () => {
+    const ring1 = { taskIds: ["t1"], dayISO: "2026-11-24" };
+    const ring2 = { taskIds: ["t2"], dayISO: "2026-11-25" };
+    const { container, unmount } = render(<Host initial={[{ ...card(1), locate: ring1 }, { ...card(2), locate: ring2 }]} onClose={() => {}} />);
+    expect(getLocate()).toEqual(ring1);
+    const second = container.querySelectorAll(".k-offer-card")[1] as HTMLElement;
+    act(() => void fireEvent.pointerEnter(second, { pointerType: "mouse" }));
+    expect(getLocate()).toEqual(ring2);
+    act(() => void fireEvent.pointerLeave(second, { pointerType: "mouse" }));
+    expect(getLocate()).toEqual(ring1);
+    unmount();
     expect(getLocate()).toBeNull();
     setLocate(null);
   });
 
-  it("pointing at a card's act draws where it would land, and clears when you move off (R3, D-255)", () => {
+  it("the focused card draws where its act would land without a hover, and the drawing goes with the rail (R3, D-259)", () => {
     const Probe = () => <span data-probe>{useOfferPreview()?.label ?? "none"}</span>;
     const at = { dayISO: "2026-11-26", startMin: 840, durationMin: 60 };
-    const { container } = render(
+    const { container, rerender } = render(
       <>
-        <Host initial={[{ ...card(1), at }]} onClose={() => {}} />
+        <Host initial={[{ ...card(1), at }, { ...card(2), at: { ...at, startMin: 900 } }]} onClose={() => {}} />
         <Probe />
       </>,
     );
-    const act1 = container.querySelector(".k-offer-card-act") as HTMLElement;
-    act(() => void fireEvent.pointerEnter(act1, { pointerType: "mouse" }));
     expect(container.querySelector("[data-probe]")?.textContent).toBe("Task 1");
-    act(() => void fireEvent.pointerLeave(act1, { pointerType: "mouse" }));
+    const second = container.querySelectorAll(".k-offer-card")[1] as HTMLElement;
+    act(() => void fireEvent.pointerEnter(second, { pointerType: "mouse" }));
+    expect(container.querySelector("[data-probe]")?.textContent).toBe("Task 2");
+    act(() => void fireEvent.pointerLeave(second, { pointerType: "mouse" }));
+    expect(container.querySelector("[data-probe]")?.textContent).toBe("Task 1");
+    rerender(<Probe />);
     expect(container.querySelector("[data-probe]")?.textContent).toBe("none");
   });
 

@@ -1,4 +1,4 @@
-//! The iPhone's address for background reminders (D-259).
+//! The iPhone's address for background reminders (D-260).
 //!
 //! **Why.** The native iOS shell has no service worker, so Web Push can never
 //! reach it. Apple's own push service (APNs) can — through the same server

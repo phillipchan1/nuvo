@@ -464,13 +464,13 @@ pub fn run() {
         // unconditionally — like the other two — so there is exactly one call
         // site and no cfg to get wrong.
         .plugin(tauri_plugin_nuvo_siwa::init())
-        // Reminders as real OS notifications (D-259). Its init script gives the
+        // Reminders as real OS notifications (D-260). Its init script gives the
         // webview a `window.Notification` — WKWebView has none — so the
         // foreground reminder loop speaks on the Mac and the phone exactly as it
         // does in a browser (src/lib/notify.ts).
         .plugin(tauri_plugin_notification::init())
         // The phone's APNs token, so the reminder dispatcher can reach it while
-        // Nuvo is closed (D-259). Desktop: `supported: false`.
+        // Nuvo is closed (D-260). Desktop: `supported: false`.
         .plugin(tauri_plugin_nuvo_push::init());
 
     #[cfg(desktop)]

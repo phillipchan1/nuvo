@@ -166,49 +166,16 @@ function mountCrown(onGetReady?: () => void) {
 
 const rowOf = (name: string) => screen.getByText(name).closest("[data-crown-project]") as HTMLElement;
 
-describe("Draft the path on the week crown's project row", () => {
+describe("no offer rides a crown row at rest (D-259)", () => {
   beforeEach(() => localStorage.clear());
 
-  it("rides a thin project's row, and not a shaped one's", async () => {
+  it("a thin project's row reports; Suggest tasks is a Get ready card, not a chip", async () => {
     mountCrown();
-    await waitFor(() => expect(screen.getAllByRole("button", { name: /^Suggest tasks/ })).toHaveLength(2));
-    expect(rowOf("Launch pricing page").querySelector(".k-offer")).not.toBeNull();
-    expect(rowOf("Garage studio").querySelector(".k-offer")).not.toBeNull();
-    expect(rowOf("Quarterly taxes").querySelector(".k-offer")).toBeNull();
-    // It names its evidence, and rides a line of its own under the one-line
-    // row (D-216 R6) — the row keeps its weight and its name keeps its room.
-    const chip = rowOf("Launch pricing page").querySelector(".k-offer") as HTMLElement;
-    expect(chip.getAttribute("title")).toMatch(/3h held · 20m of work/);
-    expect(chip.closest(".crown-offer-line")).not.toBeNull();
-    expect(chip.closest(".crown-proj-row")).toBeNull();
-    expect(rowOf("Launch pricing page").querySelector(".crown-proj-count")).not.toBeNull();
-  });
-
-  it("starts the draft through the path the panel's offer took", async () => {
-    mountCrown();
-    const heard: string[] = [];
-    const off = onPathDraftRequest((id) => heard.push(id));
-    const chip = await waitFor(() => rowOf("Launch pricing page").querySelector(".k-offer") as HTMLElement);
-    fireEvent.click(chip);
-    off();
-    expect(heard).toEqual(["p1"]);
-  });
-
-  it("Not now (⌫ on the chip) hides it for two weeks", async () => {
-    mountCrown();
-    const chip = await waitFor(() => rowOf("Garage studio").querySelector(".k-offer") as HTMLElement);
-    act(() => {
-      fireEvent.keyDown(chip, { key: "Backspace" });
-    });
-    await waitFor(() => expect(rowOf("Garage studio").querySelector(".k-offer")).toBeNull());
-    expect(JSON.parse(localStorage.getItem("nuvo.offers.snoozed") ?? "{}")).toHaveProperty("path:p2");
-  });
-
-  it("the shut crown carries no chip", async () => {
-    localStorage.setItem("nuvo-rail-week-open", "0");
-    mountCrown();
-    await waitFor(() => expect(screen.getByText("Projects")).toBeTruthy());
+    await waitFor(() => expect(rowOf("Launch pricing page")).toBeTruthy());
     expect(document.querySelector(".k-offer")).toBeNull();
+    expect(document.querySelector(".crown-offer-line")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Suggest tasks/ })).toBeNull();
+    expect(rowOf("Launch pricing page").querySelector(".crown-proj-count")).not.toBeNull();
   });
 });
 
@@ -413,8 +380,8 @@ describe("Hold falls back to later this week when today is full (D-206)", () => 
   });
 });
 
-describe("Hold <time> on the phone's Today", () => {
-  it("rides at most two no-time rows, and never a row on the clock", async () => {
+describe("the phone's Today carries no hold chip at rest (D-259)", () => {
+  it("a no-time row keeps its own meta; its time is a Get ready card", async () => {
     const { m } = stubMutations();
     const today = offersToday();
     render(
@@ -433,16 +400,9 @@ describe("Hold <time> on the phone's Today", () => {
         />
       </QueryClientProvider>,
     );
-    await waitFor(() => expect(screen.getAllByRole("button", { name: /^Schedule / }).length).toBeGreaterThan(0));
-    const chips = screen.getAllByRole("button", { name: /^Schedule / });
-    expect(chips.length).toBeLessThanOrEqual(PHONE_OFFERS_MAX);
-    for (const chip of chips) {
-      const row = chip.closest(".task-row");
-      const title = row?.querySelector(".task-row-title")?.textContent ?? "";
-      expect(today.find((t) => t.title === title)?.start_time ?? null).toBeNull();
-      // the chip takes the meta's place: no clock / length beside it
-      expect(row?.querySelector(".task-row-meta")).toBeNull();
-    }
+    await waitFor(() => expect(document.querySelector(".task-row")).toBeTruthy());
+    expect(screen.queryByRole("button", { name: /^Schedule / })).toBeNull();
+    expect(document.querySelector(".k-offer")).toBeNull();
   });
 });
 
@@ -481,7 +441,7 @@ describe("File in <project> on an inbox capture", () => {
     expect(opts.before).toMatchObject({ status: "inbox", project_id: null });
   });
 
-  it("the phone's inbox shows two at most, never on the row without a guess", () => {
+  it("the phone's inbox carries no File chip at rest (D-259)", () => {
     localStorage.clear();
     const { m } = stubMutations();
     const inbox = offersInbox();
@@ -501,12 +461,8 @@ describe("File in <project> on an inbox capture", () => {
         />
       </QueryClientProvider>,
     );
-    const chips = screen.getAllByRole("button", { name: /^File in / });
-    expect(chips).toHaveLength(PHONE_OFFERS_MAX);
-    // top first
-    expect(chips[0].getAttribute("aria-label")).toMatch(/^File in Garage studio/);
-    expect(chips[1].getAttribute("aria-label")).toMatch(/^File in Quarterly taxes/);
-    expect(screen.getByText("Something about the dentist").closest(".task-row")?.querySelector(".k-offer") ?? null).toBeNull();
+    expect(screen.queryByRole("button", { name: /^File in / })).toBeNull();
+    expect(document.querySelector(".k-offer")).toBeNull();
     // and the old Accept / ✕ pair is gone from every row
     expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
   });

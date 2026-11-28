@@ -1,9 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
-// The native iPhone app registers for background reminders through APNs (D-259).
+// The native iPhone app registers for background reminders through APNs (D-260).
 //
-// It has no service worker, so before D-259 it could only remind you while it
+// It has no service worker, so before D-260 it could only remind you while it
 // was open — and on a phone that is almost never. The `nuvo-push` plugin hands
 // over a device token, stored as an `apns://<env>/<token>` endpoint in the same
 // table Web Push uses, so the dispatcher needs no second path. This pins the

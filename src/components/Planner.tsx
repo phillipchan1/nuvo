@@ -560,9 +560,9 @@ export default function Planner({
   }, [ready.line, repairState.open, repairState.applied, repairState.dial]);
   const crownLine = ready.line ?? handled;
   const onCrownLine = handled ? openRepair : openGetReady;
-  // At rest the cards don't stand under the crown any more (D-216, amending
-  // D-209's deck first): each one that gives work a time rides its project's
-  // row as a chip, and the whole stack stays behind the crown's line.
+  // At rest no card stands under the crown (D-216) and none rides a row as a
+  // chip (D-259): the whole stack stays behind its door — the crown's line,
+  // or "N need a time" on the dials.
   //
   // Pointing at an offer chip anywhere in the rail draws where it would land
   // and dims the rest of the week (R3) — through the plan overlay the pane
@@ -785,7 +785,6 @@ export default function Planner({
           onOpenSlot={openSlotAt}
           crownLine={onSchedule ? crownLine : null}
           onCrownLine={onCrownLine}
-          rowCards={onSchedule ? ready.cards : undefined}
           events={events}
         />
         )}

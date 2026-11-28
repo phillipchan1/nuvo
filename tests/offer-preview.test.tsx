@@ -75,6 +75,7 @@ describe("the wiring (D-216)", () => {
   });
   it("the card no longer stands under the crown at rest", () => {
     expect(planner).not.toMatch(/<RestDeck/);
-    expect(planner).toMatch(/rowCards=\{onSchedule \? ready\.cards : undefined\}/);
+    // …and since D-259 no card rides a row either: Get ready is the one door.
+    expect(planner).not.toMatch(/rowCards=/);
   });
 });

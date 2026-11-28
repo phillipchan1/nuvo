@@ -10140,9 +10140,52 @@ Add → device → a key created, shown once, revoked; `?notion=connected` on de
 Notion source row was used and deleted. The connected Inbox address row was not seen with a real
 address (the local account has none); a test covers it.*
 
+**D-259 · 2026-11-27 · Rows report, Get ready repairs: no offer chips at rest.** *(Asked by the
+operator, looking at a lived-in rail: "inline makes the UI super inconsistent with so much busyness
+vs a single place where I can tackle one by one… the left panel looking super jammed and busy now…
+make sure for each card there's the highlight where it shows proposed and you can easily select
+another time.")*
+
+→ **Amends D-216 and D-204's "inline offer chips at rest, yes".** The rest chips are gone on both
+shells: *Schedule <time>* on a project row and on a no-time today task, *File in <place>* (drawn
+"→ Personal") on an inbox row, *Suggest tasks* on a thin project. Every one of them was already a
+Get ready card, so no act is lost; it moves to the one door. The rail at rest shows only facts, and
+"N need a time" on a project row drops from accent to muted. D-205's three-chip budget was respected
+by the code, but alongside the dials, the line and the crown rows, three chips in accent still made
+the rail read as a to-do list of fixes in four colours with no order.
+
+→ **"N need a time" is the door.** On the Scheduled dial, under Today's ring, and on the phone's
+dial, it opens Get ready whenever the stack has a card. With an empty stack it falls back to
+D-219's unfold of the tasks themselves, so it can never open on "Ready." over homeless work.
+
+→ **The card shows itself without a hover.** The focused card rings the thing where it is now and
+draws where its act would put it; pointing at another card shows that one, and leaving returns to
+the focused card. `j` / `k` move focus and the drawing follows. *Other times* (D-228/229) was
+already on every time card: numbered alternatives on the grid, or click open time.
+
+→ **Anchor.** W2 · W3 · D4 (and Q1 / Q6 when the deck stacks follow). Strains **P9** less than
+before. The cost is **reach**: a fix is now one press further away (the door, then the card). It
+also removes D-216's "an offer rides the row it changes", so pointing at the row no longer explains
+what's wrong with it. The row keeps its fact, and its card is one press away. Four no's: no pool
+(the stack is derived and stores nothing), no new name (Get ready is D-206's), no clean data needed,
+and it holds in a stranger's account (an empty stack says nothing). Retires the rest-chip layer in
+`LeftRail`, `WeekPanel`, `MobileTaskList` and `MobileWeekCrown`.
+
+→ **Left open:** the deck surfaces (Projects, Initiatives) already work the same way (D-256: cards
+in the stack, one status word per deck card) and need no change here. The now-unused chip
+components (`HoldOffer`, `FileOffer`, `PathOffer`, `budgetOffers`) stay in `nuvo/RailOffers` and
+`lib/railOffers` until this has been lived with; delete them if it holds.
+
+*Status: built 2026-11-27 on `claude/one-repair-door`, uncommitted. Driven in the dev app against
+the local Worker on desktop (dial → Get ready, focused-card drawing, `j` moves it, Other times
+numbered on the grid, Esc clears it) and at 375px (no chips on Today or the crown, no horizontal
+scroll, dial → the Get ready sheet). Typecheck and `npm run build` green; `npm test` passes except
+the 18 that fail on master too (`maintenance`, `guard-public-ci`, agent workers, sync). Not run:
+`npm run perf`.*
+
 ---
 
-**D-259 · 2026-11-25 · Reminders reach the native apps: real OS notifications on the Mac, APNs
+**D-260 · 2026-11-25 · Reminders reach the native apps: real OS notifications on the Mac, APNs
 on the iPhone.**
 
 D-105 allowed push with consent and built it — but only as Web Push, which needs a service

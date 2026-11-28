@@ -1,4 +1,4 @@
-// The iPhone's APNs device token, for background reminders (D-259).
+// The iPhone's APNs device token, for background reminders (D-260).
 //
 // iOS hands the token to the *app delegate*
 // (`application(_:didRegisterForRemoteNotificationsWithDeviceToken:)`), and a
