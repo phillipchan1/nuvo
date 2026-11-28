@@ -12,6 +12,8 @@
     "deep-link:default",
     "nuvo-watch:default",
     "nuvo-iap:default",
-    "nuvo-siwa:default"
+    "nuvo-siwa:default",
+    "notification:default",
+    "nuvo-push:default"
   ]
 }

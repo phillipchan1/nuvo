@@ -40,6 +40,11 @@ tauri-plugin-process = "2"
 # Held at 2.5.x, with @tauri-apps/plugin-opener ~2.5.5 in package.json: 2.6+
 # requires tauri 2.12, and `tauri build` refuses a crate/npm minor mismatch.
 tauri-plugin-opener = "~2.5"
+# Reminders as real OS notifications in the Mac and iOS shells (D-260). The
+# WKWebView has no `window.Notification`, so without this a reminder in the
+# native apps could only ever be an in-app toast. Held at 2.3.x with
+# @tauri-apps/plugin-notification ~2.3.3 — same crate/npm minor rule as opener.
+tauri-plugin-notification = "~2.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # `nuvo://capture` / `nuvo://chat` — how the iOS lock-screen widgets reach the
@@ -59,6 +64,9 @@ tauri-plugin-nuvo-iap = { path = "plugins/nuvo-iap" }
 # substance; desktop commands are no-ops reporting `supported: false`, so the
 # SPA falls back to the web OAuth flow without a platform branch.
 tauri-plugin-nuvo-siwa = { path = "plugins/nuvo-siwa" }
+# The iPhone's APNs device token, for background reminders (D-260). iOS-only in
+# substance; on desktop `register` reports `supported: false`.
+tauri-plugin-nuvo-push = { path = "plugins/nuvo-push" }
 
 # Global hotkey is desktop-only; the crate doesn't build for mobile targets.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

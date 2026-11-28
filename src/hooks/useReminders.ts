@@ -56,6 +56,13 @@ import {
 } from "../../supabase/functions/_shared/reminderRules.ts";
 import { buildReminderAnchors, keyOfOverride, REMINDER_QUERY_DAYS, REMINDER_WINDOW_MS } from "../lib/reminders";
 import { subscribeToPush, unsubscribeFromPush } from "../lib/push";
+import {
+  nativePermission,
+  notifyPermission,
+  requestNotifyPermission,
+  showSystemNotification,
+  type NotifyPermission,
+} from "../lib/notify";
 import { detectDeviceTz } from "../lib/timezone";
 import { useSettings } from "./useSettings";
 import { useAllTasks } from "./useTasks";
@@ -196,26 +203,30 @@ export function useReminderFor(ref: ReminderTargetRef | null): {
 
 // ── Permission ──────────────────────────────────────────────────────────────
 
-export type NotifyPermission = "unsupported" | "default" | "granted" | "denied";
-
-export function notifyPermission(): NotifyPermission {
-  if (typeof Notification === "undefined") return "unsupported";
-  return Notification.permission as NotifyPermission;
-}
+export type { NotifyPermission };
+export { notifyPermission };
 
 /**
  * Keep this device subscribed to background reminders — or not.
  *
  * Driven by the two facts that decide it: reminders are on, and the OS said
- * yes. Re-runs cheaply on every launch, which is also what keeps the stored
- * timezone fresh when someone travels (a deadline has to speak at 9am somewhere,
- * and the server needs to know where).
+ * yes. Mounted in the shell (`ShellEffects`) so it re-runs cheaply on every
+ * launch — which is what keeps the stored timezone fresh when someone travels
+ * (a deadline has to speak at 9am somewhere, and the server needs to know
+ * where), and what re-records a native token that rotated (D-260). Until D-260
+ * it lived only in Settings, so a device subscribed only while that pane was
+ * open.
  */
 export function usePushRegistration(enabled: boolean, permission: NotifyPermission) {
   const { settings, update } = useSettings();
   const storedTz = settings?.time_zone ?? null;
+  // Before settings load, `enabled` is the default (false). Acting on that
+  // would unsubscribe every device on every launch and re-subscribe it a
+  // moment later — wait for the real answer.
+  const loaded = settings != null;
 
   useEffect(() => {
+    if (!loaded) return;
     let cancelled = false;
     void (async () => {
       if (!enabled || permission !== "granted") {
@@ -230,7 +241,7 @@ export function usePushRegistration(enabled: boolean, permission: NotifyPermissi
     return () => {
       cancelled = true;
     };
-  }, [enabled, permission]);
+  }, [loaded, enabled, permission]);
 
   // One zone per person, for the dispatcher's deadline math. Written through
   // only when it actually changes — this runs on every launch.
@@ -243,11 +254,21 @@ export function usePushRegistration(enabled: boolean, permission: NotifyPermissi
 
 export function useNotifyPermission() {
   const [permission, setPermission] = useState<NotifyPermission>(notifyPermission);
+  // The native shells learn their permission asynchronously (lib/notify.ts);
+  // the first synchronous read there can say "default" for a granted app.
+  useEffect(() => {
+    let cancelled = false;
+    void nativePermission().then((p) => {
+      if (!cancelled && p) setPermission(p);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const request = useCallback(async () => {
-    if (typeof Notification === "undefined") return "unsupported" as const;
-    const result = await Notification.requestPermission();
-    setPermission(result as NotifyPermission);
-    return result as NotifyPermission;
+    const result = await requestNotifyPermission();
+    setPermission(result);
+    return result;
   }, []);
   return { permission, request, refresh: () => setPermission(notifyPermission()) };
 }
@@ -389,22 +410,17 @@ export function useReminderDelivery(options: ReminderDeliveryOptions = {}) {
     // device (or the dispatcher) already told them.
     if (!(await claimReminder(r))) return;
 
-    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-      try {
-        const n = new Notification(r.title, {
-          body: r.body,
-          tag: r.key, // one notification per anchor, never a stack of duplicates
-          silent: false,
-        });
-        n.onclick = () => {
-          window.focus();
-          onOpenRef.current?.(r);
-          n.close();
-        };
-        return;
-      } catch {
-        /* fall through to the in-app toast */
-      }
+    // A real OS notification — in a browser, and since D-260 in the Mac and
+    // iOS apps too (lib/notify.ts). The tag keeps it one per anchor.
+    if (
+      showSystemNotification({
+        title: r.title,
+        body: r.body,
+        tag: r.key,
+        onClick: () => onOpenRef.current?.(r),
+      })
+    ) {
+      return;
     }
 
     // No permission (or an OS that refused): the app is open, so say it here.

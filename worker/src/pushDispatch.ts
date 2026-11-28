@@ -12,8 +12,10 @@ import {
   webPushConfigured,
   webPushSelfTest,
   type FetchLike,
+  type PushResult,
   type PushSubscriptionRow,
 } from "./lib/webpush.ts";
+import { apnsConfigured, apnsSelfTest, isApnsEndpoint, sendApns, type ApnsMessage } from "./lib/apns.ts";
 import { buildReminderAnchors, REMINDER_WINDOW_MS } from "../../supabase/functions/_shared/reminderAnchors.ts";
 import { PUSH_HORIZON_MS } from "./cronGate.ts";
 import {
@@ -63,7 +65,10 @@ export interface PushDispatchResult {
    * quiet minute never asks Postgres (D-239).
    */
   next: Record<string, number | null>;
-  selfTest?: Awaited<ReturnType<typeof webPushSelfTest>>;
+  selfTest?: Awaited<ReturnType<typeof webPushSelfTest>> & {
+    /** The native iPhone transport (D-260), checked the same way. */
+    apns?: Awaited<ReturnType<typeof apnsSelfTest>>;
+  };
 }
 
 type SettingsRow = {
@@ -77,7 +82,7 @@ export async function runPushDispatch(
   env: Env,
   opts: PushDispatchOpts = {},
 ): Promise<PushDispatchResult> {
-  const configured = webPushConfigured(env);
+  const configured = webPushConfigured(env) || apnsConfigured(env);
   if (opts.selfTest) {
     return {
       ok: true,
@@ -86,7 +91,7 @@ export async function runPushDispatch(
       considered: 0,
       notified: 0,
       next: {},
-      selfTest: await webPushSelfTest(env, opts.clientPublicKey),
+      selfTest: { ...(await webPushSelfTest(env, opts.clientPublicKey)), apns: await apnsSelfTest(env) },
     };
   }
 
@@ -256,7 +261,7 @@ async function dispatchForUser(
     `,
   ]);
 
-  const subs = subscriptions as unknown as PushSubscriptionRow[];
+  const subs = (subscriptions as unknown as PushSubscriptionRow[]).filter((sub) => sendable(env, sub));
   if (!subs.length) return { considered, notified, next: null };
 
   const hiddenEvents = (hiddenRow[0] as { hidden_events: { key: string }[] | null } | undefined)?.hidden_events;
@@ -346,15 +351,15 @@ async function push(
   fetchImpl?: FetchLike,
 ): Promise<PushOutcome> {
   const outcome: PushOutcome = { delivered: 0, transient: 0 };
-  const payload = JSON.stringify({
+  const message: ApnsMessage = {
     title: r.title,
     body: r.body,
     key: r.key,
     url: r.targetKind === "task" ? `/?reminder=task&id=${r.targetId}` : "/",
-  });
+  };
 
   for (const sub of subs) {
-    const result = await sendWebPush(env, sub, payload, fetchImpl ?? fetch);
+    const result = await sendTo(env, sub, message, fetchImpl ?? fetch);
     if (result.gone) {
       await sql`
         DELETE FROM push_subscriptions
@@ -387,6 +392,33 @@ async function push(
 type PushOutcome = { delivered: number; transient: number };
 
 /**
+ * Can this deployment reach this device at all? A native iPhone (APNs) row
+ * needs the APNs secrets; every other row needs VAPID. A device we can't reach
+ * must not count as an audience: otherwise the dispatcher would CLAIM a
+ * reminder it then can't deliver, and an app opening a minute later would find
+ * it already "told" and stay silent.
+ */
+export function sendable(env: Env, sub: PushSubscriptionRow): boolean {
+  return isApnsEndpoint(sub.endpoint) ? apnsConfigured(env) : webPushConfigured(env);
+}
+
+/** One message, one device, whichever transport its endpoint names (D-260). */
+async function sendTo(
+  env: Env,
+  sub: PushSubscriptionRow,
+  message: ApnsMessage,
+  fetchImpl: FetchLike,
+): Promise<PushResult> {
+  if (isApnsEndpoint(sub.endpoint)) return sendApns(env, sub, message, fetchImpl);
+  return sendWebPush(
+    env,
+    sub,
+    JSON.stringify({ title: message.title, body: message.body, key: message.key, url: message.url ?? "/" }),
+    fetchImpl,
+  );
+}
+
+/**
  * One-off push to every device of one planner account (billing's referral
  * notices). Same send / prune / failure-count path as reminders. The caller
  * resolves the planner id and is itself behind the cutover flip.
@@ -398,16 +430,15 @@ export async function pushToAccount(
   message: { title: string; body: string; key: string; url?: string },
   fetchImpl?: FetchLike,
 ): Promise<number> {
-  if (!webPushConfigured(env)) return 0;
-  const subs = (await sql`
+  if (!webPushConfigured(env) && !apnsConfigured(env)) return 0;
+  const subs = ((await sql`
     SELECT id, endpoint, p256dh, auth, failure_count
     FROM push_subscriptions
     WHERE user_id = ${userId}
-  `) as unknown as PushSubscriptionRow[];
-  const payload = JSON.stringify({ title: message.title, body: message.body, key: message.key, url: message.url ?? "/" });
+  `) as unknown as PushSubscriptionRow[]).filter((sub) => sendable(env, sub));
   let sent = 0;
   for (const sub of subs) {
-    const result = await sendWebPush(env, sub, payload, fetchImpl ?? testFetch ?? fetch);
+    const result = await sendTo(env, sub, message, fetchImpl ?? testFetch ?? fetch);
     if (result.gone) {
       await sql`DELETE FROM push_subscriptions WHERE id = ${sub.id} AND user_id = ${userId}`;
       continue;
